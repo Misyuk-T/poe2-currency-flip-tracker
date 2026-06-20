@@ -1,0 +1,22 @@
+{
+  "name": "poe2-currency-flip-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Honest, testable backend-driven MVP of a Path of Exile 2 currency opportunity tracker.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server/index.js",
+    "dev": "node --watch src/server/index.js",
+    "test": "node --test",
+    "catalog:build": "node scripts/build-catalog.mjs",
+    "catalog:metadata": "node scripts/build-catalog.mjs --no-icons",
+    "catalog:icons:missing": "node scripts/build-catalog.mjs --missing-icons"
+  },
+  "optionalDependencies": {
+    "postgres": "^3.4.5"
+  },
+  "license": "UNLICENSED"
+}

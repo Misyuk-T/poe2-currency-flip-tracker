@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PoE2 Flip Tracker</title>
+    <meta
+      name="description"
+      content="An honest Path of Exile 2 currency opportunity tracker. Estimates, not guaranteed arbitrage."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css?v=11" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="header-shell">
+        <div>
+          <p class="eyebrow" id="leagueLabel">Loading…</p>
+          <h1>PoE2 Flip Tracker</h1>
+        </div>
+        <div class="header-actions">
+          <span class="state-badge" id="stateBadge" data-state="loading">…</span>
+          <button class="button primary" id="refreshButton" type="button">Refresh</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="page-shell">
+      <section class="toolbar" aria-label="Your budget">
+        <div class="field">
+          <label for="gameInput">Game</label>
+          <select id="gameInput"></select>
+        </div>
+        <div class="field">
+          <label for="leagueInput">League</label>
+          <select id="leagueInput"></select>
+        </div>
+        <div class="field">
+          <label for="anchorInput">Anchor</label>
+          <select id="anchorInput"></select>
+        </div>
+        <div class="field">
+          <label for="capitalInput">Capital (anchor)</label>
+          <input id="capitalInput" class="num" type="number" inputmode="decimal" min="0" step="1" value="1000" />
+        </div>
+        <div class="field">
+          <label for="goldInput">Gold available</label>
+          <input id="goldInput" class="num" type="number" inputmode="numeric" min="0" step="1000" value="200000" />
+        </div>
+        <div class="field">
+          <label for="reserveInput">Gold reserve</label>
+          <input id="reserveInput" class="num" type="number" inputmode="numeric" min="0" step="1000" value="0" />
+        </div>
+        <div class="field">
+          <label for="horizonInput">Horizon</label>
+          <select id="horizonInput">
+            <option value="1">1 hour</option>
+            <option value="3" selected>3 hours</option>
+            <option value="6">6 hours</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="goldModeInput">Gold mode</label>
+          <select id="goldModeInput">
+            <option value="strict" selected>Strict budget</option>
+            <option value="show">Show only</option>
+            <option value="ignore">Ignore</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="rankInput">Rank by</label>
+          <select id="rankInput">
+            <option value="default" selected>Best (auto)</option>
+            <option value="profit">Profit</option>
+            <option value="roi">ROI</option>
+            <option value="profit-100k">Profit / 100k gold</option>
+            <option value="profit-hour">Profit / hour</option>
+            <option value="liquidity">Liquidity</option>
+            <option value="risk">Lowest risk</option>
+          </select>
+        </div>
+        <div class="status-panel">
+          <span id="sourceLabel">Source: waiting</span>
+          <span id="updatedLabel">Snapshot: never</span>
+        </div>
+      </section>
+
+      <section class="note-panel">
+        These are <strong>estimates</strong>, not guaranteed arbitrage. The exit leg may not fill,
+        prices move while inventory is held, and gold is a real constraint. Click a row for the full
+        breakdown and trend.
+      </section>
+
+      <section class="filters" aria-label="Filters">
+        <div class="field grow">
+          <label for="searchInput">Search</label>
+          <input id="searchInput" type="search" placeholder="currency name…" />
+        </div>
+        <div class="field">
+          <label for="minProfitInput">Min profit</label>
+          <input id="minProfitInput" class="num" type="number" step="1" placeholder="any" />
+        </div>
+        <label class="check"><input id="actionableOnlyInput" type="checkbox" /> Actionable only</label>
+        <label class="check"><input id="hideUnknownGoldInput" type="checkbox" /> Hide unknown gold</label>
+        <label class="check"><input id="hideStaleInput" type="checkbox" /> Hide stale</label>
+        <button class="button" id="copyLinkButton" type="button">Copy link</button>
+      </section>
+
+      <section class="error-panel" id="errorPanel" hidden>
+        <div>
+          <h2>No live data</h2>
+          <p id="errorMessage">The tracker could not load a snapshot.</p>
+        </div>
+        <button class="button" id="retryButton" type="button">Retry</button>
+      </section>
+
+      <section class="table-wrap" aria-label="Currency opportunities">
+        <table>
+          <thead>
+            <tr>
+              <th data-sort="targetName" scope="col">Currency</th>
+              <th data-sort="grossSpreadPercent" scope="col">Trend</th>
+              <th class="right" data-sort="entryVWAP" scope="col">Entry</th>
+              <th class="right" data-sort="exitVWAP" scope="col">Exit</th>
+              <th class="right" data-sort="quantity" scope="col">Qty</th>
+              <th class="right" data-sort="grossProfit" scope="col">Profit <span class="unit" id="profitUnit"></span></th>
+              <th class="right" data-sort="currencyROI" scope="col">ROI</th>
+              <th class="right" data-sort="totalGold" scope="col">Gold</th>
+              <th class="right" data-sort="profitPer100kGold" scope="col">Profit / 100k <span class="unit" id="profit100kUnit"></span></th>
+              <th data-sort="limitingResource" scope="col">Limited by</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+        <div class="mobile-list" id="mobileList"></div>
+      </section>
+
+      <details class="nonactionable" id="nonActionableWrap" hidden>
+        <summary id="nonActionableSummary">Non-actionable opportunities</summary>
+        <p class="nonactionable-note">
+          Negative round trips, illiquid books, and currencies without a verified gold cost
+          (<strong>unrankable</strong>) are kept here for transparency — never mixed into the actionable list.
+        </p>
+        <section class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Currency</th>
+                <th class="right" scope="col">Entry</th>
+                <th class="right" scope="col">Exit</th>
+                <th class="right" scope="col">Profit</th>
+                <th scope="col">Reason</th>
+              </tr>
+            </thead>
+            <tbody id="nonActionableBody"></tbody>
+          </table>
+          <div class="mobile-list" id="nonActionableMobile"></div>
+        </section>
+      </details>
+    </main>
+
+    <div class="modal-backdrop" id="modalBackdrop" hidden>
+      <dialog class="modal" id="detailModal" aria-labelledby="modalTitle">
+        <button class="modal-close" id="closeModal" type="button" aria-label="Close">x</button>
+        <p class="eyebrow" id="modalAnchor">Round trip</p>
+        <h2 id="modalTitle">Opportunity</h2>
+        <p class="modal-summary" id="modalSummary"></p>
+        <div class="modal-chart" id="modalChart"></div>
+        <div id="modalGroups"></div>
+        <div class="modal-warnings" id="modalWarnings"></div>
+      </dialog>
+    </div>
+
+    <script src="app.js?v=11" defer></script>
+  </body>
+</html>

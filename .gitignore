@@ -1,0 +1,10 @@
+node_modules/
+.data/
+# Downloaded GGG icon art (not committed); keep only the neutral fallback.
+src/public/icons/*
+!src/public/icons/_fallback.svg
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store

@@ -1,32 +1,43 @@
 # PoE2 Currency Flip Tracker
 
-A backend-driven MVP that estimates **currency round-trip opportunities** in
-Path of Exile 2. It answers: _given my currency capital and available gold, what
-can I buy now that has a plausible chance of being sold later for a useful,
-risk-adjusted profit?_
+A backend-driven MVP for **Path of Exile 2 currency market timing**. The default
+product surface uses the official completed-hour market digest plus a
+user-entered current price. It answers: _what is moving today, what price am I
+actually seeing now, and what conservative entry/exit would recent hourly ranges
+support for my chosen horizon?_
 
-These are **estimates, not guaranteed arbitrage.** The exit leg may not fill,
-prices move while inventory is held, and **gold is a second scarce resource**
-that often makes a visible spread unusable.
+These are **historical estimates, not guaranteed arbitrage or predictions.**
+The hourly feed is delayed and not an executable quote; users should verify the
+actual in-game price before trading.
 
 ## Quick start (fixture mode — offline, safe)
 
 ```bash
 cp .env.example .env   # optional — sensible defaults work without it
-node src/server/index.js
-# open http://localhost:8080
+npm run dev       # backend API on http://localhost:8080
+npm run web:dev   # Next.js SEO/frontend on http://localhost:3000
 ```
 
-No build step, no dependencies (Node ≥ 20). The `.env` file (if present) is
-loaded by a tiny built-in loader (`src/server/load-env.js`) — no `dotenv`
-dependency, and real environment variables always win over the file. Fixture
-mode serves deterministic, clearly-labelled synthetic data so every calculation
-and the whole UI work without touching any external API.
+The backend still has no compile step and runs on Node ≥ 20. The production
+frontend is a Next.js app under `apps/web/`, so SEO pages and chart bundles are
+built with `npm run web:build`. The `.env` file (if present) is loaded by a tiny
+built-in backend loader (`src/server/load-env.js`) — no `dotenv` dependency, and
+real environment variables always win over the file. Fixture mode serves
+deterministic, clearly-labelled synthetic data so every calculation and the UI
+work without touching any external API.
 
 ```bash
 npm test     # run the domain + server test suite (node:test)
-npm run dev  # start with --watch
+npm run web:build  # build the Next.js frontend
 ```
+
+The old static frontend under `src/public/` is still served by the backend for
+continuity, but production SEO work now lives in `apps/web/` (Next.js App
+Router). By default the Next app talks to the backend through a same-origin
+proxy at `/backend/*`, rewritten to `BACKEND_ORIGIN` (defaults to
+`http://localhost:8080`). `NEXT_PUBLIC_API_BASE_URL` can override the browser
+API base, and `NEXT_PUBLIC_SITE_URL` controls canonical URLs, sitemap and robots
+metadata.
 
 ## What changed vs. the original prototype
 
@@ -118,7 +129,46 @@ or copy approved assets from object storage. A plain Git checkout intentionally
 contains only the fallback. Do not enable GGG art in a paid deployment without
 written permission.
 
-### Tiered live polling (Phase C2)
+### Market Radar + manual current price (MVP)
+
+The default screen is a completed-hour **Market Radar**. It consumes GGG's
+OAuth-gated `service:cxapi` feed on the backend, persists its cursor, and shows
+descriptive 1/3/6/12/24h movement, hourly low/high range, volume acceleration,
+volatility, coverage, and transparent 0–100 activity/stability scores. The
+midpoint of the published low/high range is explicitly labelled a
+`range-midpoint-proxy`; it is never presented as an OHLC close or a forecast.
+Fixture mode seeds clearly-labelled synthetic hourly data for local testing.
+
+`GET /api/radar`, `GET /api/radar/history`, and `GET /api/hotlist` only read the
+backend cache. Browser refreshes cannot hit GGG. In live mode the server fetches
+at most once per completed hour and can perform a bounded startup catch-up using
+`CXAPI_MAX_BACKFILL_HOURS`. Local storage keeps an isolated hourly JSONL file;
+Supabase deployments must apply
+`supabase/migrations/002_hourly_market_radar.sql` to persist both candles and the
+cursor. OAuth credentials are server-only and are never returned by config or
+status endpoints.
+
+The hourly feed discovers what deserves attention; it is not an executable
+quote. The detail view uses a single **Working price**:
+
+1. user-entered current price (`You entered · now`);
+2. otherwise the latest hourly midpoint (`Hourly midpoint · age`).
+
+Recommendations are based on completed-hour history rebased onto that Working
+price. For overnight-style plans (5–10h), the UI reports historical hit rate,
+median time-to-hit, and adverse move from rolling hourly windows. This describes
+what happened in comparable past windows; it does not pretend to forecast a
+future sale.
+
+### Experimental live books / backlog
+
+The older trade-site/current-book opportunity engine still exists for research
+and tests, but it is **not part of the default MVP UI**. Set
+`ENABLE_LIVE_BOOKS=true` to expose the separate “Live books” view and the
+capital/gold/ranking controls. This path remains experimental/backlog for a
+future paid workflow where users may verify actual current prices.
+
+### Tiered live polling
 
 Live mode uses a bounded scheduler instead of polling the whole catalog:
 
@@ -131,11 +181,10 @@ Live mode uses a bounded scheduler instead of polling the whole catalog:
 - every opportunity exposes `marketFreshness` with tier, fetch time, age and
   overdue state; `/api/status` exposes tier sizes, cursors and tracked counts.
 
-The official `service:cxapi` feed is hourly historical data and requires an
-approved OAuth application. It remains the intended activity-ordering input;
-until credentials exist, catalog order is the deterministic-per-build fallback
-(GGG may reorder it between patches). Current
-execution quotes still come from the isolated experimental exchange provider.
+The official `service:cxapi` feed requires an approved OAuth application. Until
+credentials exist, live mode reports `waiting-oauth` honestly; fixture mode uses
+synthetic data. Current execution quotes still come from the isolated
+experimental exchange provider.
 
 The in-memory book cache is capped by `MAX_TRACKED_TARGETS` (default 250), with
 the hot shortlist and anchor pairs protected from eviction. Rebuilding the

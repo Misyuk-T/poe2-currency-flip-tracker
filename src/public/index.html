@@ -14,14 +14,17 @@
       href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=11" />
+    <link rel="stylesheet" href="styles.css?v=19" />
   </head>
   <body>
     <header class="app-header">
       <div class="header-shell">
-        <div>
+        <div class="brand-lockup">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div>
           <p class="eyebrow" id="leagueLabel">Loading…</p>
           <h1>PoE2 Flip Tracker</h1>
+          </div>
         </div>
         <div class="header-actions">
           <span class="state-badge" id="stateBadge" data-state="loading">…</span>
@@ -44,27 +47,30 @@
           <label for="anchorInput">Anchor</label>
           <select id="anchorInput"></select>
         </div>
-        <div class="field">
+        <div class="field" data-live-books-only>
           <label for="capitalInput">Capital (anchor)</label>
           <input id="capitalInput" class="num" type="number" inputmode="decimal" min="0" step="1" value="1000" />
         </div>
-        <div class="field">
+        <div class="field" data-live-books-only>
           <label for="goldInput">Gold available</label>
           <input id="goldInput" class="num" type="number" inputmode="numeric" min="0" step="1000" value="200000" />
         </div>
-        <div class="field">
+        <div class="field" data-live-books-only>
           <label for="reserveInput">Gold reserve</label>
           <input id="reserveInput" class="num" type="number" inputmode="numeric" min="0" step="1000" value="0" />
         </div>
         <div class="field">
-          <label for="horizonInput">Horizon</label>
+          <label for="horizonInput">Plan horizon</label>
           <select id="horizonInput">
             <option value="1">1 hour</option>
             <option value="3" selected>3 hours</option>
             <option value="6">6 hours</option>
+            <option value="8">8 hours</option>
+            <option value="10">10 hours</option>
+            <option value="24">24 hours</option>
           </select>
         </div>
-        <div class="field">
+        <div class="field" data-live-books-only>
           <label for="goldModeInput">Gold mode</label>
           <select id="goldModeInput">
             <option value="strict" selected>Strict budget</option>
@@ -72,7 +78,7 @@
             <option value="ignore">Ignore</option>
           </select>
         </div>
-        <div class="field">
+        <div class="field" data-live-books-only>
           <label for="rankInput">Rank by</label>
           <select id="rankInput">
             <option value="default" selected>Best (auto)</option>
@@ -89,6 +95,103 @@
           <span id="updatedLabel">Snapshot: never</span>
         </div>
       </section>
+
+      <div class="market-layout">
+        <aside class="market-sidebar" aria-label="Market navigation">
+          <div class="sidebar-section">
+            <p class="sidebar-heading">Workspace</p>
+            <button class="sidebar-link active" id="radarViewButton" type="button" aria-pressed="true">
+              <span class="sidebar-icon" aria-hidden="true">⌁</span><span>Market Radar</span>
+            </button>
+            <button class="sidebar-link" id="booksViewButton" type="button" aria-pressed="false" hidden>
+              <span class="sidebar-icon" aria-hidden="true">⇄</span><span>Live books</span>
+            </button>
+          </div>
+          <div class="sidebar-section categories-section">
+            <p class="sidebar-heading">Categories</p>
+            <button class="category-link active" type="button" data-category="all" aria-pressed="true">
+              <span class="category-mark" aria-hidden="true">✦</span><span>All markets</span>
+            </button>
+            <div id="categoryList"></div>
+          </div>
+          <p class="sidebar-footnote">Categories come from the current GGG trade catalog.</p>
+        </aside>
+
+        <div class="market-content">
+
+      <section id="radarView" aria-label="Hourly market radar">
+        <div class="radar-heading">
+          <div>
+            <p class="eyebrow">Official hourly market digest</p>
+            <h2>What is moving today</h2>
+            <p id="radarSummary">Loading completed-hour history…</p>
+          </div>
+          <div class="radar-legend"><span>Activity = movement</span><span>Arbitrage = stability + volume</span></div>
+        </div>
+        <section class="radar-kpis" id="radarKpis" aria-label="Market summary">
+          <article class="radar-kpi"><p>Market Pulse</p><strong>—</strong><span>Waiting for hourly data</span></article>
+          <article class="radar-kpi"><p>Best Liquidity</p><strong>—</strong><span>Waiting for hourly data</span></article>
+          <article class="radar-kpi"><p>Volume Spikes</p><strong>—</strong><span>Waiting for hourly data</span></article>
+          <article class="radar-kpi"><p>Falling Prices</p><strong>—</strong><span>Waiting for hourly data</span></article>
+        </section>
+        <section class="radar-controls" aria-label="Radar controls">
+          <div class="field grow">
+            <label for="radarSearchInput">Search markets</label>
+            <input id="radarSearchInput" type="search" placeholder="currency or item name…" />
+          </div>
+          <div class="field">
+            <label for="radarSortInput">Sort by</label>
+            <select id="radarSortInput">
+              <option value="activity" selected>Activity</option>
+              <option value="price">Price: high to low</option>
+              <option value="progression">Game progression</option>
+              <option value="gainers">24h gainers</option>
+              <option value="losers">24h losers</option>
+              <option value="volume">Volume</option>
+              <option value="arbitrage">Arbitrage</option>
+            </select>
+          </div>
+          <div class="field" id="radarSubcategoryField" hidden>
+            <label for="radarSubcategoryInput">Item group</label>
+            <select id="radarSubcategoryInput"><option value="all">All groups</option></select>
+          </div>
+          <label class="check"><input id="radarActiveOnlyInput" type="checkbox" /> Active this hour</label>
+          <div class="radar-view-toggle" role="group" aria-label="Radar display">
+            <button id="radarTableModeButton" type="button" aria-pressed="true">List</button>
+            <button id="radarChartModeButton" type="button" aria-pressed="false">Chart</button>
+          </div>
+          <span class="radar-results" id="radarResultLabel" aria-live="polite"></span>
+        </section>
+        <section class="radar-chart-view" id="radarChartView" hidden>
+          <div class="radar-chart-markets" id="radarChartMarkets"></div>
+          <div class="radar-chart-stage">
+            <div class="radar-chart-title">
+              <div><p class="eyebrow">Hourly range market</p><h3 id="radarChartTitle">Select a market</h3></div>
+              <div id="radarChartMetrics"></div>
+            </div>
+            <div class="radar-chart-canvas" id="radarChartCanvas"><p class="spark-fallback">Select a market to view its chart.</p></div>
+            <p class="radar-chart-note">Binance-style range candles derived from official hourly low–high data. This is still not a tick-level OHLC feed.</p>
+          </div>
+        </section>
+        <section class="table-wrap radar-table-wrap" id="radarListView">
+          <table>
+            <thead><tr>
+              <th scope="col">Item</th>
+              <th scope="col">Signal</th>
+              <th class="right" scope="col">Price now</th>
+              <th scope="col">Trend (24h)</th>
+              <th class="right" scope="col">Liquidity <small>24h volume</small></th>
+              <th scope="col">Risk <small>arbitrage</small></th>
+              <th class="right" scope="col">Action</th>
+            </tr></thead>
+            <tbody id="radarBody"><tr><td colspan="7" class="empty-state">Loading radar…</td></tr></tbody>
+          </table>
+          <div class="mobile-list" id="radarMobile"></div>
+          <button class="radar-load-more" id="radarLoadMoreButton" type="button" hidden>Load more markets</button>
+        </section>
+      </section>
+
+      <div id="booksView" hidden>
 
       <section class="note-panel">
         These are <strong>estimates</strong>, not guaranteed arbitrage. The exit leg may not fill,
@@ -162,6 +265,9 @@
           <div class="mobile-list" id="nonActionableMobile"></div>
         </section>
       </details>
+      </div>
+        </div>
+      </div>
     </main>
 
     <div class="modal-backdrop" id="modalBackdrop" hidden>
@@ -176,6 +282,6 @@
       </dialog>
     </div>
 
-    <script src="app.js?v=11" defer></script>
+    <script type="module" src="app.js?v=19"></script>
   </body>
 </html>

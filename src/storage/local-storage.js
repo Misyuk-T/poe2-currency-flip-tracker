@@ -4,6 +4,8 @@
  */
 
 import { createHistoryStore } from "../server/history-store.js";
+import { createHourlyStore } from "./hourly-store.js";
+import { join } from "node:path";
 
 const EMPTY_SERIES = { all: () => ({}), get: () => [] };
 
@@ -11,12 +13,18 @@ export function createLocalStorage(_config, { dir = null } = {}) {
   /** @type {Map<string, ReturnType<typeof createHistoryStore>>} */
   const stores = new Map();
   let scope = null;
+  let hourlyStore = createHourlyStore();
 
   return {
     mode: "local",
 
     async init(s, anchors) {
       scope = s;
+      const hourlyPath = dir
+        ? join(dir, `hourly-${safe(scope.mode)}-${safe(scope.game)}-${safe(scope.realm)}-${safe(scope.league)}.jsonl`)
+        : null;
+      hourlyStore = createHourlyStore({ filePath: hourlyPath });
+      await hourlyStore.load();
       for (const anchor of anchors) {
         const store = createHistoryStore({ dir, scope: { ...scope, anchor } });
         await store.load();
@@ -30,6 +38,14 @@ export function createLocalStorage(_config, { dir = null } = {}) {
 
     seedSynthetic(anchor, points) {
       stores.get(anchor)?.seed(points);
+    },
+
+    hourly() {
+      return hourlyStore;
+    },
+
+    async recordHourlyDigest(digest) {
+      return hourlyStore.recordDigest(digest);
     },
 
     async recordSuccessfulCycle({ anchors }) {
@@ -46,4 +62,8 @@ export function createLocalStorage(_config, { dir = null } = {}) {
 
     async close() {},
   };
+}
+
+function safe(value) {
+  return String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "none";
 }

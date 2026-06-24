@@ -27,8 +27,12 @@ import { pointFromBooks } from "./history-store.js";
 import { normalizeConstraints, GOLD_MODES, GOLD_MODE_DEFAULT } from "./constraints.js";
 import { validateShortlistCoverage } from "../domain/gold-costs.js";
 import { buildManifest, nameMapFromCatalog } from "../domain/catalog.js";
+import { adaptiveMarketPrice, divineInExalted } from "../domain/market-price-display.js";
 
 const PUBLIC_DIR = fileURLToPath(new URL("../public/", import.meta.url));
+const LIGHTWEIGHT_CHARTS_MODULE = fileURLToPath(
+  new URL("../../node_modules/lightweight-charts/dist/lightweight-charts.standalone.production.mjs", import.meta.url),
+);
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -44,7 +48,7 @@ const MIME = {
  * @param {import("./config.js").AppConfig} config
  * @param {{ provider: any, goldRegistry: any, historyStore?: any }} deps
  */
-export function createApp(config, { provider, goldRegistry, storage = null, logger = () => {}, catalog = null, scheduler = null }) {
+export function createApp(config, { provider, goldRegistry, storage = null, logger = () => {}, catalog = null, scheduler = null, radarService = null }) {
   const store = {
     booksByAnchor: {}, // anchor -> { fetchedAt, anchorId, byTarget }
     fetchedAt: 0,
@@ -72,6 +76,7 @@ export function createApp(config, { provider, goldRegistry, storage = null, logg
     Object.assign(names, catNames);
   }
   const catalogManifest = catalog ? buildManifest(catalog, goldRegistry) : [];
+  const catalogById = new Map(catalogManifest.map((item) => [item.id, item]));
   const coverage = validateShortlistCoverage(goldRegistry, {
     anchorCurrency: config.anchorCurrency,
     shortlist: config.shortlist,
@@ -242,6 +247,7 @@ export function createApp(config, { provider, goldRegistry, storage = null, logg
       trackedByAnchor: Object.fromEntries(
         Object.entries(store.booksByAnchor).map(([anchor, books]) => [anchor, Object.keys(books.byTarget).length]),
       ),
+      radar: radarService?.status() ?? { enabled: false },
     };
   }
 
@@ -289,7 +295,14 @@ export function createApp(config, { provider, goldRegistry, storage = null, logg
           goldModeDefault: GOLD_MODE_DEFAULT,
           rankingModes: RANKING_MODES,
           shortlistCoverage: coverage,
+          features: {
+            liveBooks: config.liveBooksEnabled,
+            workingPrice: true,
+            manualPrice: true,
+            hourlyRadar: true,
+          },
           scheduler: scheduler?.status() ?? { enabled: false },
+          radar: radarService?.status() ?? { enabled: false },
         });
       }
 
@@ -304,6 +317,98 @@ export function createApp(config, { provider, goldRegistry, storage = null, logg
           count: catalogManifest.length,
           items: catalogManifest,
         });
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/radar") {
+        const anchor = config.anchors.includes(url.searchParams.get("anchor"))
+          ? url.searchParams.get("anchor")
+          : config.anchorCurrency;
+        const hot = new Map((radarService?.hotlist() ?? []).map((entry) => [entry.id, entry]));
+        const tracked = (radarService?.radar(anchor) ?? []).map((row) => {
+          const item = catalogById.get(row.target);
+          return {
+            ...row,
+            hotlist: hot.get(row.target) ?? null,
+            category: item?.category ?? null,
+            subcategory: item?.subcategory ?? item?.category ?? null,
+            catalogOrder: item?.catalogOrder ?? 999999,
+            gold: item ? { status: item.status, goldPerUnit: item.goldPerUnit } : { status: "unknown-catalog-item", goldPerUnit: null },
+          };
+        });
+        const trackedIds = new Set(tracked.map((row) => row.target));
+        const missing = catalogManifest
+          .filter((item) => item.id !== anchor && !trackedIds.has(item.id))
+          .map((item) => ({
+            pairId: null,
+            target: item.id,
+            targetName: item.name,
+            category: item.category,
+            subcategory: item.subcategory,
+            catalogOrder: item.catalogOrder,
+            anchor,
+            status: "no-trades-this-hour",
+            samples: 0,
+            latestCompletedHour: null,
+            reference: null,
+            referenceKind: null,
+            low: null,
+            high: null,
+            sparkline24h: [],
+            movement: { h1: null, h3: null, h6: null, h12: null, h24: null },
+            rangePct: null,
+            volatility24h: null,
+            volume: null,
+            volumeAcceleration: null,
+            trendPersistence: null,
+            coverage24h: 0,
+            stale: false,
+            activityScore: null,
+            arbitrageScore: null,
+            hotlist: null,
+            gold: { status: item.status, goldPerUnit: item.goldPerUnit },
+          }));
+        const rawRows = [...tracked, ...missing];
+        const currentDivineInExalted = divineInExalted(tracked, anchor);
+        const rows = rawRows.map((row) => ({
+          ...row,
+          displayPrice: adaptiveMarketPrice(row.reference, {
+            anchor,
+            divineInExalted: currentDivineInExalted,
+          }),
+        }));
+        return json(res, 200, {
+          anchor,
+          units: { divineInExalted: currentDivineInExalted },
+          generatedAt: new Date().toISOString(),
+          source: radarService?.status() ?? null,
+          trackedCount: tracked.length,
+          catalogCount: tracked.length + missing.length,
+          rows,
+        });
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/radar/history") {
+        const anchor = config.anchors.includes(url.searchParams.get("anchor"))
+          ? url.searchParams.get("anchor")
+          : config.anchorCurrency;
+        const pair = url.searchParams.get("pair") ?? "";
+        if (!/^[\p{L}\p{N}-]+\|[\p{L}\p{N}-]+$/u.test(pair)) {
+          return json(res, 400, { error: { code: "invalid-pair", message: "invalid market pair" } });
+        }
+        return json(res, 200, { pair, anchor, series: radarService?.history(pair, anchor) ?? [] });
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/hotlist") {
+        return json(res, 200, {
+          entries: radarService?.hotlist() ?? config.shortlist.map((id) => ({ id, reason: "pinned" })),
+          scheduler: scheduler?.status() ?? { enabled: false },
+        });
+      }
+
+      if (req.method === "GET" && url.pathname === "/vendor/lightweight-charts.mjs") {
+        const body = await readFile(LIGHTWEIGHT_CHARTS_MODULE);
+        res.writeHead(200, { "Content-Type": MIME[".js"], "Cache-Control": "public, max-age=86400" });
+        return res.end(body);
       }
 
       if (req.method === "GET" && url.pathname === "/api/history") {

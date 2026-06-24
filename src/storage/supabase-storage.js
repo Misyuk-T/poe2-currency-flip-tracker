@@ -14,6 +14,7 @@
  */
 
 import { createHistoryStore } from "../server/history-store.js";
+import { createHourlyStore } from "./hourly-store.js";
 
 const EMPTY_SERIES = { all: () => ({}), get: () => [] };
 const PER_TARGET_LIMIT = 600; // points loaded per target at startup
@@ -53,6 +54,7 @@ export function createSupabaseStorage(config, { connect = defaultConnect } = {})
   const stores = new Map();
   let scope = null;
   let sql = null;
+  const hourlyStore = createHourlyStore();
 
   function point(r) {
     return {
@@ -102,6 +104,42 @@ export function createSupabaseStorage(config, { connect = defaultConnect } = {})
         }
         stores.set(anchor, store);
       }
+      try {
+        const [candles, states] = await Promise.all([
+          withTimeout(sql`
+            select extract(epoch from completed_hour) * 1000 as completed_hour,
+                   digest_id, pair_id, base_currency, quote_currency, low_ratio,
+                   high_ratio, reference_ratio, reference_kind, volume, stock, source
+            from hourly_market_candles
+            where game = ${scope.game} and realm = ${scope.realm} and league = ${scope.league}
+              and provider = ${scope.mode} and completed_hour >= now() - interval '30 days'
+            order by completed_hour asc`, OP_TIMEOUT_MS, "hourly history load"),
+          withTimeout(sql`
+            select next_change_id, last_digest_id from cxapi_state
+            where game = ${scope.game} and realm = ${scope.realm} and league = ${scope.league}
+              and provider = ${scope.mode}`, OP_TIMEOUT_MS, "cxapi state load"),
+        ]);
+        hourlyStore.seed(candles.map((r) => ({
+          league: scope.league,
+          completedHour: Number(r.completed_hour),
+          digestId: Number(r.digest_id),
+          pairId: r.pair_id,
+          base: r.base_currency,
+          quote: r.quote_currency,
+          low: r.low_ratio == null ? null : Number(r.low_ratio),
+          high: r.high_ratio == null ? null : Number(r.high_ratio),
+          reference: r.reference_ratio == null ? null : Number(r.reference_ratio),
+          referenceKind: r.reference_kind,
+          volume: typeof r.volume === "string" ? JSON.parse(r.volume) : r.volume,
+          stock: typeof r.stock === "string" ? JSON.parse(r.stock) : r.stock,
+          source: r.source,
+        })), {
+          cursor: states[0]?.next_change_id == null ? null : Number(states[0].next_change_id),
+          lastDigestId: states[0]?.last_digest_id == null ? null : Number(states[0].last_digest_id),
+        });
+      } catch (err) {
+        process.stderr.write(`[poe2-flip] hourly storage load failed: ${err.message}\n`);
+      }
     },
 
     series(anchor) {
@@ -110,6 +148,49 @@ export function createSupabaseStorage(config, { connect = defaultConnect } = {})
 
     seedSynthetic(anchor, points) {
       stores.get(anchor)?.seed(points);
+    },
+
+    hourly() {
+      return hourlyStore;
+    },
+
+    async recordHourlyDigest(digest) {
+      const inserted = await hourlyStore.recordDigest(digest);
+      if (!sql) return inserted;
+      try {
+        const rows = digest.candles.map((c) => ({
+          game: scope.game,
+          realm: scope.realm,
+          league: scope.league,
+          provider: scope.mode,
+          completed_hour: new Date(c.completedHour),
+          digest_id: String(c.digestId),
+          pair_id: c.pairId,
+          base_currency: c.base,
+          quote_currency: c.quote,
+          low_ratio: c.low,
+          high_ratio: c.high,
+          reference_ratio: c.reference,
+          reference_kind: c.referenceKind,
+          volume: JSON.stringify(c.volume),
+          stock: JSON.stringify(c.stock),
+          source: c.source,
+        }));
+        await withTimeout(sql.begin(async (tx) => {
+          if (rows.length) await tx`insert into hourly_market_candles ${tx(rows)} on conflict do nothing`;
+          await tx`
+            insert into cxapi_state (game, realm, league, provider, next_change_id, last_digest_id, updated_at)
+            values (${scope.game}, ${scope.realm}, ${scope.league}, ${scope.mode},
+                    ${digest.nextChangeId ?? null}, ${digest.digestId ?? null}, now())
+            on conflict (game, realm, league, provider) do update set
+              next_change_id = excluded.next_change_id,
+              last_digest_id = excluded.last_digest_id,
+              updated_at = excluded.updated_at`;
+        }), OP_TIMEOUT_MS, "recordHourlyDigest");
+      } catch (err) {
+        process.stderr.write(`[poe2-flip] storage recordHourlyDigest failed: ${err.message}\n`);
+      }
+      return inserted;
     },
 
     async recordSuccessfulCycle({ cycleId, startedAt, durationMs, anchors }) {

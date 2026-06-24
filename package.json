@@ -10,6 +10,9 @@
   "scripts": {
     "start": "node src/server/index.js",
     "dev": "node --watch src/server/index.js",
+    "web:dev": "next dev apps/web",
+    "web:build": "next build apps/web",
+    "web:start": "next start apps/web",
     "test": "node --test",
     "catalog:build": "node scripts/build-catalog.mjs",
     "catalog:metadata": "node scripts/build-catalog.mjs --no-icons",
@@ -18,5 +21,11 @@
   "optionalDependencies": {
     "postgres": "^3.4.5"
   },
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "dependencies": {
+    "lightweight-charts": "^5.2.0",
+    "next": "^16.2.9",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  }
 }

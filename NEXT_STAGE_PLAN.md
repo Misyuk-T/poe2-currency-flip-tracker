@@ -3,7 +3,7 @@
 Agreed roadmap. We execute sequentially, with independent Claude review,
 parallel where they don't conflict. Rules across all phases:
 
-- Do **not** commit or push.
+- **Commit and push** each completed step (keep `main` up to date).
 - Never fabricate data (catalog, gold costs, freshness, prices, probabilities).
 - Every step ships with tests; README updated at the end of each phase.
 - Storage: **Supabase** (project `exalted-flip`) behind a `StorageProvider`

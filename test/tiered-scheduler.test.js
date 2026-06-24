@@ -34,11 +34,36 @@ test("C2: hot runs every tick while warm/cold are interval-gated and rotate", ()
   scheduler.commit(first);
 
   const hotOnly = scheduler.next({ at: 50 });
-  assert.deepEqual(hotOnly, { targets: ["hot"], tiers: ["hot"], plannedAt: 50 });
+  assert.deepEqual(hotOnly.targets, ["hot"]);
+  assert.deepEqual(hotOnly.tiers, ["hot"]);
+  assert.equal(hotOnly.plannedAt, 50);
 
   const warmAgain = scheduler.next({ at: 101 });
   assert.deepEqual(warmAgain.tiers, ["hot", "warm"]);
   assert.notEqual(warmAgain.targets[1], first.targets[1], "warm slice should rotate");
+});
+
+test("C2b: request budget prioritizes hot and defers warm/cold without exceeding limit", () => {
+  const scheduler = createTieredScheduler({
+    hotTargets: ["h1", "h2"],
+    candidates: ["h1", "h2", "w1", "w2", "w3", "c1", "c2", "c3"],
+    warmSize: 2,
+    coldSize: 2,
+    maxRequests: 3,
+    requestCost: (targets) => targets.length,
+  });
+  const plan = scheduler.next({ at: 1 });
+  assert.deepEqual(plan.targets.slice(0, 2), ["h1", "h2"]);
+  assert.equal(plan.budget.estimated, 3);
+  assert.ok(plan.budget.deferred.length > 0);
+  assert.ok(plan.targets.length <= 3);
+});
+
+test("C2b: automatic hotlist can update without rebuilding scheduler", () => {
+  const scheduler = createTieredScheduler({ hotTargets: ["old"], candidates: ["new"] });
+  scheduler.updateHotTargets(["new"]);
+  assert.equal(scheduler.tierOf("new"), "hot");
+  assert.equal(scheduler.tierOf("old"), null);
 });
 
 test("C2: a failed/uncommitted plan is retried instead of losing its slice", () => {

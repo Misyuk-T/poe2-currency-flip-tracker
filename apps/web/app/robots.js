@@ -1,0 +1,11 @@
+import { siteUrl } from "../lib/market.js";
+
+export default function robots() {
+  return {
+    rules: {
+      userAgent: "*",
+      allow: "/",
+    },
+    sitemap: `${siteUrl}/sitemap.xml`,
+  };
+}

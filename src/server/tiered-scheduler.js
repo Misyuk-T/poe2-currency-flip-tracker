@@ -31,9 +31,11 @@ export function createTieredScheduler({
   coldSize = 4,
   warmEveryMs = 15 * 60 * 1000,
   coldEveryMs = 60 * 60 * 1000,
+  maxRequests = Infinity,
+  requestCost = (targets) => targets.length,
   now = () => Date.now(),
 } = {}) {
-  const hot = unique(hotTargets);
+  let hot = unique(hotTargets);
   const rest = unique(candidates).filter((id) => !hot.includes(id));
   // The first third of the catalog-derived pool is warm. This is deterministic
   // and intentionally replaceable by cxapi activity ordering when OAuth access
@@ -41,38 +43,57 @@ export function createTieredScheduler({
   const warmCut = Math.ceil(rest.length / 3);
   const warm = rest.slice(0, warmCut);
   const cold = rest.slice(warmCut);
-  const hotSet = new Set(hot);
+  let hotSet = new Set(hot);
   const warmSet = new Set(warm);
   const coldSet = new Set(cold);
   let warmCursor = 0;
   let coldCursor = 0;
   let lastWarmAt = 0;
   let lastColdAt = 0;
+  let lastPlan = null;
 
   function next({ force = false, at = now() } = {}) {
     const tiers = ["hot"];
-    const targets = [...hot];
+    const targets = [];
+    const deferred = [];
+    const addWithinBudget = (id) => {
+      if (targets.includes(id)) return true;
+      const trial = [...targets, id];
+      if (requestCost(trial) > maxRequests) {
+        deferred.push(id);
+        return false;
+      }
+      targets.push(id);
+      return true;
+    };
+    for (const id of hot) addWithinBudget(id);
+    let warmPicked = 0;
+    let coldPicked = 0;
     if (force || lastWarmAt === 0 || at - lastWarmAt >= warmEveryMs) {
       const picked = rotate(warm, warmCursor, warmSize);
-      targets.push(...picked);
-      tiers.push("warm");
+      for (const id of picked) if (addWithinBudget(id)) warmPicked++;
+      if (warmPicked) tiers.push("warm");
     }
     if (force || lastColdAt === 0 || at - lastColdAt >= coldEveryMs) {
       const picked = rotate(cold, coldCursor, coldSize);
-      targets.push(...picked);
-      tiers.push("cold");
+      for (const id of picked) if (addWithinBudget(id)) coldPicked++;
+      if (coldPicked) tiers.push("cold");
     }
-    return { targets: unique(targets), tiers, plannedAt: at };
+    lastPlan = {
+      targets: unique(targets), tiers, plannedAt: at, warmPicked, coldPicked,
+      budget: { limit: Number.isFinite(maxRequests) ? maxRequests : null, estimated: requestCost(targets), deferred },
+    };
+    return lastPlan;
   }
 
   /** Advance cursors only after the whole multi-anchor cycle committed. */
   function commit(plan) {
     if (plan?.tiers?.includes("warm")) {
-      warmCursor = advance(warmCursor, Math.min(warmSize, warm.length), warm.length);
+      warmCursor = advance(warmCursor, plan.warmPicked ?? Math.min(warmSize, warm.length), warm.length);
       lastWarmAt = plan.plannedAt;
     }
     if (plan?.tiers?.includes("cold")) {
-      coldCursor = advance(coldCursor, Math.min(coldSize, cold.length), cold.length);
+      coldCursor = advance(coldCursor, plan.coldPicked ?? Math.min(coldSize, cold.length), cold.length);
       lastColdAt = plan.plannedAt;
     }
   }
@@ -86,7 +107,13 @@ export function createTieredScheduler({
       intervalsMs: { hot: null, warm: warmEveryMs, cold: coldEveryMs },
       cursors: { warm: warmCursor, cold: coldCursor },
       lastRunAt: { warm: lastWarmAt || null, cold: lastColdAt || null },
+      requestBudget: { limit: Number.isFinite(maxRequests) ? maxRequests : null, lastPlan: lastPlan?.budget ?? null },
     };
+  }
+
+  function updateHotTargets(nextHot) {
+    hot = unique(nextHot);
+    hotSet = new Set(hot);
   }
 
   function tierOf(id) {
@@ -96,7 +123,7 @@ export function createTieredScheduler({
     return null;
   }
 
-  return { next, commit, status, tierOf };
+  return { next, commit, status, tierOf, updateHotTargets };
 }
 
 function rotate(items, cursor, count) {

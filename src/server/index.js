@@ -13,11 +13,13 @@ import { catalogTargets } from "./snapshot.js";
 import { createStorage } from "../storage/storage-provider.js";
 import { createFixtureProvider } from "../providers/fixture-provider.js";
 import { createGggExchangeProvider } from "../providers/ggg-exchange-provider.js";
+import { createGggCxapiProvider } from "../providers/ggg-cxapi-provider.js";
 import { createGoldRegistry, validateShortlistCoverage } from "../domain/gold-costs.js";
 import { POE2_GOLD_COSTS } from "../data/gold-costs-poe2.js";
 import { seedFixtureHistory } from "../data/fixtures/exchange-fixtures.js";
-import { loadCatalog } from "../domain/catalog.js";
+import { loadCatalog, nameMapFromCatalog } from "../domain/catalog.js";
 import { createTieredScheduler, marketCandidates, estimateRequests } from "./tiered-scheduler.js";
+import { createRadarService } from "./radar-service.js";
 
 // Load .env (if present) before reading config. Real env vars always win.
 loadEnv({ path: fileURLToPath(new URL("../../.env", import.meta.url)) });
@@ -84,6 +86,12 @@ async function main() {
     categories: config.marketCategories,
     exclude: config.anchors,
   });
+  const requestCost = (targets) =>
+    config.anchors.reduce(
+      (sum, anchor) =>
+        sum + estimateRequests(catalogTargets(anchor, targets, config.anchors).length, 1, config.batchSize),
+      0,
+    );
   const scheduler =
     provider.mode === "live" && config.schedulerEnabled
       ? createTieredScheduler({
@@ -93,6 +101,8 @@ async function main() {
           coldSize: config.coldBatchSize,
           warmEveryMs: config.warmIntervalMs,
           coldEveryMs: config.coldIntervalMs,
+          maxRequests: config.exchangeRequestBudget,
+          requestCost,
         })
       : null;
   if (scheduler) {
@@ -107,7 +117,24 @@ async function main() {
       `scheduler: ${first.universeSize} candidates; first-cycle budget ${firstRequestBudget} requests`,
     );
   }
-  const app = createApp(config, { provider, goldRegistry, storage, logger, catalog, scheduler });
+  const cxapiProvider = createGggCxapiProvider(config);
+  const radarService = createRadarService({
+    config,
+    storage,
+    cxapiProvider,
+    names: nameMapFromCatalog(catalog),
+    fixtureItems: catalog.items,
+    fixtureMode: provider.mode === "fixture",
+    onHotlist: (entries) => scheduler?.updateHotTargets(entries.map((entry) => entry.id)),
+  });
+  await radarService.init();
+  if (provider.mode === "live" && cxapiProvider.configured) {
+    const catchingUp = storage.hourly().state().cursor != null || config.cxapiStartId != null;
+    await radarService.refresh({ maxDigests: catchingUp ? config.cxapiMaxBackfillHours : 1 });
+  }
+  log(`radar: ${radarService.status().sourceMode}, ${radarService.status().pairCount} pairs`);
+
+  const app = createApp(config, { provider, goldRegistry, storage, logger, catalog, scheduler, radarService });
 
   const server = createServer(app.handler);
   // Request timeouts so a slow/hung client can't tie up a connection. Reads are
@@ -142,9 +169,23 @@ async function main() {
   };
   scheduleNext();
 
+  // Hourly digests are checked independently from five-minute executable books.
+  let radarTimer = null;
+  const scheduleRadar = () => {
+    const now = Date.now();
+    const nextBoundary = Math.ceil(now / 3600_000) * 3600_000 + 30_000;
+    radarTimer = setTimeout(async () => {
+      await radarService.refresh();
+      scheduleRadar();
+    }, Math.max(60_000, nextBoundary - now));
+    radarTimer.unref?.();
+  };
+  scheduleRadar();
+
   for (const sig of ["SIGINT", "SIGTERM"]) {
     process.on(sig, async () => {
       if (timer) clearTimeout(timer);
+      if (radarTimer) clearTimeout(radarTimer);
       await storage.close().catch(() => {});
       server.close(() => process.exit(0));
     });

@@ -87,6 +87,20 @@ export function loadConfig(env = process.env) {
     warmIntervalMs: posInt(env.WARM_INTERVAL_MS, 15 * 60 * 1000, 60_000),
     coldIntervalMs: posInt(env.COLD_INTERVAL_MS, 60 * 60 * 1000, 60_000),
     maxTrackedTargets: posInt(env.MAX_TRACKED_TARGETS, 250, 10),
+
+    // --- C2b: official hourly Currency Exchange API / Market Radar ---
+    cxapiAccessToken: env.CXAPI_ACCESS_TOKEN ?? null,
+    cxapiStartId: env.CXAPI_START_ID ? posInt(env.CXAPI_START_ID, 0, 1) : null,
+    cxapiTimeoutMs: posInt(env.CXAPI_TIMEOUT_MS, 10_000, 1000),
+    cxapiMaxBackfillHours: posInt(env.CXAPI_MAX_BACKFILL_HOURS, 48, 1),
+    radarMaxHotTargets: posInt(env.RADAR_MAX_HOT_TARGETS, 8, 1),
+    radarMinTenureMs: posInt(env.RADAR_MIN_TENURE_MS, 2 * 3600_000, 60_000),
+    exchangeRequestBudget: posInt(env.EXCHANGE_REQUEST_BUDGET, 24, 1),
+
+    // MVP product surface: official hourly market digest + user-entered current
+    // price. The older trade-site book engine remains available behind this
+    // flag for backlog/paid experiments, but is not part of the default UI.
+    liveBooksEnabled: (env.ENABLE_LIVE_BOOKS ?? "false").toLowerCase() === "true",
   };
 }
 

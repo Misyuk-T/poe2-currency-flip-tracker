@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 
 import { createStorage } from "../src/storage/storage-provider.js";
 import { createSupabaseStorage } from "../src/storage/supabase-storage.js";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 const scope = { mode: "live", game: "poe2", realm: "poe2", league: "L" };
 const pt = (target, t) => ({
@@ -30,6 +33,13 @@ test("local storage records and reads market points per anchor (isolated)", asyn
   });
 
   assert.equal(storage.series("exalted").get("divine").length, 1);
+
+  await storage.recordHourlyDigest({
+    digestId: 100,
+    nextChangeId: 200,
+    candles: [{ league: "L", pairId: "divine|exalted", completedHour: 100_000, digestId: 100 }],
+  });
+  assert.equal(storage.hourly().state().cursor, 200);
   assert.equal(storage.series("divine").get("exalted").length, 1);
   // an anchor only sees its own targets
   assert.deepEqual(Object.keys(storage.series("exalted").all()), ["divine"]);
@@ -78,6 +88,14 @@ test("supabase storage is best-effort: a DB outage updates memory and never thro
   });
   assert.equal(storage.series("exalted").get("divine").length, 1);
 
+  // Hourly writes follow the same memory-first, best-effort contract.
+  await storage.recordHourlyDigest({
+    digestId: 100,
+    nextChangeId: 200,
+    candles: [{ league: "L", pairId: "divine|exalted", completedHour: 100_000, digestId: 100 }],
+  });
+  assert.equal(storage.hourly().state().cursor, 200);
+
   // recordFailedCycle must also swallow the DB error.
   await storage.recordFailedCycle({
     cycleId: "c2",
@@ -101,4 +119,23 @@ test("recordFailedCycle is a no-op for local storage (no throw)", async () => {
     error: { code: "x", message: "y" },
   });
   assert.ok(true);
+});
+
+test("hourly local files isolate fixture data from live radar", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "poe-hourly-scope-"));
+  try {
+    const fixture = createStorage({ storageMode: "local" }, { dir });
+    await fixture.init({ ...scope, mode: "fixture" }, ["exalted"]);
+    await fixture.recordHourlyDigest({
+      digestId: 100,
+      nextChangeId: 200,
+      candles: [{ league: "L", pairId: "divine|exalted", completedHour: 100_000, digestId: 100 }],
+    });
+    const live = createStorage({ storageMode: "local" }, { dir });
+    await live.init({ ...scope, mode: "live" }, ["exalted"]);
+    assert.equal(live.hourly().state().candleCount, 0);
+    assert.equal(live.hourly().state().cursor, null);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

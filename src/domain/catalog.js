@@ -13,6 +13,7 @@
 
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { catalogTaxonomy } from "./catalog-taxonomy.js";
 
 const CATALOG_PATH = fileURLToPath(new URL("../data/catalog-poe2.json", import.meta.url));
 
@@ -32,10 +33,13 @@ export async function loadCatalog() {
 export function buildManifest(catalog, goldRegistry) {
   return (catalog.items ?? []).map((it) => {
     const hasGold = goldRegistry.has?.(it.id) ?? false;
+    const taxonomy = catalogTaxonomy(it);
     return {
       id: it.id,
       name: it.name,
       category: it.category,
+      subcategory: taxonomy.subcategory,
+      catalogOrder: taxonomy.catalogOrder,
       icon: `icons/${it.id}.png`, // local path; UI falls back if not downloaded
       goldPerUnit: hasGold ? goldRegistry.goldPerUnit(it.id) : null,
       status: hasGold ? "supported" : "unknown-gold-cost",

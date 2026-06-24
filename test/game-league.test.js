@@ -59,3 +59,24 @@ test("the active league is always present even if omitted from LEAGUES", () => {
   const c = loadConfig({ LEAGUE: "Active", LEAGUES: "Other" });
   assert.ok(c.leagues.includes("Active"));
 });
+
+test("live book UI is feature-flagged off for the hourly/manual MVP", async () => {
+  const app = createApp(loadConfig({}), {
+    provider: createFixtureProvider(),
+    goldRegistry,
+  });
+  const r = mockRes();
+  await app.handler(req("/api/config"), r);
+  assert.equal(r.body.features.hourlyRadar, true);
+  assert.equal(r.body.features.manualPrice, true);
+  assert.equal(r.body.features.workingPrice, true);
+  assert.equal(r.body.features.liveBooks, false);
+
+  const enabled = mockRes();
+  const enabledApp = createApp(loadConfig({ ENABLE_LIVE_BOOKS: "true" }), {
+    provider: createFixtureProvider(),
+    goldRegistry,
+  });
+  await enabledApp.handler(req("/api/config"), enabled);
+  assert.equal(enabled.body.features.liveBooks, true);
+});

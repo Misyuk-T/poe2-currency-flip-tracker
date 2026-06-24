@@ -24,6 +24,11 @@ create table if not exists public.hourly_market_candles (
 create index if not exists hourly_market_candles_recent_idx
   on public.hourly_market_candles (game, realm, league, provider, completed_hour desc);
 
+-- Retention deletes filter on completed_hour alone; give them a dedicated index
+-- (the recent_idx above leads with the scope columns, so it can't serve them).
+create index if not exists hourly_market_candles_retention_idx
+  on public.hourly_market_candles (completed_hour);
+
 create table if not exists public.cxapi_state (
   game text not null,
   realm text not null,
@@ -38,6 +43,5 @@ create table if not exists public.cxapi_state (
 alter table public.hourly_market_candles enable row level security;
 alter table public.cxapi_state enable row level security;
 
--- Keep 30 days: enough for the UI and bounded startup hydration.
--- Schedule this statement with pg_cron if that extension is enabled:
--- delete from public.hourly_market_candles where completed_hour < now() - interval '30 days';
+-- Retention (30-day) is handled by extending public.prune_old_storage in
+-- 003_hourly_market_radar_retention.sql, driven by the existing pg_cron job.

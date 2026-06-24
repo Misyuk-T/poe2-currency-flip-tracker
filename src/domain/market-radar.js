@@ -35,6 +35,22 @@ export function buildMarketRadar(candlesByPair, { anchor, now = Date.now(), name
   return rows.sort((a, b) => (b.activityScore ?? -1) - (a.activityScore ?? -1));
 }
 
+/**
+ * Collapse per-anchor radar rows for the same target to the single most
+ * "interesting" row (highest activity/arbitrage). Used to derive one hotlist
+ * across all anchors.
+ */
+export function dedupeRadarRows(rows) {
+  const byTarget = new Map();
+  for (const row of rows) {
+    const old = byTarget.get(row.target);
+    const score = Math.max(row.activityScore ?? -1, row.arbitrageScore ?? -1);
+    const oldScore = Math.max(old?.activityScore ?? -1, old?.arbitrageScore ?? -1);
+    if (!old || score > oldScore) byTarget.set(row.target, row);
+  }
+  return [...byTarget.values()];
+}
+
 export function radarMetrics(series, { now = Date.now(), minSamples = 3 } = {}) {
   const latest = series[series.length - 1];
   // A movement over N hours needs both endpoints: the latest candle and the

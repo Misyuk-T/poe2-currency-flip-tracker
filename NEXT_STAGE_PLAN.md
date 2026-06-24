@@ -68,6 +68,48 @@ tiers and provider rate-limit headers, never rate-limit evasion.
   1/3/6h → max adverse move → simulated profit → gold efficiency. No "model
   finds profitable flips" claim without this.
 
+## Phase D — auth + hosting (serverless, "Variant B")
+
+Goal: **no always-on Node host in production.** Compute moves to Vercel; Supabase
+stays the durable data layer (DB/Auth/Storage). Decided with a codex architecture
+review (2026-06-24). The always-on Node server (`src/server/index.js`) is kept
+only for local fixture/live-book dev.
+
+Decisions:
+- **Compute substrate: Vercel Cron + Next.js Route Handlers (Node runtime).** All
+  domain code is reused unchanged from `src/` (single ESM package). Supabase Edge
+  Functions (Deno) were rejected for the MVP to avoid a runtime port.
+- **Server-side opportunities (executable book / VWAP) is DEFERRED.** The full
+  order-book ladder is never persisted (only summary `market_points`), and the
+  source is an undocumented, non-approved endpoint. The radar surface (official
+  hourly digest, fully Postgres-backed) ships serverless first. Opportunities stay
+  available only in local self-host dev (`ENABLE_LIVE_BOOKS`).
+- **Reads stay server-side; RLS stays deny-all.** The browser never queries
+  Supabase directly — Next Route Handlers read Postgres via the server-only
+  connection. No anon read policies.
+- **Scheduling:** one `CRON_SECRET`-protected `/api/cron/radar` route on Vercel
+  Cron (hourly, just after the hour). Cursor catch-up + single-flight use a
+  Postgres **advisory lock** + transactional cursor update, never process memory.
+- **Drop in-process state:** the circuit breaker and per-IP rate limiter were
+  process-bound; a scheduled function just fails and retries next tick. Rate limit
+  (if needed) moves to the CDN/edge layer.
+- **Auth is still deferred** (per the original brief). Supabase Auth (Discord +
+  Google OAuth) is the chosen mechanism; its trigger is **C3** (the paper-trade
+  journal is the first per-user data — that is when per-user RLS policies land).
+  Billing (~USD 5) would be Stripe + a webhook writing subscription status to
+  Postgres, gated by RLS — not a Supabase feature.
+
+Implementation phases (each ships with tests + a codex review):
+- D1. Serverless radar core: pure payload builder extracted from `app.js` +
+  per-request Postgres repository (no startup hydration).
+- D2. Next.js read routes (`/api/{config,radar,radar/history,hotlist,status}`);
+  frontend points at same-origin `/api` instead of the `/backend` proxy.
+- D3. `/api/cron/radar` ingestion (advisory lock + transactional cursor +
+  `ingestion_runs` observability); `vercel.json` schedule.
+- D4. Retire the always-on Node server from production; README + deploy docs.
+- D5. (Later, gated) revisit serverless opportunities once the GGG endpoint is
+  approved: persist latest ladders, recompute reads from them.
+
 ---
 
 ## Status

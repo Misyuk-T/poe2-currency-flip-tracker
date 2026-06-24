@@ -1,5 +1,5 @@
 import { normalizeCxDigest, candleForAnchor } from "../domain/cx-market.js";
-import { buildMarketRadar } from "../domain/market-radar.js";
+import { buildMarketRadar, dedupeRadarRows } from "../domain/market-radar.js";
 import { buildHotlist } from "../domain/hotlist.js";
 import { buildCxapiFixtures } from "../data/fixtures/cxapi-fixtures.js";
 
@@ -32,7 +32,7 @@ export function createRadarService({ config, storage, cxapiProvider, names = {},
     rowsByAnchor = Object.fromEntries(
       config.anchors.map((anchor) => [anchor, buildMarketRadar(all, { anchor, names, now: Date.now() })]),
     );
-    const union = dedupeRadar(Object.values(rowsByAnchor).flat());
+    const union = dedupeRadarRows(Object.values(rowsByAnchor).flat());
     hotlist = buildHotlist({
       pinned: config.shortlist,
       radar: union,
@@ -115,15 +115,4 @@ export function createRadarService({ config, storage, cxapiProvider, names = {},
   }
 
   return { init, refresh, radar, history, hotlist: () => [...hotlist], status, recompute };
-}
-
-function dedupeRadar(rows) {
-  const byTarget = new Map();
-  for (const row of rows) {
-    const old = byTarget.get(row.target);
-    const score = Math.max(row.activityScore ?? -1, row.arbitrageScore ?? -1);
-    const oldScore = Math.max(old?.activityScore ?? -1, old?.arbitrageScore ?? -1);
-    if (!old || score > oldScore) byTarget.set(row.target, row);
-  }
-  return [...byTarget.values()];
 }

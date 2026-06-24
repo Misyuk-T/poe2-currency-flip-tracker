@@ -27,7 +27,7 @@ import { pointFromBooks } from "./history-store.js";
 import { normalizeConstraints, GOLD_MODES, GOLD_MODE_DEFAULT } from "./constraints.js";
 import { validateShortlistCoverage } from "../domain/gold-costs.js";
 import { buildManifest, nameMapFromCatalog } from "../domain/catalog.js";
-import { adaptiveMarketPrice, divineInExalted } from "../domain/market-price-display.js";
+import { buildRadarResponse } from "../domain/radar-payload.js";
 
 const PUBLIC_DIR = fileURLToPath(new URL("../public/", import.meta.url));
 const LIGHTWEIGHT_CHARTS_MODULE = fileURLToPath(
@@ -323,68 +323,19 @@ export function createApp(config, { provider, goldRegistry, storage = null, logg
         const anchor = config.anchors.includes(url.searchParams.get("anchor"))
           ? url.searchParams.get("anchor")
           : config.anchorCurrency;
-        const hot = new Map((radarService?.hotlist() ?? []).map((entry) => [entry.id, entry]));
-        const tracked = (radarService?.radar(anchor) ?? []).map((row) => {
-          const item = catalogById.get(row.target);
-          return {
-            ...row,
-            hotlist: hot.get(row.target) ?? null,
-            category: item?.category ?? null,
-            subcategory: item?.subcategory ?? item?.category ?? null,
-            catalogOrder: item?.catalogOrder ?? 999999,
-            gold: item ? { status: item.status, goldPerUnit: item.goldPerUnit } : { status: "unknown-catalog-item", goldPerUnit: null },
-          };
-        });
-        const trackedIds = new Set(tracked.map((row) => row.target));
-        const missing = catalogManifest
-          .filter((item) => item.id !== anchor && !trackedIds.has(item.id))
-          .map((item) => ({
-            pairId: null,
-            target: item.id,
-            targetName: item.name,
-            category: item.category,
-            subcategory: item.subcategory,
-            catalogOrder: item.catalogOrder,
+        return json(
+          res,
+          200,
+          buildRadarResponse({
+            radarRows: radarService?.radar(anchor) ?? [],
+            hotlistEntries: radarService?.hotlist() ?? [],
+            catalogManifest,
+            catalogById,
             anchor,
-            status: "no-trades-this-hour",
-            samples: 0,
-            latestCompletedHour: null,
-            reference: null,
-            referenceKind: null,
-            low: null,
-            high: null,
-            sparkline24h: [],
-            movement: { h1: null, h3: null, h6: null, h12: null, h24: null },
-            rangePct: null,
-            volatility24h: null,
-            volume: null,
-            volumeAcceleration: null,
-            trendPersistence: null,
-            coverage24h: 0,
-            stale: false,
-            activityScore: null,
-            arbitrageScore: null,
-            hotlist: null,
-            gold: { status: item.status, goldPerUnit: item.goldPerUnit },
-          }));
-        const rawRows = [...tracked, ...missing];
-        const currentDivineInExalted = divineInExalted(tracked, anchor);
-        const rows = rawRows.map((row) => ({
-          ...row,
-          displayPrice: adaptiveMarketPrice(row.reference, {
-            anchor,
-            divineInExalted: currentDivineInExalted,
+            source: radarService?.status() ?? null,
+            now: Date.now(),
           }),
-        }));
-        return json(res, 200, {
-          anchor,
-          units: { divineInExalted: currentDivineInExalted },
-          generatedAt: new Date().toISOString(),
-          source: radarService?.status() ?? null,
-          trackedCount: tracked.length,
-          catalogCount: tracked.length + missing.length,
-          rows,
-        });
+        );
       }
 
       if (req.method === "GET" && url.pathname === "/api/radar/history") {

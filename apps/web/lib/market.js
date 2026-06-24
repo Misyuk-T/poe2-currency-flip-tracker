@@ -1,5 +1,8 @@
 export const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-export const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
+// Same-origin by default: the hosted app calls its own Next /api/* route
+// handlers. Override with NEXT_PUBLIC_API_BASE_URL=/backend for local dev
+// against the always-on Node server.
+export const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 export const popularCurrencies = [
   { id: "divine", name: "Divine Orb", summary: "High-value anchor market for larger flips and overnight price checks." },
@@ -22,8 +25,14 @@ export function titleize(id) {
     .join(" ");
 }
 
-export function iconUrl(id) {
-  return `${apiBaseUrl}/icons/${encodeURIComponent(id)}.png`;
+// GGG item art is not committed (licensing is deferred per the project brief)
+// and the Next app does not serve per-item icons, so every icon currently
+// resolves to a neutral committed glyph served from apps/web/public/icons.
+// When the art pipeline + licensing land, restore per-id URLs here.
+export const fallbackIconUrl = "/icons/_fallback.svg";
+
+export function iconUrl() {
+  return fallbackIconUrl;
 }
 
 export function formatNumber(value, { maximumFractionDigits = 2, minimumFractionDigits = 0 } = {}) {

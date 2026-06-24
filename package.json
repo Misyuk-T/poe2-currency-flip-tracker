@@ -18,13 +18,11 @@
     "catalog:metadata": "node scripts/build-catalog.mjs --no-icons",
     "catalog:icons:missing": "node scripts/build-catalog.mjs --missing-icons"
   },
-  "optionalDependencies": {
-    "postgres": "^3.4.5"
-  },
   "license": "UNLICENSED",
   "dependencies": {
     "lightweight-charts": "^5.2.0",
     "next": "^16.2.9",
+    "postgres": "^3.4.5",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   }

@@ -109,7 +109,7 @@ function chartModel(summary) {
     latest,
     latestY: {
       high: y(latest.high),
-      reference: y(latest.reference),
+      mid: y(latest.reference),
       low: y(latest.low),
     },
   };

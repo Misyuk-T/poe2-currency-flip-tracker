@@ -81,8 +81,12 @@ export default function MarketDashboard() {
       .then((data) => {
         if (cancelled) return;
         setRadar(data);
-        const first = data.rows?.find((row) => row.pairId && row.status !== "no-trades-this-hour");
-        setSelectedPair(first?.pairId ?? null);
+        const tradable = (data.rows ?? []).filter((row) => row.pairId && row.status !== "no-trades-this-hour");
+        // Deep-link from the SEO currency pages: /poe2?currency=divine preselects
+        // that market if it's tradable this hour, else fall back to the first row.
+        const wanted = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("currency") : null;
+        const preferred = wanted ? tradable.find((row) => row.target === wanted) : null;
+        setSelectedPair((preferred ?? tradable[0])?.pairId ?? null);
         setStatus("ready");
       })
       .catch((error) => {

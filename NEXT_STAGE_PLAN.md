@@ -110,6 +110,11 @@ Implementation phases (each ships with tests + a codex review):
 - D5. (Later, gated) revisit serverless opportunities once the GGG endpoint is
   approved: persist latest ladders, recompute reads from them.
 
+**Status:** D1–D4 shipped and live in production (Vercel + Supabase). The radar
+read path and the hourly pg_cron→/api/cron/radar ingestion are verified end-to-end
+(fixture data). Remaining: D5 (gated on the cxapi OAuth approval) and the
+follow-ups noted below.
+
 ---
 
 ## Status

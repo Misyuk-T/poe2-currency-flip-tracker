@@ -53,7 +53,47 @@ architecture level, not patched in the browser:
 | profit = `(sell - buy) / buy` of best listing | executable VWAP swept across book depth for a requested quantity |
 | gold ignored | versioned per-item gold model affects affordability and every metric |
 
-## Architecture
+## Production architecture (serverless: Vercel + Supabase)
+
+Production does **not** run the always-on Node server. It is split:
+
+- **Frontend + API — Vercel (Next.js, `apps/web/`).** SEO pages are static; the
+  Market Radar dashboard is a client component that calls **same-origin** Next
+  Route Handlers under `/api/*` (`radar`, `radar/history`, `hotlist`, `config`,
+  `status`). They run on the Node runtime and read Postgres with a bounded,
+  per-request query — no in-memory snapshot, scheduler, or circuit breaker. The
+  build is driven by the root `vercel.json` (`next build apps/web`).
+- **Data — Supabase Postgres.** `hourly_market_candles` + `cxapi_state` (radar),
+  `snapshot_runs` + `market_points` (legacy books). RLS is deny-all; only the
+  server-side connection (Supavisor transaction pooler, port `6543`) touches the
+  tables. Browsers never query Supabase directly.
+- **Ingestion — Supabase pg_cron + pg_net.** Hourly, `pg_cron` POSTs
+  `/api/cron/radar` (Bearer `CRON_SECRET`, read from Vault) which writes one
+  completed hour (fixture synth, or live `cxapi` catch-up). Idempotent
+  (`on conflict do nothing`) + monotonic cursor → no distributed lock needed.
+  Migration `004_radar_ingest_cron.sql` schedules it.
+
+The always-on server (`src/server/index.js`) is kept for **local development and
+self-hosting** (offline fixtures, the experimental live-book engine); it is not
+part of the Vercel deployment.
+
+### Environment (set in the Vercel project, never committed)
+
+| Var | Value |
+|---|---|
+| `DATABASE_URL` | Supabase Transaction pooler string (`:6543`) |
+| `STORAGE` | `supabase` |
+| `PROVIDER_MODE` | `fixture` (until a `service:cxapi` OAuth token exists) |
+| `CRON_SECRET` | long random string; also stored in Supabase Vault as `radar_cron_secret` |
+
+`NEXT_PUBLIC_API_BASE_URL` stays unset in production (same-origin `/api`); set it
+to `/backend` only for local dev against the Node server.
+
+## Architecture (local dev / self-host server)
+
+> The tree below is the always-on Node server used for local development and
+> self-hosting. The deployed product uses the serverless model in **Production
+> architecture** above.
 
 ```
 src/

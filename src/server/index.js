@@ -1,6 +1,11 @@
 /**
  * Server entry point. Wires config -> gold registry -> provider -> app, starts
  * an HTTP server and a background poller at the configured interval.
+ *
+ * NOTE: this always-on server is for LOCAL DEVELOPMENT and SELF-HOSTING only.
+ * The deployed product is serverless (Vercel Next.js route handlers reading
+ * Supabase Postgres + a Supabase pg_cron ingestion job) and does NOT run this
+ * process. See "Production architecture" in README.md.
  */
 
 import { createServer } from "node:http";

@@ -9,7 +9,7 @@
  */
 
 import { loadConfig } from "../../../src/server/config.js";
-import { canonicalPairId } from "../../../src/domain/cx-market.js";
+import { canonicalPairId, candleForAnchor } from "../../../src/domain/cx-market.js";
 import { buildMarketRadar } from "../../../src/domain/market-radar.js";
 import { createRadarRepository } from "../../../src/storage/radar-repository.js";
 import { getSql } from "./db.js";
@@ -29,6 +29,24 @@ export async function getCurrencySummary(id) {
   const rows = buildMarketRadar({ [pairId]: candles }, { anchor: config.anchorCurrency, now: Date.now() });
   const row = rows.find((r) => r.target === id);
   if (!row) return null;
+  const series = candles
+    .map((c) => candleForAnchor(c, id, config.anchorCurrency))
+    .filter(
+      (c) =>
+        c &&
+        Number.isFinite(c.completedHour) &&
+        Number.isFinite(c.low) &&
+        Number.isFinite(c.high) &&
+        Number.isFinite(c.reference),
+    )
+    .sort((a, b) => a.completedHour - b.completedHour)
+    .slice(-25)
+    .map((c) => ({
+      completedHour: new Date(c.completedHour).toISOString(),
+      low: c.low,
+      high: c.high,
+      reference: c.reference,
+    }));
 
   return {
     target: id,
@@ -40,7 +58,9 @@ export async function getCurrencySummary(id) {
     high: row.high,
     rangePct: row.rangePct,
     movement: row.movement,
+    activityScore: row.activityScore,
     samples: row.samples,
+    series,
     latestCompletedHour: row.latestCompletedHour ? new Date(row.latestCompletedHour).toISOString() : null,
   };
 }

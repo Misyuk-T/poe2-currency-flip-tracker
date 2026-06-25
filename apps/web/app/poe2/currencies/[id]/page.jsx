@@ -1,4 +1,8 @@
-import { currencyName, iconUrl, popularCurrencies, siteUrl } from "../../../../lib/market.js";
+import { currencyName, iconUrl, popularCurrencies, siteUrl, formatNumber, formatPercent, displayDigits } from "../../../../lib/market.js";
+
+// Incremental Static Regeneration: prerender popular currencies, refresh hourly
+// so each page is crawlable static HTML that still tracks the latest stored hour.
+export const revalidate = 3600;
 
 export async function generateStaticParams() {
   return popularCurrencies.map((currency) => ({ id: currency.id }));
@@ -14,14 +18,34 @@ export async function generateMetadata({ params }) {
   };
 }
 
+function priceLine(summary) {
+  if (!Number.isFinite(summary?.reference)) return null;
+  return `${formatNumber(summary.reference, { maximumFractionDigits: displayDigits(summary.reference) })} ${summary.anchor}`;
+}
+
 export default async function CurrencyPage({ params }) {
   const { id } = await params;
   const name = currencyName(id);
+
+  // Best-effort: a DB/build hiccup must not fail the page — fall back to static.
+  // Imported dynamically so the DB/driver module stays out of Next's page-config
+  // collection pass (which evaluates the module graph in a VM context).
+  let summary = null;
+  try {
+    const { getCurrencySummary } = await import("../../../../lib/currency-summary.js");
+    summary = await getCurrencySummary(id);
+  } catch {
+    summary = null;
+  }
+  const price = priceLine(summary);
+
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebPage",
     name: `${name} PoE2 market tracker`,
-    description: `Hourly market context and trade planning page for ${name} in Path of Exile 2.`,
+    description: price
+      ? `${name} latest completed-hour midpoint ≈ ${price} in Path of Exile 2 (${summary.anchor} market).`
+      : `Hourly market context and trade planning page for ${name} in Path of Exile 2.`,
     url: `${siteUrl}/poe2/currencies/${id}`,
   };
 
@@ -35,11 +59,49 @@ export default async function CurrencyPage({ params }) {
           <h1>{name}</h1>
           <p>
             Use the market radar to compare the latest completed-hour range with the current price you see in game.
-            This page is designed for SEO and can later embed a dedicated chart and historical summary.
           </p>
           <a className="button primary" href={`/poe2?currency=${encodeURIComponent(id)}`}>Open in radar</a>
         </div>
       </section>
+
+      {summary ? (
+        <section className="content-section" aria-label="Latest hourly market">
+          <div className="section-heading">
+            <p className="eyebrow">
+              Latest completed hour
+              {summary.sourceMode === "fixture" ? " · sample data" : ""}
+            </p>
+            <h2>{name} market snapshot</h2>
+          </div>
+          <div className="currency-grid">
+            <div className="currency-card">
+              <strong>Midpoint (range-midpoint proxy)</strong>
+              <span>≈ {price}</span>
+            </div>
+            <div className="currency-card">
+              <strong>Hourly range</strong>
+              <span>
+                {Number.isFinite(summary.low) && Number.isFinite(summary.high)
+                  ? `${formatNumber(summary.low, { maximumFractionDigits: displayDigits(summary.low) })} – ${formatNumber(summary.high, { maximumFractionDigits: displayDigits(summary.high) })} ${summary.anchor}`
+                  : "—"}
+              </span>
+            </div>
+            <div className="currency-card">
+              <strong>24h movement</strong>
+              <span>{Number.isFinite(summary.movement?.h24) ? formatPercent(summary.movement.h24) : "—"}</span>
+            </div>
+            <div className="currency-card">
+              <strong>Samples (last 24h)</strong>
+              <span>{summary.samples ?? 0}</span>
+            </div>
+          </div>
+          <p className="hero-copy">
+            {summary.latestCompletedHour ? `As of completed hour ${summary.latestCompletedHour}. ` : ""}
+            The midpoint is a labelled proxy of the official low/high range, not an executable quote
+            {summary.sourceMode === "fixture" ? "; values shown here are clearly-labelled sample data until the live feed is enabled." : "."}
+          </p>
+        </section>
+      ) : null}
 
       <section className="content-section prose">
         <h2>How to read this market</h2>

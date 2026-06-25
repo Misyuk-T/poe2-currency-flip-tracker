@@ -10,24 +10,31 @@ export function buildCxapiFixtures({ league = "Runes of Aldur", endHour = 1_750_
   const pairs = items.length ? catalogPairs(items, anchors, featured) : featured;
   return Array.from({ length: 30 }, (_, i) => {
     const hour = endHour - (29 - i) * 3600;
+    // Key the motion on the ABSOLUTE completed-hour index, not the rolling window
+    // index i. i always tops out at 29 for the newest hour, so when an ingester
+    // appends one new hour at a time (on-conflict-do-nothing) an i-based series
+    // would flatten; an absolute, bounded oscillation keeps it moving forever.
+    const k = Math.round(hour / 3600);
     return {
       digestId: hour,
       payload: {
         next_change_id: hour + 3600,
         markets: pairs.map((p, j) => {
-          const wave = Math.sin((i + j) / 3) * 0.015;
-          const mid = p.price * (1 + p.drift * i + wave);
-          const spread = 0.018 + Math.abs(Math.sin(i + j)) * 0.012;
+          const wave = Math.sin((k + j) / 3) * 0.015; // fast wiggle
+          const swing = Math.sin(k / 12 + j) * (p.drift * 20); // slow bounded ±drift oscillation
+          const mid = p.price * (1 + swing + wave);
+          const spread = 0.018 + Math.abs(Math.sin(k + j)) * 0.012;
           const baseQty = 1000;
           const lowQuote = Math.max(1, Math.round(mid * (1 - spread / 2) * baseQty));
           const highQuote = Math.max(1, Math.round(mid * (1 + spread / 2) * baseQty));
-          const volume = Math.round(p.volume * (1 + i / 80 + Math.max(0, Math.sin(i / 2)) * 0.25));
+          const volume = Math.round(p.volume * (1 + Math.max(0, Math.sin(k / 2 + j)) * 0.3));
+          const stock = 40 + (k % 40);
           return {
             league,
             market_id: p.id,
             volume_traded: { [p.base]: volume, [p.quote]: Math.round(volume * mid) },
-            lowest_stock: { [p.base]: 40 + i, [p.quote]: Math.round((40 + i) * mid) },
-            highest_stock: { [p.base]: 120 + i * 2, [p.quote]: Math.round((120 + i * 2) * mid) },
+            lowest_stock: { [p.base]: stock, [p.quote]: Math.round(stock * mid) },
+            highest_stock: { [p.base]: stock * 3, [p.quote]: Math.round(stock * 3 * mid) },
             lowest_ratio: { [p.base]: baseQty, [p.quote]: lowQuote },
             highest_ratio: { [p.base]: baseQty, [p.quote]: highQuote },
           };

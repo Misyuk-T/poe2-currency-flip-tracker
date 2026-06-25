@@ -14,6 +14,8 @@ import { createGoldRegistry } from "../../../src/domain/gold-costs.js";
 import { POE2_GOLD_COSTS } from "../../../src/data/gold-costs-poe2.js";
 import { createRadarRepository } from "../../../src/storage/radar-repository.js";
 import { buildRadarPayload, buildHistoryPayload, buildHotlistPayload } from "../../../src/server/radar-core.js";
+import { ingestFixtures, ingestLive } from "../../../src/server/radar-ingest.js";
+import { createGggCxapiProvider } from "../../../src/providers/ggg-cxapi-provider.js";
 import { getSql } from "./db.js";
 
 const NO_DB = {
@@ -131,6 +133,45 @@ export async function getConfig() {
       features: { radar: true, hourlyRadar: true, workingPrice: true, manualPrice: true, liveBooks: false },
     },
   };
+}
+
+/**
+ * Constant-time check of the cron Authorization header against CRON_SECRET.
+ * Returns false when the secret is unset (caller should treat that as disabled).
+ */
+export function isCronAuthorized(authHeader) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || typeof authHeader !== "string") return false;
+  const expected = `Bearer ${secret}`;
+  if (authHeader.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i += 1) diff |= authHeader.charCodeAt(i) ^ expected.charCodeAt(i);
+  return diff === 0;
+}
+
+export const cronConfigured = () => Boolean(process.env.CRON_SECRET);
+
+/** Ingest the latest hourly market data (fixture synth or live cxapi catch-up). */
+export async function runRadarIngest({ now = Date.now() } = {}) {
+  const { config, scope } = await context();
+  const repo = repository(scope);
+  if (!repo) return NO_DB;
+  if (config.providerMode === "live") {
+    const provider = createGggCxapiProvider(config);
+    const catchingUp = (await repo.readCxapiState()).cursor != null || config.cxapiStartId != null;
+    const summary = await ingestLive({
+      repo,
+      provider,
+      league: config.league,
+      startId: config.cxapiStartId,
+      // Cap per-invocation backfill so one cron run stays well under the function
+      // timeout; the cursor persists, so catch-up continues on the next run.
+      maxDigests: catchingUp ? Math.min(config.cxapiMaxBackfillHours, 12) : 1,
+    });
+    return { status: 200, body: summary };
+  }
+  const summary = await ingestFixtures({ repo, league: config.league, anchors: config.anchors, now });
+  return { status: 200, body: summary };
 }
 
 export async function getStatus() {

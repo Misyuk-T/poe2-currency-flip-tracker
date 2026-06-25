@@ -170,8 +170,9 @@ export function createRadarRepository({
         // Monotonic cursor: never let a late/overlapping invocation move the
         // cursor backward (e.g. an older digest committing after a newer one).
         // Only advance when the incoming digest id is non-null and not older
-        // than what's stored. D3's advisory lock is the primary guard against
-        // overlap; this keeps the write primitive safe on its own too.
+        // than what's stored. This — together with on-conflict-do-nothing on the
+        // candles — makes concurrent ingest runs safe WITHOUT a distributed lock
+        // (which also avoids unreliable session advisory locks under the pooler).
         await tx`
           insert into cxapi_state (game, realm, league, provider, next_change_id, last_digest_id, updated_at)
           values (${scope.game}, ${scope.realm}, ${scope.league}, ${scope.mode},

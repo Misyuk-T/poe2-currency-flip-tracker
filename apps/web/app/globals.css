@@ -297,6 +297,25 @@ h2 { font-size: clamp(1.5rem, 4vw, 2.4rem); }
   object-fit: contain;
 }
 
+.currency-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.currency-stat .price {
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.currency-stat em {
+  font-style: normal;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .currency-hero {
   display: grid;
   grid-template-columns: 84px minmax(0, 1fr);

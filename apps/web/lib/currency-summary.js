@@ -11,7 +11,7 @@
 import { loadConfig } from "../../../src/server/config.js";
 import { canonicalPairId, candleForAnchor } from "../../../src/domain/cx-market.js";
 import { buildMarketRadar } from "../../../src/domain/market-radar.js";
-import { createRadarRepository } from "../../../src/storage/radar-repository.js";
+import { createRadarRepository, groupCandlesByPair } from "../../../src/storage/radar-repository.js";
 import { getSql } from "./db.js";
 
 export async function getCurrencySummary(id) {
@@ -63,4 +63,64 @@ export async function getCurrencySummary(id) {
     series,
     latestCompletedHour: row.latestCompletedHour ? new Date(row.latestCompletedHour).toISOString() : null,
   };
+}
+
+/**
+ * Pure: shape a full candle window (grouped by pair) into a slim per-id index
+ * for the currency list page and the sitemap. One radar pass against the anchor
+ * yields a price + 24h move per target without an N+1 read per currency.
+ * Returns a plain (serializable) object keyed by target id.
+ */
+export function buildCurrencyIndex(candlesByPair, { anchor, sourceMode = "fixture", now = Date.now() } = {}) {
+  const rows = buildMarketRadar(candlesByPair, { anchor, now });
+  const byId = {};
+  let latestMs = 0;
+  for (const row of rows) {
+    const hourMs = Number.isFinite(row.latestCompletedHour) ? row.latestCompletedHour : null;
+    if (hourMs && hourMs > latestMs) latestMs = hourMs;
+    byId[row.target] = {
+      target: row.target,
+      reference: row.reference,
+      referenceKind: row.referenceKind,
+      low: row.low,
+      high: row.high,
+      rangePct: row.rangePct,
+      movement: row.movement,
+      samples: row.samples,
+      stale: row.stale,
+      latestCompletedHour: hourMs ? new Date(hourMs).toISOString() : null,
+      latestCompletedHourMs: hourMs,
+    };
+  }
+  return {
+    anchor,
+    sourceMode,
+    byId,
+    latestCompletedHour: latestMs ? new Date(latestMs).toISOString() : null,
+    latestCompletedHourMs: latestMs || null,
+  };
+}
+
+/**
+ * Slim multi-currency read for the list page + sitemap: the latest stored price
+ * and 24h movement for every target vs the configured anchor, from a single
+ * bounded candle-window read. Returns null when there's no database or no data
+ * so callers render their static fallback. Import this dynamically inside the
+ * component (keeps the DB driver out of Next's page-config collection pass).
+ */
+export async function getCurrencyIndex() {
+  const config = loadConfig();
+  const sql = getSql();
+  if (!sql) return null;
+
+  const scope = { game: config.poeGame, realm: config.poeRealm, league: config.league, mode: config.providerMode };
+  const repo = createRadarRepository({ sql, scope });
+  const candles = await repo.readCandleWindow();
+  if (!candles.length) return null;
+
+  return buildCurrencyIndex(groupCandlesByPair(candles), {
+    anchor: config.anchorCurrency,
+    sourceMode: config.providerMode === "live" ? "official" : "fixture",
+    now: Date.now(),
+  });
 }

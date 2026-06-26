@@ -158,6 +158,50 @@ export default async function CurrencyPage({ params }) {
         </section>
       ) : null}
 
+      {summary?.backtest && summary.backtest.evaluated >= 5 ? (
+        <section className="content-section" aria-label={`${name} paper-trade backtest`}>
+          <div className="section-heading">
+            <p className="eyebrow">
+              Simulated paper-trade backtest · {summary.backtestHorizonHours}h horizon
+              {summary.sourceMode === "fixture" ? " · sample data" : ""}
+            </p>
+            <h2>Would these flips have paid?</h2>
+          </div>
+          <div className="currency-grid">
+            <div className="currency-card">
+              <strong>Trades evaluated</strong>
+              <span>{summary.backtest.evaluated}</span>
+            </div>
+            <div className="currency-card">
+              <strong>Fill rate</strong>
+              <span>{Number.isFinite(summary.backtest.fillRate) ? formatPercent(summary.backtest.fillRate, { signed: false }) : "—"}</span>
+            </div>
+            <div className="currency-card">
+              <strong>Take-profit hit rate</strong>
+              <span>{Number.isFinite(summary.backtest.winRate) ? formatPercent(summary.backtest.winRate, { signed: false }) : "—"}</span>
+            </div>
+            <div className="currency-card">
+              <strong>Avg result / trade</strong>
+              <span className={(summary.backtest.avgProfitPct ?? 0) >= 0 ? "up" : "down"}>
+                {Number.isFinite(summary.backtest.avgProfitPct) ? formatPercent(summary.backtest.avgProfitPct) : "—"}
+              </span>
+            </div>
+            <div className="currency-card">
+              <strong>Avg worst drawdown</strong>
+              <span>{Number.isFinite(summary.backtest.avgMaeFactor) ? formatPercent(summary.backtest.avgMaeFactor) : "—"}</span>
+            </div>
+          </div>
+          <p className="hero-copy">
+            A simulation, not advice or a promise of profit: at each past completed hour it assumes the tool&apos;s
+            median entry/exit envelope and checks the actual next {summary.backtestHorizonHours} hours. Take-profit
+            hits count as wins; unfilled or still-resolving setups are excluded
+            {summary.sourceMode === "fixture"
+              ? ". The underlying prices are clearly-labelled sample data until the live feed is enabled."
+              : "."}
+          </p>
+        </section>
+      ) : null}
+
       {content ? (
         <section className="content-section prose" aria-label={`About ${name}`}>
           <h2>What is the {name}?</h2>

@@ -11,8 +11,11 @@
 import { loadConfig } from "../../../src/server/config.js";
 import { canonicalPairId, candleForAnchor } from "../../../src/domain/cx-market.js";
 import { buildMarketRadar } from "../../../src/domain/market-radar.js";
+import { backtestRecommendations } from "../../../src/domain/paper-trade.js";
 import { createRadarRepository, groupCandlesByPair } from "../../../src/storage/radar-repository.js";
 import { getSql } from "./db.js";
+
+const BACKTEST_HORIZON_HOURS = 6;
 
 export async function getCurrencySummary(id) {
   const config = loadConfig();
@@ -29,7 +32,8 @@ export async function getCurrencySummary(id) {
   const rows = buildMarketRadar({ [pairId]: candles }, { anchor: config.anchorCurrency, now: Date.now() });
   const row = rows.find((r) => r.target === id);
   if (!row) return null;
-  const series = candles
+
+  const anchorCandles = candles
     .map((c) => candleForAnchor(c, id, config.anchorCurrency))
     .filter(
       (c) =>
@@ -39,14 +43,23 @@ export async function getCurrencySummary(id) {
         Number.isFinite(c.high) &&
         Number.isFinite(c.reference),
     )
-    .sort((a, b) => a.completedHour - b.completedHour)
-    .slice(-25)
-    .map((c) => ({
-      completedHour: new Date(c.completedHour).toISOString(),
-      low: c.low,
-      high: c.high,
-      reference: c.reference,
-    }));
+    .sort((a, b) => a.completedHour - b.completedHour);
+
+  const series = anchorCandles.slice(-25).map((c) => ({
+    completedHour: new Date(c.completedHour).toISOString(),
+    low: c.low,
+    high: c.high,
+    reference: c.reference,
+  }));
+
+  // Simulated paper-trade backtest over this pair's own history (anchor units;
+  // no gold cost here — this reader stays catalog-free). Replays the median
+  // entry/exit envelope at each past hour and checks the actual next N hours.
+  const backtest = backtestRecommendations({
+    series: anchorCandles,
+    horizonHours: BACKTEST_HORIZON_HOURS,
+    now: Date.now(),
+  }).summary;
 
   return {
     target: id,
@@ -61,6 +74,8 @@ export async function getCurrencySummary(id) {
     activityScore: row.activityScore,
     samples: row.samples,
     series,
+    backtest,
+    backtestHorizonHours: BACKTEST_HORIZON_HOURS,
     latestCompletedHour: row.latestCompletedHour ? new Date(row.latestCompletedHour).toISOString() : null,
   };
 }

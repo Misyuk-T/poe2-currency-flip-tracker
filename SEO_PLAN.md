@@ -36,16 +36,14 @@ on data-backed pages, and funnel them into the radar dashboard.
 
 ## Backlog (prioritized)
 
-### P0 — correctness (do first)
-- [ ] **Set `NEXT_PUBLIC_SITE_URL`** in Vercel to the production origin and redeploy.
-      Currently canonical / `sitemap.xml` / `robots.txt` / OG all emit
-      `http://localhost:3000` — actively harmful for indexing. (Vercel dashboard
-      action — not code; the code already reads the env var with a localhost
-      fallback.)
+### P0 — correctness
+- [x] **`NEXT_PUBLIC_SITE_URL` is set in Vercel** to the production origin
+      (`https://poe2-currency-flip-tracker.vercel.app`). Verified live
+      (2026-06-27): both `sitemap.xml` and `robots.txt` emit the real origin, not
+      `http://localhost:3000`. The earlier "emits localhost" note was stale.
 
 ### P1 — high value
-- [x] All P1 code items shipped (see Done above). Remaining P1 work is the P0
-      Vercel env var.
+- [x] All P1 code items shipped (see Done above) and live in production.
 
 ### P2 — growth & polish
 - [ ] Keyword landing/guide pages: "how to flip X", "divine to exalted ratio",

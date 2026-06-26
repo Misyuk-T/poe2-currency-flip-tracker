@@ -7,7 +7,10 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const { status, body } = await getStatus();
-    return Response.json(body, { status, headers: cacheHeader(status, { sMaxAge: 30, swr: 120 }) });
+    // Only cache a real, configured status — never the degraded "no-database" one.
+    const headers =
+      status === 200 && body?.radar?.configured ? cacheHeader(200, { sMaxAge: 30, swr: 120 }) : { "Cache-Control": "no-store" };
+    return Response.json(body, { status, headers });
   } catch {
     return Response.json(
       { error: { code: "status-failed", message: "status unavailable" } },

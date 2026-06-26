@@ -178,10 +178,10 @@ export default async function CurrencyPage({ params }) {
             </div>
             <div className="currency-card">
               <strong>Take-profit hit rate</strong>
-              <span>{Number.isFinite(summary.backtest.winRate) ? formatPercent(summary.backtest.winRate, { signed: false }) : "—"}</span>
+              <span>{Number.isFinite(summary.backtest.tpHitRate) ? formatPercent(summary.backtest.tpHitRate, { signed: false }) : "—"}</span>
             </div>
             <div className="currency-card">
-              <strong>Avg result / trade</strong>
+              <strong>Avg result / filled trade</strong>
               <span className={(summary.backtest.avgProfitPct ?? 0) >= 0 ? "up" : "down"}>
                 {Number.isFinite(summary.backtest.avgProfitPct) ? formatPercent(summary.backtest.avgProfitPct) : "—"}
               </span>
@@ -193,11 +193,12 @@ export default async function CurrencyPage({ params }) {
           </div>
           <p className="hero-copy">
             A simulation, not advice or a promise of profit: at each past completed hour it assumes the tool&apos;s
-            median entry/exit envelope and checks the actual next {summary.backtestHorizonHours} hours. Take-profit
-            hits count as wins; unfilled or still-resolving setups are excluded
+            median entry/exit envelope and checks the actual next {summary.backtestHorizonHours} hours. Fill rate is
+            over resolved setups; the take-profit hit rate and average result are over the {summary.backtest.taken}{" "}
+            filled trades. {summary.backtest.pending > 0 ? `${summary.backtest.pending} recent setup${summary.backtest.pending === 1 ? " is" : "s are"} still resolving and excluded. ` : ""}
             {summary.sourceMode === "fixture"
-              ? ". The underlying prices are clearly-labelled sample data until the live feed is enabled."
-              : "."}
+              ? "The underlying prices are clearly-labelled sample data until the live feed is enabled."
+              : ""}
           </p>
         </section>
       ) : null}

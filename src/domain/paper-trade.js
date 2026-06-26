@@ -5,13 +5,19 @@
  * of the target at `entryPrice`, take profit at `targetExit`, both in anchor
  * units), simulate the realised outcome over the next `horizonHours` using the
  * actual hourly candles that followed. Everything here is pure and
- * deterministic — no clock except the injected `now`, no storage, no network —
- * so a backtest is fully reproducible and testable.
+ * deterministic — no wall clock, no storage, no network — so a backtest is fully
+ * reproducible and testable.
  *
- * It never fabricates an outcome: when the horizon has not elapsed (or no
- * candles exist yet) the trade is reported as `pending`/`open`/`no-data`, not as
- * a win or a loss. This is what lets the product talk about realised paper-trade
- * results honestly instead of claiming "the model finds profitable flips".
+ * Resolution is driven by DATA COVERAGE, not the real clock: an outcome is only
+ * `entry-missed` / `open-at-horizon` once observed candles reach the end of the
+ * horizon. Until then it stays `pending`/`open` — later hours could still fill
+ * or hit the target. This is what lets the product talk about realised
+ * paper-trade results honestly instead of inventing them.
+ *
+ * Two deliberately conservative choices avoid fabricating intrahour detail:
+ *   - A take-profit can only fill on an hour AFTER the entry filled; within a
+ *     single hourly low/high we cannot prove the high came after the limit buy.
+ *   - A still-uncovered horizon is never marked to market.
  */
 
 import { roundTripGold } from "./gold-costs.js";
@@ -43,9 +49,8 @@ function avg(values) {
  * }} trade
  * @param {Array<{completedHour:number, low:number, high:number, reference:number}>} series
  *   candles in ANCHOR units (see candleForAnchor), any order.
- * @param {{ now?: number }} [opts]
  */
-export function evaluatePaperTrade(trade, series, { now = Date.now() } = {}) {
+export function evaluatePaperTrade(trade, series) {
   const size = positive(trade?.size) ? trade.size : 1;
   if (!positive(trade?.entryPrice) || !positive(trade?.targetExit) || !Number.isFinite(trade?.entryHour)) {
     return { status: "invalid", reason: "missing-entry-exit-or-hour", filled: false, profit: null };
@@ -56,7 +61,12 @@ export function evaluatePaperTrade(trade, series, { now = Date.now() } = {}) {
 
   const horizonHours = Math.max(1, Number(trade.horizonHours) || 1);
   const horizonEnd = trade.entryHour + horizonHours * HOUR;
-  const horizonElapsed = now >= horizonEnd;
+
+  const candles = (series ?? []).filter(validCandle);
+  const latestObserved = candles.reduce((m, c) => Math.max(m, c.completedHour), -Infinity);
+  // The window is resolvable only once observed data reaches its end; before that
+  // the outcome is genuinely unknown (a later hour could fill or hit the target).
+  const horizonCovered = Number.isFinite(latestObserved) && latestObserved >= horizonEnd;
 
   const base = {
     status: "pending",
@@ -72,55 +82,54 @@ export function evaluatePaperTrade(trade, series, { now = Date.now() } = {}) {
     profitPct: null,
   };
 
-  const forward = (series ?? [])
-    .filter((c) => validCandle(c) && c.completedHour > trade.entryHour && c.completedHour <= horizonEnd)
+  const forward = candles
+    .filter((c) => c.completedHour > trade.entryHour && c.completedHour <= horizonEnd)
     .sort((a, b) => a.completedHour - b.completedHour);
 
   if (!forward.length) {
-    // Nothing to evaluate against yet. Only call it "no-data" once the window
-    // has elapsed; before that the trade is simply still resolving.
-    return { ...base, status: horizonElapsed ? "no-data" : "pending" };
+    return { ...base, status: horizonCovered ? "no-data" : "pending" };
   }
 
   // Entry: a limit buy fills the first hour whose low reaches the entry price.
   const fillIndex = forward.findIndex((c) => c.low <= trade.entryPrice);
   if (fillIndex === -1) {
-    return horizonElapsed
-      ? { ...base, status: "entry-missed", profit: 0, profitPct: 0 }
-      : { ...base, status: "pending" };
+    return horizonCovered ? { ...base, status: "entry-missed", profit: 0, profitPct: 0 } : { ...base, status: "pending" };
   }
   const fillHour = forward[fillIndex].completedHour;
   const afterFill = forward.slice(fillIndex);
 
-  // Exit: a take-profit fills the first hour whose high reaches the target.
-  const exitIndex = afterFill.findIndex((c) => c.high >= trade.targetExit);
+  // Take-profit can only fill on an hour strictly after the entry filled.
+  const postFill = afterFill.slice(1);
+  const exitRel = postFill.findIndex((c) => c.high >= trade.targetExit);
+  const exitIndex = exitRel === -1 ? -1 : exitRel + 1; // index within afterFill
 
   let status;
   let exitPrice;
   let exitHour;
   let marked;
   if (exitIndex !== -1) {
+    // A target hit in an observed hour is a definitive win regardless of whether
+    // the rest of the horizon has been observed yet.
     status = "closed";
     exitPrice = trade.targetExit;
     exitHour = afterFill[exitIndex].completedHour;
     marked = false;
-  } else if (horizonElapsed) {
-    // Filled but the target never printed inside the window → mark to market at
-    // the last completed hour's midpoint. This is where losses surface.
+  } else if (horizonCovered) {
+    // Filled, target never printed inside the fully-observed window → mark to
+    // market at the last hour. This is where losses surface.
     status = "open-at-horizon";
     const last = afterFill[afterFill.length - 1];
     exitPrice = last.reference;
     exitHour = last.completedHour;
     marked = true;
   } else {
-    // Filled, target not yet hit, horizon not elapsed → still holding.
-    const minLowSoFar = Math.min(...afterFill.map((c) => c.low));
+    // Filled, target not yet hit, horizon not yet covered by data → still holding.
     return {
       ...base,
       status: "open",
       filled: true,
       fillHour,
-      maeFactor: minLowSoFar / trade.entryPrice - 1,
+      maeFactor: Math.min(...afterFill.map((c) => c.low)) / trade.entryPrice - 1,
     };
   }
 
@@ -167,28 +176,34 @@ function goldEfficiency(trade, { size, exitPrice, profit }) {
 
 /**
  * Aggregate evaluated trades into an honest paper-trade record. Only trades the
- * horizon has resolved (`closed` / `open-at-horizon` / `entry-missed`) count
- * toward the summary; `pending`/`open`/`no-data`/`invalid` are excluded but
- * surfaced as `pending` so a thin sample is never dressed up as a full record.
+ * data has resolved (`closed` / `open-at-horizon` / `entry-missed`) count toward
+ * the rates; `pending`/`open`/`no-data`/`invalid` are excluded but surfaced as
+ * `pending` so a thin sample is never dressed up as a full record.
+ *
+ * Two distinct rates, never conflated:
+ *   - `tpHitRate`     = closed (take-profit actually hit) / filled trades
+ *   - `profitableRate`= filled trades that ended green (incl. mark-to-market) / filled
  */
 export function summarizePaperTrades(results) {
   const all = (results ?? []).filter(Boolean);
   const resolvedStatuses = new Set(["closed", "open-at-horizon", "entry-missed"]);
   const resolved = all.filter((r) => resolvedStatuses.has(r.status));
   const taken = resolved.filter((r) => r.filled);
+  const closedCount = taken.filter((r) => r.status === "closed").length;
   const profits = taken.map((r) => r.profit).filter(Number.isFinite);
-  const wins = profits.filter((p) => p > 0);
+  const profitableCount = profits.filter((p) => p > 0).length;
   const goldEff = taken.map((r) => r.profitPer100kGold).filter(Number.isFinite);
 
   return {
     evaluated: resolved.length,
     pending: all.length - resolved.length,
     taken: taken.length,
-    closed: taken.filter((r) => r.status === "closed").length,
+    closed: closedCount,
     openAtHorizon: taken.filter((r) => r.status === "open-at-horizon").length,
     entryMissed: resolved.filter((r) => r.status === "entry-missed").length,
     fillRate: resolved.length ? taken.length / resolved.length : null,
-    winRate: taken.length ? wins.length / taken.length : null,
+    tpHitRate: taken.length ? closedCount / taken.length : null,
+    profitableRate: taken.length ? profitableCount / taken.length : null,
     avgProfit: avg(profits),
     medianProfit: median(profits),
     avgProfitPct: avg(taken.map((r) => r.profitPct).filter(Number.isFinite)),
@@ -221,14 +236,15 @@ export function medianFactorRecommender({ lookback = 24, minSamples = 3 } = {}) 
 
 /**
  * Replay a recommender across a candle series and evaluate each recommendation
- * against the actual future. The series should be one pair in anchor units.
+ * against the actual future. The series should be one pair in anchor units. The
+ * recommender at hour T only sees history through T (no look-ahead); each
+ * recommendation is then resolved by the engine's data-coverage rule.
  *
  * @param {{
  *   series: Array<object>,
  *   recommend?: (history: object[], point: object) => ({entryPrice:number,targetExit:number}|null),
  *   horizonHours?: number, size?: number,
  *   gold?: { goldPerTarget?: number|null, goldPerAnchor?: number|null },
- *   now?: number,
  * }} input
  */
 export function backtestRecommendations({
@@ -237,7 +253,6 @@ export function backtestRecommendations({
   horizonHours = 6,
   size = 1,
   gold = {},
-  now = Date.now(),
 } = {}) {
   const candles = (series ?? []).filter(validCandle).sort((a, b) => a.completedHour - b.completedHour);
   const trades = [];
@@ -258,7 +273,7 @@ export function backtestRecommendations({
       goldPerAnchor: gold.goldPerAnchor ?? null,
     };
     trades.push(trade);
-    results.push(evaluatePaperTrade(trade, candles, { now }));
+    results.push(evaluatePaperTrade(trade, candles));
   }
   return { trades, results, summary: summarizePaperTrades(results), horizonHours };
 }

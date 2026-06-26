@@ -58,7 +58,6 @@ export async function getCurrencySummary(id) {
   const backtest = backtestRecommendations({
     series: anchorCandles,
     horizonHours: BACKTEST_HORIZON_HOURS,
-    now: Date.now(),
   }).summary;
 
   return {

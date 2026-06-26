@@ -5,7 +5,19 @@ import assert from "node:assert/strict";
 // cleanly (never throw, never fabricate). Unset before importing the module.
 delete process.env.DATABASE_URL;
 
-const { getConfig, getStatus, getRadar, getHistory } = await import("../apps/web/lib/radar-backend.js");
+const { getConfig, getStatus, getRadar, getHistory, tradableRows } = await import("../apps/web/lib/radar-backend.js");
+
+test("tradableRows drops no-trade catalog placeholders but keeps real markets", () => {
+  const rows = [
+    { target: "divine", pairId: "exalted|divine", status: "ok" },
+    { target: "chaos", pairId: "exalted|chaos", status: "insufficient-history" },
+    { target: "vaal", pairId: null, status: "no-trades-this-hour" },
+    { target: "mystery", pairId: "exalted|mystery", status: "no-trades-this-hour" },
+  ];
+  const kept = tradableRows(rows).map((r) => r.target);
+  assert.deepEqual(kept, ["divine", "chaos"]);
+  assert.deepEqual(tradableRows(null), []);
+});
 
 test("getConfig returns public config with server-side opportunities disabled", async () => {
   const { status, body } = await getConfig();

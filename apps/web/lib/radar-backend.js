@@ -55,6 +55,17 @@ function resolveAnchor(searchParams, config) {
 
 const sourceMode = (config) => (config.providerMode === "live" ? "official" : "fixture");
 
+/**
+ * Drop no-trade placeholder rows from a radar payload's `rows`. Every browser
+ * consumer (dashboard, homepage mini-radar) already filters these out, and they
+ * are the bulk of the full catalog — trimming them on the wire saves a lot of
+ * bandwidth. The payload's `trackedCount` / `catalogCount` still report the
+ * full picture, so nothing honest is lost.
+ */
+export function tradableRows(rows) {
+  return (rows ?? []).filter((row) => row?.pairId && row.status !== "no-trades-this-hour");
+}
+
 export async function getRadar(searchParams) {
   const { config, catalogManifest, catalogById, names, scope } = await context();
   const repo = repository(scope);
@@ -72,6 +83,9 @@ export async function getRadar(searchParams) {
     radarMaxHotTargets: config.radarMaxHotTargets,
     now: Date.now(),
   });
+  // Send only tradable rows over the wire; the no-trade catalog placeholders are
+  // the bulk of the payload and no browser consumer renders them.
+  body.rows = tradableRows(body.rows);
   return { status: 200, body };
 }
 

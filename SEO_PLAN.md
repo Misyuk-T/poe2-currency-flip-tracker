@@ -46,15 +46,19 @@ on data-backed pages, and funnel them into the radar dashboard.
 - [x] All P1 code items shipped (see Done above) and live in production.
 
 ### P2 — growth & polish
+- [x] **Caching + payload size** — read routes are edge-cached via
+      `Vercel-CDN-Cache-Control` (+ `CDN-Cache-Control`; browser revalidates),
+      verified live (MISS→HIT). `/api/radar` trimmed from ~575 KB to tradable
+      rows only (no-trade catalog placeholders dropped; counts preserved).
+- [x] **Internal linking** — each currency page cross-links the other popular
+      markets ("Related currencies"); home → currencies → radar already wired.
 - [ ] Keyword landing/guide pages: "how to flip X", "divine to exalted ratio",
       "poe2 currency exchange explained".
 - [ ] Dynamic OpenGraph images per currency (price + sparkline) for social CTR.
-- [ ] Caching headers (`s-maxage` / stale-while-revalidate) on read routes; trim
-      the `/api/radar` payload (drop no-trade rows) — bandwidth + speed.
-- [ ] Internal linking: home → currencies → radar; cross-link related currencies.
 - [ ] Privacy-friendly analytics + **Google Search Console** (verify domain,
-      submit sitemap, watch impressions/CTR per currency).
+      submit sitemap, watch impressions/CTR per currency). *(needs the user)*
 - [ ] **Custom domain** — better trust/CTR than a `*.vercel.app` subdomain.
+      *(needs the user)*
 
 ### P3 — after live data (cxapi OAuth)
 - [ ] Drop the "sample data" labels once real prices flow — real, fresh prices are

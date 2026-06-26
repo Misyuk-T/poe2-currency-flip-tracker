@@ -1,4 +1,5 @@
 import { currencyName, iconUrl, popularCurrencies, siteUrl, formatNumber, formatPercent, displayDigits } from "../../../../lib/market.js";
+import { contentFor } from "../../../../lib/currency-content.js";
 
 // Incremental Static Regeneration: prerender popular currencies, refresh hourly
 // so each page is crawlable static HTML that still tracks the latest stored hour.
@@ -26,6 +27,7 @@ function priceLine(summary) {
 export default async function CurrencyPage({ params }) {
   const { id } = await params;
   const name = currencyName(id);
+  const content = contentFor(id);
 
   // Best-effort: a DB/build hiccup must not fail the page — fall back to static.
   // Imported dynamically so the DB/driver module stays out of Next's page-config
@@ -38,8 +40,21 @@ export default async function CurrencyPage({ params }) {
     summary = null;
   }
   const price = priceLine(summary);
+  const anchorName = summary?.anchor ? currencyName(summary.anchor) : null;
 
-  const jsonLd = {
+  // One always-present methodology FAQ (names the real anchor when known) plus
+  // any hand-written, currency-specific entries.
+  const methodologyFaq = {
+    q: `How is the ${name} price on this page worked out?`,
+    a: `It is the midpoint of the official low/high range from the latest completed hour${
+      anchorName ? `, measured against ${anchorName}` : ""
+    }, refreshed roughly hourly. The midpoint is a labelled proxy, not a live executable quote${
+      summary?.sourceMode === "fixture" ? "; the values shown are clearly-labelled sample data until the live feed is enabled" : ""
+    }.`,
+  };
+  const faqs = [...(content?.faq ?? []), methodologyFaq];
+
+  const webPageLd = {
     "@context": "https://schema.org",
     "@type": "WebPage",
     name: `${name} PoE2 market tracker`,
@@ -49,9 +64,40 @@ export default async function CurrencyPage({ params }) {
     url: `${siteUrl}/poe2/currencies/${id}`,
   };
 
+  const breadcrumbLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: `${siteUrl}/` },
+      { "@type": "ListItem", position: 2, name: "PoE2 currencies", item: `${siteUrl}/poe2/currencies` },
+      { "@type": "ListItem", position: 3, name, item: `${siteUrl}/poe2/currencies/${id}` },
+    ],
+  };
+
+  const faqLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faqs.map((f) => ({
+      "@type": "Question",
+      name: f.q,
+      acceptedAnswer: { "@type": "Answer", text: f.a },
+    })),
+  };
+
   return (
     <main>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(webPageLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd) }} />
+
+      <nav className="breadcrumb" aria-label="Breadcrumb">
+        <a href="/">Home</a>
+        <span aria-hidden="true">/</span>
+        <a href="/poe2/currencies">Currencies</a>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">{name}</span>
+      </nav>
+
       <section className="currency-hero">
         <img src={iconUrl(id)} alt="" />
         <div>
@@ -103,6 +149,15 @@ export default async function CurrencyPage({ params }) {
         </section>
       ) : null}
 
+      {content ? (
+        <section className="content-section prose" aria-label={`About ${name}`}>
+          <h2>What is the {name}?</h2>
+          <p>{content.uses}</p>
+          <h2>How it trades</h2>
+          <p>{content.trading}</p>
+        </section>
+      ) : null}
+
       <section className="content-section prose">
         <h2>How to read this market</h2>
         <p>
@@ -115,6 +170,18 @@ export default async function CurrencyPage({ params }) {
           <li>how often similar windows touched a planned exit level;</li>
           <li>whether the latest hourly model is stale or under-sampled.</li>
         </ul>
+      </section>
+
+      <section className="content-section prose" aria-label={`${name} FAQ`}>
+        <h2>{name} FAQ</h2>
+        <dl className="faq">
+          {faqs.map((f) => (
+            <div className="faq-item" key={f.q}>
+              <dt>{f.q}</dt>
+              <dd>{f.a}</dd>
+            </div>
+          ))}
+        </dl>
       </section>
     </main>
   );

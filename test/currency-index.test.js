@@ -61,21 +61,21 @@ test("currencySitemapUrls unions popular + data-backed, deduped, with per-curren
     },
     latestCompletedHourMs: 2000,
   };
-  const out = currencySitemapUrls(index, { popularIds: ["divine", "exalted"], nowMs: 9999 });
+  const out = currencySitemapUrls(index, { popularIds: ["divine", "exalted"] });
   const byId = Object.fromEntries(out.map((e) => [e.id, e.lastModifiedMs]));
 
   assert.deepEqual(new Set(out.map((e) => e.id)), new Set(["divine", "exalted", "nameless", "undated"]));
   assert.equal(out.length, 4, "no duplicate urls");
   assert.equal(byId.divine, 1000, "data hour overrides the popular default");
-  assert.equal(byId.exalted, 9999, "popular-without-data uses now");
+  assert.equal(byId.exalted, null, "popular-without-data has no churning lastmod");
   assert.equal(byId.nameless, 2000);
   assert.equal(byId.undated, 2000, "missing per-currency hour falls back to index lastmod");
 });
 
-test("currencySitemapUrls degrades to popular-only when there is no index", () => {
-  const out = currencySitemapUrls(null, { popularIds: ["divine", "exalted"], nowMs: 4242 });
+test("currencySitemapUrls degrades to popular-only (no lastmod) when there is no index", () => {
+  const out = currencySitemapUrls(null, { popularIds: ["divine", "exalted"] });
   assert.deepEqual(out, [
-    { id: "divine", lastModifiedMs: 4242 },
-    { id: "exalted", lastModifiedMs: 4242 },
+    { id: "divine", lastModifiedMs: null },
+    { id: "exalted", lastModifiedMs: null },
   ]);
 });

@@ -27,6 +27,18 @@ test("selectTopMovers excludes untradable / no-pair / no-movement rows", () => {
   assert.ok(!ids.includes("ghost") && !ids.includes("x") && !ids.includes("y"));
 });
 
+test("selectTopMovers never surfaces a stale row as a current top mover", () => {
+  const data = {
+    source: { sourceMode: "official" },
+    rows: [
+      { pairId: "exalted|stale", target: "stale", status: "ok", stale: true, movement: { h24: 0.9 } },
+      { pairId: "exalted|fresh", target: "fresh", status: "ok", stale: false, movement: { h24: 0.04 } },
+    ],
+  };
+  const { movers } = selectTopMovers(data, { limit: 5 });
+  assert.deepEqual(movers.map((m) => m.target), ["fresh"]);
+});
+
 test("selectTopMovers defaults to 5 and degrades cleanly on empty/absent payloads", () => {
   assert.deepEqual(selectTopMovers(null), { movers: [], sample: false });
   assert.deepEqual(selectTopMovers({ rows: [] }), { movers: [], sample: false });

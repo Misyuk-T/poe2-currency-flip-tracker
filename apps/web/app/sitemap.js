@@ -14,26 +14,28 @@ export default async function sitemap() {
   try {
     const { getCurrencyIndex, currencySitemapUrls } = await import("../lib/currency-summary.js");
     index = await getCurrencyIndex();
-    entries = currencySitemapUrls(index, { popularIds: popularCurrencies.map((c) => c.id), nowMs: now.getTime() });
+    entries = currencySitemapUrls(index, { popularIds: popularCurrencies.map((c) => c.id) });
   } catch {
     index = null;
-    entries = popularCurrencies.map((c) => ({ id: c.id, lastModifiedMs: now.getTime() }));
+    entries = popularCurrencies.map((c) => ({ id: c.id, lastModifiedMs: null }));
   }
 
   const latest = index?.latestCompletedHour ? new Date(index.latestCompletedHour) : now;
 
   const currencyEntries = entries.map(({ id, lastModifiedMs }) => ({
     url: `${siteUrl}/poe2/currencies/${id}`,
-    lastModified: new Date(lastModifiedMs),
-    changeFrequency: "hourly",
+    // Only emit lastModified when real data backs the page; pages without data
+    // stay stable (no churning timestamp) and advertise a slower change cadence.
+    ...(lastModifiedMs ? { lastModified: new Date(lastModifiedMs) } : {}),
+    changeFrequency: lastModifiedMs ? "hourly" : "daily",
     priority: 0.7,
   }));
 
   return [
-    { url: siteUrl, lastModified: now, changeFrequency: "weekly", priority: 1 },
+    { url: siteUrl, lastModified: latest, changeFrequency: "weekly", priority: 1 },
     { url: `${siteUrl}/poe2`, lastModified: latest, changeFrequency: "hourly", priority: 0.9 },
     { url: `${siteUrl}/poe2/currencies`, lastModified: latest, changeFrequency: "hourly", priority: 0.8 },
-    { url: `${siteUrl}/guides/currency-flipping`, lastModified: now, changeFrequency: "monthly", priority: 0.6 },
+    { url: `${siteUrl}/guides/currency-flipping`, changeFrequency: "monthly", priority: 0.6 },
     ...currencyEntries,
   ];
 }

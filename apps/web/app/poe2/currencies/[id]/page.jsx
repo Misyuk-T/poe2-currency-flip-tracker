@@ -42,24 +42,31 @@ export default async function CurrencyPage({ params }) {
   const price = priceLine(summary);
   const anchorName = summary?.anchor ? currencyName(summary.anchor) : null;
 
-  // One always-present methodology FAQ (names the real anchor when known) plus
-  // any hand-written, currency-specific entries.
-  const methodologyFaq = {
-    q: `How is the ${name} price on this page worked out?`,
-    a: `It is the midpoint of the official low/high range from the latest completed hour${
-      anchorName ? `, measured against ${anchorName}` : ""
-    }, refreshed roughly hourly. The midpoint is a labelled proxy, not a live executable quote${
-      summary?.sourceMode === "fixture" ? "; the values shown are clearly-labelled sample data until the live feed is enabled" : ""
-    }.`,
-  };
-  const faqs = [...(content?.faq ?? []), methodologyFaq];
+  // Hand-written, currency-specific entries, plus a methodology FAQ only when we
+  // actually show a price. The wording is mode-aware (sample vs live) and never
+  // claims data we lack — so a no-data or anchor-currency page omits it entirely.
+  const faqs = [...(content?.faq ?? [])];
+  if (summary) {
+    faqs.push({
+      q: `How is the ${name} price on this page worked out?`,
+      a: `It is the midpoint of the latest completed-hour low/high range${
+        anchorName ? `, measured against ${anchorName}` : ""
+      }, refreshed roughly hourly — a labelled proxy, not a live executable quote${
+        summary.sourceMode === "fixture"
+          ? ". The values shown are clearly-labelled sample data until the live feed is enabled"
+          : ""
+      }.`,
+    });
+  }
 
   const webPageLd = {
     "@context": "https://schema.org",
     "@type": "WebPage",
     name: `${name} PoE2 market tracker`,
     description: price
-      ? `${name} latest completed-hour midpoint ≈ ${price} in Path of Exile 2 (${summary.anchor} market).`
+      ? `${name} latest completed-hour midpoint ≈ ${price} in Path of Exile 2 (${summary.anchor} market)${
+          summary.sourceMode === "fixture" ? " — sample data" : ""
+        }.`
       : `Hourly market context and trade planning page for ${name} in Path of Exile 2.`,
     url: `${siteUrl}/poe2/currencies/${id}`,
   };
@@ -88,7 +95,9 @@ export default async function CurrencyPage({ params }) {
     <main>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(webPageLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }} />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd) }} />
+      {faqs.length ? (
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd) }} />
+      ) : null}
 
       <nav className="breadcrumb" aria-label="Breadcrumb">
         <a href="/">Home</a>
@@ -172,17 +181,19 @@ export default async function CurrencyPage({ params }) {
         </ul>
       </section>
 
-      <section className="content-section prose" aria-label={`${name} FAQ`}>
-        <h2>{name} FAQ</h2>
-        <dl className="faq">
-          {faqs.map((f) => (
-            <div className="faq-item" key={f.q}>
-              <dt>{f.q}</dt>
-              <dd>{f.a}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
+      {faqs.length ? (
+        <section className="content-section prose" aria-label={`${name} FAQ`}>
+          <h2>{name} FAQ</h2>
+          <dl className="faq">
+            {faqs.map((f) => (
+              <div className="faq-item" key={f.q}>
+                <dt>{f.q}</dt>
+                <dd>{f.a}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ) : null}
     </main>
   );
 }

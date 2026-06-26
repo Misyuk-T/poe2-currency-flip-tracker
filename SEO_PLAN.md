@@ -18,26 +18,34 @@ on data-backed pages, and funnel them into the radar dashboard.
       (midpoint, range, 24h move, samples) + JSON-LD, `revalidate = 3600`.
 - [x] Static homepage `/`, dashboard `/poe2`, guide, `sitemap.xml`, `robots.txt`.
 - [x] Same-origin API; hourly ingestion populates the data the pages read.
+- [x] **`?currency=<id>` deep-link** — currency-page CTAs preselect the market.
+- [x] **Data-backed `/poe2/currencies` list** — ISR cards show real price + 24h
+      move from one slim `getCurrencyIndex()` read; honest sample label + static
+      fallback.
+- [x] **Homepage mini-radar** — client widget under the hero pulls top movers
+      from `/api/radar` (stale rows excluded); page stays static, widget hydrates.
+- [x] **Unique per-currency copy + FAQ** for the popular set (editorial game
+      context, hedged — no fabricated/measured market claims); long-tail keeps the
+      generic methodology copy.
+- [x] **Sitemap completeness** — union of popular + every data-backed currency,
+      per-currency `lastmod` from its latest completed hour. Deliberately *not*
+      all 749 catalog ids: a URL earns an entry only once real data backs it
+      (thin-content guard). Pages without data carry no churning `lastmod`.
+- [x] **Breadcrumb JSON-LD** (`Home › Currencies › <currency>`) + visible
+      breadcrumb, plus **FAQPage JSON-LD** (only when the page has FAQ entries).
 
 ## Backlog (prioritized)
 
 ### P0 — correctness (do first)
 - [ ] **Set `NEXT_PUBLIC_SITE_URL`** in Vercel to the production origin and redeploy.
       Currently canonical / `sitemap.xml` / `robots.txt` / OG all emit
-      `http://localhost:3000` — actively harmful for indexing.
+      `http://localhost:3000` — actively harmful for indexing. (Vercel dashboard
+      action — not code; the code already reads the env var with a localhost
+      fallback.)
 
 ### P1 — high value
-- [ ] **Wire `?currency=<id>` deep-link** in the dashboard so currency-page CTAs
-      preselect the market (closes the SEO→app loop).
-- [ ] **Data-backed `/poe2/currencies` list** — each card shows price + 24h move
-      (reuse the slim currency-summary reader), ISR hourly.
-- [ ] **Homepage mini-radar** under the hero: small client widget showing top
-      movers from `/api/radar`. Page stays static; widget hydrates after load.
-- [ ] **Unique per-currency copy** — a few sentences of genuinely useful, distinct
-      text per currency (what it's used for, how it trades) + an FAQ block.
-- [ ] **Sitemap completeness** — include all catalog currencies (not just the 6
-      popular), with `lastmod` from the latest completed hour.
-- [ ] **Breadcrumb JSON-LD** (`Home › Currencies › <currency>`).
+- [x] All P1 code items shipped (see Done above). Remaining P1 work is the P0
+      Vercel env var.
 
 ### P2 — growth & polish
 - [ ] Keyword landing/guide pages: "how to flip X", "divine to exalted ratio",

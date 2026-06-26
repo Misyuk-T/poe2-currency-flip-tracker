@@ -109,11 +109,14 @@ export function buildCurrencyIndex(candlesByPair, { anchor, sourceMode = "fixtur
  * real, unique data behind it, which avoids hundreds of thin, near-duplicate
  * pages. Framework-agnostic (returns ms, not Date) so it is trivially testable.
  */
-export function currencySitemapUrls(index, { popularIds = [], nowMs = Date.now() } = {}) {
+export function currencySitemapUrls(index, { popularIds = [] } = {}) {
   const byId = new Map();
-  for (const id of popularIds) byId.set(id, nowMs);
+  // Popular pages are always listed, but a page with no market data behind it
+  // gets a null lastModified — a stable signal, not a timestamp that churns to
+  // "now" on every hourly revalidation and trains crawlers to ignore lastmod.
+  for (const id of popularIds) byId.set(id, null);
   for (const [id, stat] of Object.entries(index?.byId ?? {})) {
-    byId.set(id, Number.isFinite(stat?.latestCompletedHourMs) ? stat.latestCompletedHourMs : index?.latestCompletedHourMs ?? nowMs);
+    byId.set(id, Number.isFinite(stat?.latestCompletedHourMs) ? stat.latestCompletedHourMs : index?.latestCompletedHourMs ?? null);
   }
   return [...byId.entries()].map(([id, lastModifiedMs]) => ({ id, lastModifiedMs }));
 }

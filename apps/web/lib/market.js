@@ -43,7 +43,13 @@ export function iconUrl() {
  */
 export function selectTopMovers(data, { limit = 5 } = {}) {
   const movers = (data?.rows ?? [])
-    .filter((row) => row?.pairId && row.status !== "no-trades-this-hour" && Number.isFinite(row.movement?.h24))
+    .filter(
+      (row) =>
+        row?.pairId &&
+        row.status !== "no-trades-this-hour" &&
+        !row.stale && // never surface a stale move as a current "top mover"
+        Number.isFinite(row.movement?.h24),
+    )
     .sort((a, b) => Math.abs(b.movement.h24) - Math.abs(a.movement.h24))
     .slice(0, Math.max(0, limit));
   return { movers, sample: data?.source?.sourceMode === "fixture" };

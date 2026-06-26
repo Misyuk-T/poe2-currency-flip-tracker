@@ -57,12 +57,17 @@ architecture level, not patched in the browser:
 
 Production does **not** run the always-on Node server. It is split:
 
-- **Frontend + API — Vercel (Next.js, `apps/web/`).** SEO pages are static; the
-  Market Radar dashboard is a client component that calls **same-origin** Next
-  Route Handlers under `/api/*` (`radar`, `radar/history`, `hotlist`, `config`,
-  `status`). They run on the Node runtime and read Postgres with a bounded,
-  per-request query — no in-memory snapshot, scheduler, or circuit breaker. The
-  build is driven by the root `vercel.json` (`next build apps/web`).
+- **Frontend + API — Vercel (Next.js, `apps/web/`).** SEO pages are crawlable
+  static/ISR HTML backed by real data: per-currency pages
+  (`/poe2/currencies/[id]`), the currency index, and `sitemap.xml` read the
+  latest completed hour and `revalidate` hourly (per-currency `lastmod`); the
+  homepage hydrates a small top-movers mini-radar. Fixture data is labelled as
+  such everywhere it appears, including JSON-LD. The Market Radar dashboard is a
+  client component that calls **same-origin** Next Route Handlers under `/api/*`
+  (`radar`, `radar/history`, `hotlist`, `config`, `status`). They run on the Node
+  runtime and read Postgres with a bounded, per-request query — no in-memory
+  snapshot, scheduler, or circuit breaker. The build is driven by the root
+  `vercel.json` (`next build apps/web`).
 - **Data — Supabase Postgres.** `hourly_market_candles` + `cxapi_state` (radar),
   `snapshot_runs` + `market_points` (legacy books). RLS is deny-all; only the
   server-side connection (Supavisor transaction pooler, port `6543`) touches the

@@ -239,6 +239,27 @@ export default async function CurrencyPage({ params }) {
           </dl>
         </section>
       ) : null}
+      {popularCurrencies.some((c) => c.id !== id) ? (
+        <section className="content-section" aria-label="Related currencies">
+          <div className="section-heading">
+            <p className="eyebrow">Related markets</p>
+            <h2>Other PoE2 currencies</h2>
+          </div>
+          <div className="currency-grid">
+            {popularCurrencies
+              .filter((c) => c.id !== id)
+              .map((c) => (
+                <a className="currency-card with-icon" href={`/poe2/currencies/${c.id}`} key={c.id}>
+                  <img src={iconUrl(c.id)} alt="" />
+                  <span>
+                    <strong>{c.name}</strong>
+                    <small>{c.summary}</small>
+                  </span>
+                </a>
+              ))}
+          </div>
+        </section>
+      ) : null}
     </main>
   );
 }

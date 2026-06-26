@@ -28,7 +28,7 @@ export const currencyContent = {
   },
   exalted: {
     uses:
-      "Exalted Orbs add a new random modifier to a rare item — the everyday crafting action behind most gear progression — which keeps demand constant. In Path of Exile 2 the Exalted Orb is also the practical unit of account: most prices are quoted in Exalted, so it behaves like the market's base currency.",
+      "Exalted Orbs add a new random modifier to a rare item — the everyday crafting action behind most gear progression, so players reach for them constantly. In Path of Exile 2 the Exalted Orb is also the practical unit of account: most prices are quoted in Exalted, so it behaves like the market's base currency.",
     trading:
       "It generally fills quickly in both directions, which is exactly why this tracker uses it as the anchor for measuring everything else.",
     faq: [
@@ -46,7 +46,7 @@ export const currencyContent = {
     uses:
       "The Chaos Orb reforges a single modifier on a rare item — removing one and adding another — a targeted crafting step with steady, everyday demand. Because it is used so widely, Chaos demand is often treated as a rough read on broader currency activity.",
     trading:
-      "It is one of the more actively-traded currencies, so any edge usually comes from timing rather than size.",
+      "It is a staple, widely-used crafting currency, so any edge usually comes from timing rather than from large positions.",
     faq: [
       {
         q: "What is the Chaos Orb used for in PoE2?",
@@ -54,7 +54,7 @@ export const currencyContent = {
       },
       {
         q: "Is the Chaos Orb liquid enough to flip?",
-        a: "It is one of the more actively-traded currencies, so listings tend to fill quickly. Profit usually comes from reacting to short-term moves rather than holding large positions.",
+        a: "Chaos is one of the most widely-used crafting currencies, so it generally sees steady trading interest. Any profit usually comes from reacting to short-term moves rather than holding large positions.",
       },
     ],
   },

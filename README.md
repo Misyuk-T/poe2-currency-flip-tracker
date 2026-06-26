@@ -61,8 +61,11 @@ Production does **not** run the always-on Node server. It is split:
   static/ISR HTML backed by real data: per-currency pages
   (`/poe2/currencies/[id]`), the currency index, and `sitemap.xml` read the
   latest completed hour and `revalidate` hourly (per-currency `lastmod`); the
-  homepage hydrates a small top-movers mini-radar. Fixture data is labelled as
-  such everywhere it appears, including JSON-LD. The Market Radar dashboard is a
+  homepage hydrates a small top-movers mini-radar. Each currency page also shows
+  a clearly-labelled simulated paper-trade backtest (`src/domain/paper-trade.js`,
+  a deterministic flip simulation over that pair's own history — never a profit
+  promise). Fixture data is labelled as such everywhere it appears, including
+  JSON-LD. The Market Radar dashboard is a
   client component that calls **same-origin** Next Route Handlers under `/api/*`
   (`radar`, `radar/history`, `hotlist`, `config`, `status`). They run on the Node
   runtime and read Postgres with a bounded, per-request query — no in-memory

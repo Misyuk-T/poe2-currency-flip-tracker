@@ -148,7 +148,21 @@ follow-ups noted below.
       freshness in API/UI, scheduler observability, 250-target cache cap)
 - [ ] C2b (official cxapi activity ordering; requires an approved OAuth app with
       `service:cxapi`. Catalog order is the explicit fallback until then.)
-- [ ] C3 (paper-trade journal)
+- [~] C3 (paper-trade journal). **C3a + C3b shipped, codex-reviewed twice.**
+      - C3a: pure, deterministic engine `src/domain/paper-trade.js` — a limit-buy
+        flip simulation. Resolution is driven by data coverage (not the wall
+        clock); a take-profit only fills on an hour after the entry; outcomes are
+        pending until the horizon is observed. Reports fill rate, take-profit hit
+        rate (kept distinct from merely-profitable rate), max adverse excursion,
+        realised/marked profit and round-trip gold efficiency.
+      - C3b: a read-only simulated backtest surfaced on each
+        `/poe2/currencies/[id]` page ("Would these flips have paid?") over that
+        pair's own history — labelled a simulation on sample data, not advice,
+        with the pending/excluded count shown. No new table, no auth.
+      - **C3c BLOCKED (external):** Supabase Auth (Discord + Google OAuth apps +
+        secrets) + per-user RLS + the persisted *forward* journal table (a
+        production migration) — the first per-user data. Needs the user to create
+        the OAuth apps and authorize the migration; not started.
 
 ### A1 note
 Gold modes (strict/show/ignore) are done end-to-end. The **anchor selector

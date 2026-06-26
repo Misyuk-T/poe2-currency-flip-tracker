@@ -7,6 +7,7 @@ import {
   popularCurrencies,
   siteUrl,
 } from "../lib/market.js";
+import HomeMiniRadar from "../components/HomeMiniRadar.jsx";
 
 export const revalidate = 3600;
 
@@ -266,6 +267,7 @@ export default async function HomePage() {
           </p>
         </div>
         {summary ? <DivineHeroCard summary={summary} /> : null}
+        <HomeMiniRadar />
         <a className="home-primary-cta" href="/poe2">Open market radar</a>
       </section>
 

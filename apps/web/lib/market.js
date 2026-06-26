@@ -35,6 +35,20 @@ export function iconUrl() {
   return fallbackIconUrl;
 }
 
+/**
+ * Pure: pick the biggest 24h movers from an /api/radar payload for the homepage
+ * mini-radar. Tradable rows only (a real pair, traded this hour, finite move),
+ * ranked by absolute 24h move. Also surfaces whether the feed is sample data so
+ * the widget can label it honestly. Kept here (plain JS) so it is unit-testable.
+ */
+export function selectTopMovers(data, { limit = 5 } = {}) {
+  const movers = (data?.rows ?? [])
+    .filter((row) => row?.pairId && row.status !== "no-trades-this-hour" && Number.isFinite(row.movement?.h24))
+    .sort((a, b) => Math.abs(b.movement.h24) - Math.abs(a.movement.h24))
+    .slice(0, Math.max(0, limit));
+  return { movers, sample: data?.source?.sourceMode === "fixture" };
+}
+
 export function formatNumber(value, { maximumFractionDigits = 2, minimumFractionDigits = 0 } = {}) {
   if (!Number.isFinite(value)) return "—";
   return new Intl.NumberFormat(undefined, { maximumFractionDigits, minimumFractionDigits }).format(value);

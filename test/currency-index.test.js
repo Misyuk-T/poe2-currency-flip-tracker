@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildCxapiFixtures } from "../src/data/fixtures/cxapi-fixtures.js";
 import { normalizeCxDigest } from "../src/domain/cx-market.js";
-import { buildCurrencyIndex } from "../apps/web/lib/currency-summary.js";
+import { buildCurrencyIndex, currencySitemapUrls } from "../apps/web/lib/currency-summary.js";
 
 function fixtureCandles() {
   const all = {};
@@ -50,4 +50,32 @@ test("buildCurrencyIndex with no candles yields an empty index", () => {
   assert.equal(index.latestCompletedHour, null);
   assert.equal(index.latestCompletedHourMs, null);
   assert.equal(index.sourceMode, "official");
+});
+
+test("currencySitemapUrls unions popular + data-backed, deduped, with per-currency lastmod", () => {
+  const index = {
+    byId: {
+      divine: { latestCompletedHourMs: 1000 }, // popular AND has data → data lastmod wins
+      nameless: { latestCompletedHourMs: 2000 }, // data-backed, not popular → included
+      undated: {}, // data-backed but no hour → falls back to index lastmod
+    },
+    latestCompletedHourMs: 2000,
+  };
+  const out = currencySitemapUrls(index, { popularIds: ["divine", "exalted"], nowMs: 9999 });
+  const byId = Object.fromEntries(out.map((e) => [e.id, e.lastModifiedMs]));
+
+  assert.deepEqual(new Set(out.map((e) => e.id)), new Set(["divine", "exalted", "nameless", "undated"]));
+  assert.equal(out.length, 4, "no duplicate urls");
+  assert.equal(byId.divine, 1000, "data hour overrides the popular default");
+  assert.equal(byId.exalted, 9999, "popular-without-data uses now");
+  assert.equal(byId.nameless, 2000);
+  assert.equal(byId.undated, 2000, "missing per-currency hour falls back to index lastmod");
+});
+
+test("currencySitemapUrls degrades to popular-only when there is no index", () => {
+  const out = currencySitemapUrls(null, { popularIds: ["divine", "exalted"], nowMs: 4242 });
+  assert.deepEqual(out, [
+    { id: "divine", lastModifiedMs: 4242 },
+    { id: "exalted", lastModifiedMs: 4242 },
+  ]);
 });

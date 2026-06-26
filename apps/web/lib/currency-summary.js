@@ -102,6 +102,23 @@ export function buildCurrencyIndex(candlesByPair, { anchor, sourceMode = "fixtur
 }
 
 /**
+ * Pure: the sitemap URL set for currency pages — the union of always-listed
+ * popular currencies and every currency that has stored market data, each with
+ * a `lastModifiedMs` (its own latest completed hour when known). We deliberately
+ * do NOT enumerate all catalog ids: a URL only earns a sitemap entry once it has
+ * real, unique data behind it, which avoids hundreds of thin, near-duplicate
+ * pages. Framework-agnostic (returns ms, not Date) so it is trivially testable.
+ */
+export function currencySitemapUrls(index, { popularIds = [], nowMs = Date.now() } = {}) {
+  const byId = new Map();
+  for (const id of popularIds) byId.set(id, nowMs);
+  for (const [id, stat] of Object.entries(index?.byId ?? {})) {
+    byId.set(id, Number.isFinite(stat?.latestCompletedHourMs) ? stat.latestCompletedHourMs : index?.latestCompletedHourMs ?? nowMs);
+  }
+  return [...byId.entries()].map(([id, lastModifiedMs]) => ({ id, lastModifiedMs }));
+}
+
+/**
  * Slim multi-currency read for the list page + sitemap: the latest stored price
  * and 24h movement for every target vs the configured anchor, from a single
  * bounded candle-window read. Returns null when there's no database or no data

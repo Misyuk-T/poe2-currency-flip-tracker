@@ -1,4 +1,5 @@
 import { siteUrl } from "../../../lib/market.js";
+import GuideLayout from "../../../components/GuideLayout.jsx";
 
 export const metadata = {
   title: "Divine to Exalted Ratio in PoE2 — How to Read It",
@@ -50,6 +51,7 @@ export default function DivineToExaltedRatioGuide() {
         <span aria-current="page">Divine to Exalted ratio</span>
       </nav>
 
+      <GuideLayout slug="divine-to-exalted-ratio">
       <article className="content-section prose">
         <p className="eyebrow">Guide</p>
         <h1>The Divine to Exalted ratio in PoE2</h1>
@@ -100,6 +102,7 @@ export default function DivineToExaltedRatioGuide() {
           ))}
         </dl>
       </article>
+      </GuideLayout>
     </main>
   );
 }

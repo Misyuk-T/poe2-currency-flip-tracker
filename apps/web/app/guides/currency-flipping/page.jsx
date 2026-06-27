@@ -1,3 +1,5 @@
+import GuideLayout from "../../../components/GuideLayout.jsx";
+
 export const metadata = {
   title: "PoE2 Currency Flipping Guide",
   description:
@@ -7,6 +9,14 @@ export const metadata = {
 export default function CurrencyFlippingGuidePage() {
   return (
     <main>
+      <nav className="breadcrumb" aria-label="Breadcrumb">
+        <a href="/">Home</a>
+        <span aria-hidden="true">/</span>
+        <a href="/guides">Guides</a>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">Currency flipping</span>
+      </nav>
+      <GuideLayout slug="currency-flipping">
       <article className="content-section prose">
         <p className="eyebrow">Guide</p>
         <h1>PoE2 currency flipping without pretending prices are live</h1>
@@ -30,6 +40,7 @@ export default function CurrencyFlippingGuidePage() {
           comparable past windows reached the planned exit level.
         </p>
       </article>
+      </GuideLayout>
     </main>
   );
 }

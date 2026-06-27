@@ -1,4 +1,5 @@
 import { siteUrl } from "../../../lib/market.js";
+import GuideLayout from "../../../components/GuideLayout.jsx";
 
 export const metadata = {
   title: "PoE2 Currency Exchange, Explained",
@@ -50,6 +51,7 @@ export default function CurrencyExchangeGuide() {
         <span aria-current="page">PoE2 currency exchange</span>
       </nav>
 
+      <GuideLayout slug="poe2-currency-exchange">
       <article className="content-section prose">
         <p className="eyebrow">Guide</p>
         <h1>PoE2 currency exchange, explained</h1>
@@ -99,6 +101,7 @@ export default function CurrencyExchangeGuide() {
           ))}
         </dl>
       </article>
+      </GuideLayout>
     </main>
   );
 }

@@ -176,73 +176,53 @@ function HeroChart({ model, unit }) {
   );
 }
 
-function DivineHeroCard({ summary }) {
+function DivinePanel({ summary }) {
   const unit = unitLabel(summary.anchor);
   const mid = midpoint(summary);
   const plan = planFromRange(summary);
   const model = chartModel(summary);
   const movement = summary.movement?.h24;
+  const samples = Math.max(0, summary.samples ?? summary.series?.length ?? 0);
 
   return (
-    <section className="home-product-card" aria-label="Divine Orb planning context">
-      <div className="home-card-topline">
+    <div className="home-panel-main" aria-label="Divine Orb planning context">
+      <div className="home-panel-main-head">
         <div>
-          <p className="eyebrow">Planning context, not executable quotes</p>
-          <h2>Divine Orb</h2>
+          <p className="eyebrow">Divine Orb · hourly range</p>
+          <span className="home-panel-samples">Last {samples} completed-hour samples</span>
         </div>
-        {summary.sourceMode === "fixture" ? <span className="home-data-badge">sample data</span> : null}
+        <span className={`home-move ${Number(movement) >= 0 ? "home-teal" : "home-loss"}`}>
+          {movementLabel(movement)} 24h
+        </span>
       </div>
 
-      <div className="home-card-grid">
-        <div className="home-chart-panel">
-          <div className="home-chart-heading">
-            <div>
-              <strong>Hourly range (min–max)</strong>
-              <span>Last {Math.max(0, summary.samples ?? summary.series?.length ?? 0)} completed-hour samples</span>
-            </div>
-            <div className="home-chart-legend">
-              <span><i className="legend-range" /> Range band</span>
-              <span><i className="legend-midpoint" /> Midpoint</span>
-            </div>
-          </div>
-          <HeroChart model={model} unit={unit} />
-          <div className="home-metric-tiles">
-            <article>
-              <span>24h move</span>
-              <strong className={Number(movement) >= 0 ? "home-teal" : "home-loss"}>{movementLabel(movement)}</strong>
-            </article>
-            <article>
-              <span>Activity score</span>
-              <strong>{finite(summary.activityScore) ? `${Math.round(Number(summary.activityScore))}/100` : "—/100"}</strong>
-            </article>
-            <article>
-              <span>Observed now</span>
-              <strong className="home-teal">{priceText(mid, unit, { withUnit: true })}</strong>
-            </article>
-          </div>
-        </div>
+      <HeroChart model={model} unit={unit} />
 
-        <aside className="home-plan-column" aria-label="Derived planning values">
-          <article className="home-side-panel observed">
-            <span>Observed price (now)</span>
-            <strong>{priceText(mid, unit)}</strong>
-            <em>{unit}</em>
-            <small>{latestHourText(summary.latestCompletedHour)} · range-midpoint proxy</small>
-          </article>
-          <article className="home-side-panel">
-            <span>Plan (1–24h outlook)</span>
-            <div>
-              <small>Entry</small>
-              <strong>{plan ? rangeText(plan.entryLow, plan.entryHigh, unit) : "—"}</strong>
-            </div>
-            <div>
-              <small>Exit</small>
-              <strong className="home-gold">{plan ? rangeText(plan.exitLow, plan.exitHigh, unit) : "—"}</strong>
-            </div>
-          </article>
-        </aside>
+      <div className="home-chart-legend home-chart-legend-row">
+        <span><i className="legend-range" /> Range band</span>
+        <span><i className="legend-midpoint" /> Midpoint</span>
       </div>
-    </section>
+
+      <div className="home-stat-row">
+        <article className="home-side-panel observed">
+          <span>Current · observed now</span>
+          <strong>{priceText(mid, unit)}</strong>
+          <em>{unit}</em>
+          <small>{latestHourText(summary.latestCompletedHour)} · range-midpoint proxy</small>
+        </article>
+        <article className="home-side-panel">
+          <span>Conservative plan · 1–24h</span>
+          <div>
+            <small>Entry</small>
+            <strong>{plan ? rangeText(plan.entryLow, plan.entryHigh, unit) : "—"}</strong>
+          </div>
+          <div>
+            <small>Exit</small>
+            <strong className="home-gold">{plan ? rangeText(plan.exitLow, plan.exitHigh, unit) : "—"}</strong>
+          </div>
+        </article>
+      </div>
+    </div>
   );
 }
 
@@ -260,15 +240,28 @@ export default async function HomePage() {
       <section className="home-hero">
         <div className="home-hero-copy">
           <p className="eyebrow">Path of Exile 2 currency market radar</p>
-          <h1>Hourly data. Better flips.</h1>
+          <h1>
+            Use the radar.
+            <br />
+            <span className="home-hero-accent">Not vibes.</span>
+          </h1>
           <p>
-            Read completed-hour market ranges as context, then open the radar to plan around the price you can actually
-            verify in game.
+            Read completed-hour market ranges as context, then plan around the price you can actually verify in game —
+            no fabricated numbers.
           </p>
+          <a className="home-primary-cta" href="/poe2">Open market radar</a>
         </div>
-        {summary ? <DivineHeroCard summary={summary} /> : null}
-        <HomeMiniRadar />
-        <a className="home-primary-cta" href="/poe2">Open market radar</a>
+
+        <div className="home-hero-panel">
+          <div className="home-panel-head">
+            <p className="eyebrow">Market radar</p>
+            {summary?.sourceMode === "fixture" ? <span className="home-data-badge">sample data</span> : null}
+          </div>
+          <div className="home-panel-body">
+            <HomeMiniRadar />
+            {summary ? <DivinePanel summary={summary} /> : null}
+          </div>
+        </div>
       </section>
 
       <section className="home-seo-copy" aria-label="Why use this tracker">

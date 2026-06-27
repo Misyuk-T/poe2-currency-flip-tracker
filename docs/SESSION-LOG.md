@@ -62,7 +62,17 @@ Google via Supabase; buy a custom domain.
   (unlike Firebase); exact steps + the `exalted-flip` callback URL are in
   ADVICE.md.
 
-**Tests:** 202 green. **Still queued (non-blocked):** dynamic OG images;
+- **UI revamp — dark premium theme site-wide** (`40f49bb`, steps 1–3 of
+  docs/UI-REVAMP-PLAN.md). codex-authored CSS + codex-reviewed (fixed a
+  metric-value selector over-reach, kept --profit/--loss conventional so the
+  dashboard chart stays consistent, AA-contrast CTA). `:root` dark tokens,
+  global dark body, premium header, dark panels/cards/buttons/prose/breadcrumb/
+  faq. Home + dashboard shell untouched. **Caveat:** both screenshot tools
+  (Claude-in-Chrome + computer-use) broke mid-task, so this pass shipped without
+  an eyes-on visual check — needs verification on prod, and steps 4–10 want eyes.
+
+**Tests:** 202 green. **Still queued (non-blocked):** UI revamp steps 4–10;
+dynamic OG images;
 **C3c Google-auth foundation prep** (migration + Supabase Auth + per-user RLS,
 pending the user's Google OAuth app + secrets). **User action:** buy the domain;
 set up Google OAuth in Supabase; Google Search Console.

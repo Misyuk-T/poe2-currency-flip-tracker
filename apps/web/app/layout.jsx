@@ -29,7 +29,7 @@ export default function RootLayout({ children }) {
             <nav aria-label="Main navigation">
               <a href="/poe2">Market radar</a>
               <a href="/poe2/currencies">Currencies</a>
-              <a href="/guides/currency-flipping">Guide</a>
+              <a href="/guides">Guides</a>
             </nav>
           </header>
           {children}

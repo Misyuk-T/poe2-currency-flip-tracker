@@ -1,4 +1,5 @@
 import { popularCurrencies, siteUrl } from "../lib/market.js";
+import { guides } from "../lib/guides.js";
 
 // Refresh hourly so per-currency lastmod tracks the latest ingested hour.
 export const revalidate = 3600;
@@ -35,7 +36,8 @@ export default async function sitemap() {
     { url: siteUrl, lastModified: latest, changeFrequency: "weekly", priority: 1 },
     { url: `${siteUrl}/poe2`, lastModified: latest, changeFrequency: "hourly", priority: 0.9 },
     { url: `${siteUrl}/poe2/currencies`, lastModified: latest, changeFrequency: "hourly", priority: 0.8 },
-    { url: `${siteUrl}/guides/currency-flipping`, changeFrequency: "monthly", priority: 0.6 },
+    { url: `${siteUrl}/guides`, changeFrequency: "monthly", priority: 0.6 },
+    ...guides.map((g) => ({ url: `${siteUrl}/guides/${g.slug}`, changeFrequency: "monthly", priority: 0.6 })),
     ...currencyEntries,
   ];
 }

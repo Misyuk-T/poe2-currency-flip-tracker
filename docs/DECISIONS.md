@@ -2,6 +2,15 @@
 
 Newest first. Each entry: **what** was decided, **why**, and the date.
 
+## 2026-06-27 — Homepage = two-column hero matching the approved reference
+The landing is a left-aligned hero (serif headline, gold accent line, gold CTA)
+beside one cohesive dark MARKET RADAR panel (movers rail with real sparklines +
+gold range chart + CURRENT/CONSERVATIVE PLAN). Replaces the centered single-
+column hero. Gold is the cohesive accent (amber chart + observed price). The
+homepage rail opts into `includeStale` so it is never empty (data is labelled +
+its age is shown). **Why:** match the design the user approved; co-reviewed with
+codex and verified live.
+
 ## 2026-06-27 — Light-theme cards: uniform width + auto-fit grids
 All `.content-section` cards are full-width (prose text constrained inside for
 readability) so card edges align. `.currency-grid` uses `auto-fit`; icon grids

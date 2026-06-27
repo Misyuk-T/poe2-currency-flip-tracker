@@ -52,6 +52,16 @@ Google via Supabase; buy a custom domain.
   + "PoE2 currency exchange", breadcrumb/FAQ JSON-LD, internal links, sitemap +
   nav wired. Codex-reviewed (honesty/links).
 
+- **Homepage redesign to the approved reference** (`e57d86d`, `4a8f8de`,
+  `4209717`) — two-column hero (left-aligned "Use the radar. / Not vibes." with a
+  gold accent + gold CTA; right = a cohesive MARKET RADAR panel: movers rail with
+  real per-currency sparklines, gold range chart, CURRENT/CONSERVATIVE PLAN row).
+  Co-reviewed with codex (caught the chart-grid styles still scoped to the
+  removed `.home-product-card`). Browser-verified live against the reference.
+- **Answered:** Supabase Google auth needs a self-created Google OAuth client
+  (unlike Firebase); exact steps + the `exalted-flip` callback URL are in
+  ADVICE.md.
+
 **Tests:** 202 green. **Still queued (non-blocked):** dynamic OG images;
 **C3c Google-auth foundation prep** (migration + Supabase Auth + per-user RLS,
 pending the user's Google OAuth app + secrets). **User action:** buy the domain;

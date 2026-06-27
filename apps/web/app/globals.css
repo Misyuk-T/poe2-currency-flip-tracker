@@ -259,9 +259,20 @@ h2 { font-size: clamp(1.5rem, 4vw, 2.4rem); }
 .feature-grid,
 .currency-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Auto-fit so cards fill the row evenly and wrap responsively instead of
+     leaving ragged "lone card" rows (a 4-card metric section was 3 + 1). */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 16px;
   margin-top: 18px;
+}
+
+/* Icon cards (currency index / related markets) carry more text, so give them a
+   wider minimum — they read as a calm 3-up instead of a ragged 4 + lone card.
+   :where() keeps specificity at one class so the mobile `@media` 1fr override
+   (same specificity, later in source) still wins and collapses to a single
+   column on narrow screens. */
+.currency-grid:where(:has(> .currency-card.with-icon)) {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
 }
 
 .feature-grid article,
@@ -288,6 +299,15 @@ h2 { font-size: clamp(1.5rem, 4vw, 2.4rem); }
 .currency-card.with-icon {
   grid-template-columns: 52px minmax(0, 1fr);
   align-items: center;
+}
+
+/* Stack the name above the price/summary lines. Without this the <strong> and
+   <small> are inline and run together ("Exalted OrbPrimary liquid…"). */
+.currency-card.with-icon > span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
 }
 
 .currency-card img,
@@ -639,7 +659,12 @@ h2 { font-size: clamp(1.5rem, 4vw, 2.4rem); }
   color: #848e9c;
 }
 
-.prose { max-width: 820px; }
+/* Keep the section card full-width (consistent with the data sections) but
+   constrain the text line-length for readability — otherwise the prose cards
+   were ~820px while sibling cards were full-width, leaving a ragged right edge. */
+.content-section.prose { max-width: none; }
+.content-section.prose > :is(h1, h2, h3, p, ul, ol),
+.content-section.prose .faq { max-width: 820px; }
 
 .breadcrumb {
   display: flex;
@@ -656,7 +681,7 @@ h2 { font-size: clamp(1.5rem, 4vw, 2.4rem); }
 .breadcrumb span[aria-hidden] { color: var(--border-strong); }
 .breadcrumb [aria-current="page"] { color: var(--ink); }
 
-.faq { display: grid; gap: 14px; max-width: 820px; margin: 0; }
+.faq { display: grid; gap: 16px; max-width: 820px; margin: 6px 0 0; }
 .faq-item { display: grid; gap: 4px; }
 .faq-item dt { font-weight: 600; color: var(--ink); }
 .faq-item dd { margin: 0; color: var(--muted); line-height: 1.6; }

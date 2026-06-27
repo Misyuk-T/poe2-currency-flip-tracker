@@ -73,8 +73,17 @@ Google via Supabase; buy a custom domain.
   this is the reliable way to see the rendered UI when the Chrome MCP /
   computer-use screenshot tools are down. Looks premium and on-reference.
 
-**Tests:** 202 green. **Still queued (non-blocked):** UI revamp steps 4–10;
-dynamic OG images;
+- **UI revamp steps 4–10** (`18d9278` + the foundation): dashboard header band
+  (4) and currency-detail hero (6) came free with the shared-component
+  conversion; index dark tiles (5), metric tiles (7) and home lower sections
+  (10) too. Guide article + sticky sidebar (9) shipped + Preview-verified.
+  **Step 8 (currency-detail editorial side-rail) intentionally skipped** — that
+  page is already content-rich (hero, snapshot, backtest, about, FAQ, related),
+  so a side-rail would duplicate the existing "Related" + "Open in radar".
+  Revamp matches the reference across home / currency / index / guide /
+  dashboard, verified via Claude Preview.
+
+**Tests:** 202 green. **Still queued (non-blocked):** dynamic OG images;
 **C3c Google-auth foundation prep** (migration + Supabase Auth + per-user RLS,
 pending the user's Google OAuth app + secrets). **User action:** buy the domain;
 set up Google OAuth in Supabase; Google Search Console.

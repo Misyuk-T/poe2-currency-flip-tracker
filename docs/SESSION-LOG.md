@@ -67,9 +67,11 @@ Google via Supabase; buy a custom domain.
   metric-value selector over-reach, kept --profit/--loss conventional so the
   dashboard chart stays consistent, AA-contrast CTA). `:root` dark tokens,
   global dark body, premium header, dark panels/cards/buttons/prose/breadcrumb/
-  faq. Home + dashboard shell untouched. **Caveat:** both screenshot tools
-  (Claude-in-Chrome + computer-use) broke mid-task, so this pass shipped without
-  an eyes-on visual check — needs verification on prod, and steps 4–10 want eyes.
+  faq. Home + dashboard shell untouched. **Verified visually** across home /
+  currency / index / guide / dashboard via the **Claude Preview** tool
+  (`preview_start` from `.claude/launch.json` → `preview_screenshot`/`_eval`) —
+  this is the reliable way to see the rendered UI when the Chrome MCP /
+  computer-use screenshot tools are down. Looks premium and on-reference.
 
 **Tests:** 202 green. **Still queued (non-blocked):** UI revamp steps 4–10;
 dynamic OG images;

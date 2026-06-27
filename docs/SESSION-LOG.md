@@ -83,7 +83,12 @@ Google via Supabase; buy a custom domain.
   Revamp matches the reference across home / currency / index / guide /
   dashboard, verified via Claude Preview.
 
-**Tests:** 202 green. **Still queued (non-blocked):** dynamic OG images;
+- **Dynamic OpenGraph images** (`59a446b`) — branded dark+gold `next/og` cards
+  (shared `lib/og.jsx` helper): a site-default `app/opengraph-image` + a
+  per-currency override (name; popular ids prebuilt). Branding/title only, no
+  fabricated numbers. Verified by rendering the 1200×630 PNGs.
+
+**Tests:** 202 green. **Still queued (non-blocked):** "how to flip X" guide;
 **C3c Google-auth foundation prep** (migration + Supabase Auth + per-user RLS,
 pending the user's Google OAuth app + secrets). **User action:** buy the domain;
 set up Google OAuth in Supabase; Google Search Console.

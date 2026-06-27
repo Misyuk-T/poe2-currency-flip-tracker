@@ -52,9 +52,12 @@ on data-backed pages, and funnel them into the radar dashboard.
       rows only (no-trade catalog placeholders dropped; counts preserved).
 - [x] **Internal linking** — each currency page cross-links the other popular
       markets ("Related currencies"); home → currencies → radar already wired.
-- [ ] Keyword landing/guide pages: "how to flip X", "divine to exalted ratio",
-      "poe2 currency exchange explained".
-- [ ] Dynamic OpenGraph images per currency (price + sparkline) for social CTR.
+- [x] **Keyword guide pages** — `/guides` hub + "Divine to Exalted ratio" +
+      "PoE2 currency exchange", with breadcrumb/FAQ JSON-LD, internal links and
+      a sticky sidebar. (Guide cards/copy ship; "how to flip X" can follow.)
+- [x] **Dynamic OpenGraph images** — branded dark+gold `next/og` cards: a site
+      default + per-currency (name). Branding/title only (no fabricated numbers;
+      live price+sparkline deferred to the P3 live-data unlock).
 - [ ] Privacy-friendly analytics + **Google Search Console** (verify domain,
       submit sitemap, watch impressions/CTR per currency). *(needs the user)*
 - [ ] **Custom domain** — better trust/CTR than a `*.vercel.app` subdomain.

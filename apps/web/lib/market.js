@@ -41,13 +41,16 @@ export function iconUrl() {
  * ranked by absolute 24h move. Also surfaces whether the feed is sample data so
  * the widget can label it honestly. Kept here (plain JS) so it is unit-testable.
  */
-export function selectTopMovers(data, { limit = 5 } = {}) {
+export function selectTopMovers(data, { limit = 5, includeStale = false } = {}) {
   const movers = (data?.rows ?? [])
     .filter(
       (row) =>
         row?.pairId &&
         row.status !== "no-trades-this-hour" &&
-        !row.stale && // never surface a stale move as a current "top mover"
+        // By default never surface a stale move as a current "top mover"; the
+        // homepage rail opts in (includeStale) since the panel labels the data
+        // and shows its age, so the rail is never empty when data exists.
+        (includeStale || !row.stale) &&
         Number.isFinite(row.movement?.h24),
     )
     .sort((a, b) => Math.abs(b.movement.h24) - Math.abs(a.movement.h24))

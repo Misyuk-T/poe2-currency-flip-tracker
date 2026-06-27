@@ -37,6 +37,10 @@ test("selectTopMovers never surfaces a stale row as a current top mover", () => 
   };
   const { movers } = selectTopMovers(data, { limit: 5 });
   assert.deepEqual(movers.map((m) => m.target), ["fresh"]);
+
+  // ...unless the caller opts in (the homepage rail, which labels age).
+  const withStale = selectTopMovers(data, { limit: 5, includeStale: true });
+  assert.deepEqual(new Set(withStale.movers.map((m) => m.target)), new Set(["stale", "fresh"]));
 });
 
 test("selectTopMovers defaults to 5 and degrades cleanly on empty/absent payloads", () => {

@@ -37,6 +37,22 @@ set created.
 **Decided this session** (see DECISIONS.md): stay on sample data; auth =
 Google via Supabase; buy a custom domain.
 
-**Next (queued):** critical UI/responsive polish pass (paddings/overlaps),
-dynamic OG images, keyword guide pages, C3c (Google auth) foundation prep,
-custom-domain purchase + wiring.
+### Continuation (same day) — UI polish, docs, guides
+
+- **BMAD living docs** created (this `docs/` set) + a memory that every session
+  updates them.
+- **Custom domain advice** — live availability checked (Vercel): `poe2flip.app`
+  ($9.99) and `poe2flips.com` ($11.25) recommended; user buys it. See ADVICE.md.
+- **Critical UI/responsive polish** (browser-verified + codex-reviewed) — `77c7094`:
+  uniform full-width section cards (prose was narrower → ragged edge); icon
+  cards now stack name/summary (ran inline before); `.currency-grid` auto-fit
+  with `:where(:has(.with-icon))` so icon grids read a calm 3-up and still
+  collapse to 1col on mobile. Dashboard verified unaffected.
+- **Keyword guide pages** — `964aaee`: `/guides` hub + "Divine to Exalted ratio"
+  + "PoE2 currency exchange", breadcrumb/FAQ JSON-LD, internal links, sitemap +
+  nav wired. Codex-reviewed (honesty/links).
+
+**Tests:** 202 green. **Still queued (non-blocked):** dynamic OG images;
+**C3c Google-auth foundation prep** (migration + Supabase Auth + per-user RLS,
+pending the user's Google OAuth app + secrets). **User action:** buy the domain;
+set up Google OAuth in Supabase; Google Search Console.

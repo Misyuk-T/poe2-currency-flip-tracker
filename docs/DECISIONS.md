@@ -2,6 +2,15 @@
 
 Newest first. Each entry: **what** was decided, **why**, and the date.
 
+## 2026-06-27 — Light-theme cards: uniform width + auto-fit grids
+All `.content-section` cards are full-width (prose text constrained inside for
+readability) so card edges align. `.currency-grid` uses `auto-fit`; icon grids
+(index/related) opt into a wider min via `:where(:has(> .with-icon))` —
+`:where()` keeps specificity low so the mobile `@media` 1fr override still wins.
+**Why:** prose cards were ~820px vs full-width data cards (ragged edge); fixed
+3-col grids left lone-card rows; `.with-icon` cards ran name+summary inline.
+Browser-verified + codex-reviewed.
+
 ## 2026-06-27 — Stay on sample/fixture data until cxapi OAuth
 Live GGG `service:cxapi` data is **not** pursued yet (user choice). The app runs
 on labelled fixture data; C2b (cxapi activity ordering), D5 (serverless

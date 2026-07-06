@@ -207,7 +207,7 @@ export const cronConfigured = () => Boolean(process.env.CRON_SECRET);
 
 /** Ingest the latest hourly market data (fixture synth or live cxapi catch-up). */
 export async function runRadarIngest({ now = Date.now() } = {}) {
-  const { config, scope } = await context();
+  const { config, scope, catalogManifest } = await context();
   const repo = repository(scope);
   if (!repo) return NO_DB;
   if (config.providerMode === "live") {
@@ -224,7 +224,16 @@ export async function runRadarIngest({ now = Date.now() } = {}) {
     });
     return { status: 200, body: summary };
   }
-  const summary = await ingestFixtures({ repo, league: config.league, anchors: config.anchors, now });
+  // Seed the whole catalog (not just featured markets) so the deployed radar
+  // mirrors the offline/local fixture's "all currencies" set. Idempotent, so the
+  // first run backfills every pair and later hourly runs just add the new hour.
+  const summary = await ingestFixtures({
+    repo,
+    league: config.league,
+    anchors: config.anchors,
+    items: catalogManifest,
+    now,
+  });
   return { status: 200, body: summary };
 }
 

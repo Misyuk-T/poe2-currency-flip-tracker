@@ -7,8 +7,8 @@
  *                            strict gold mode; rankable by ROI in show/ignore)
  *
  * Icon ART is GGG-owned and is NOT committed. `scripts/build-catalog.mjs`
- * downloads it locally into src/public/icons/ (gitignored); the UI falls back to
- * a neutral glyph when an icon hasn't been downloaded.
+ * downloads it locally into apps/web/public/icons/ (gitignored); the UI falls back
+ * to a neutral glyph when an icon hasn't been downloaded.
  */
 
 import { readFile } from "node:fs/promises";

@@ -2,7 +2,7 @@ import { ogImageResponse, OG_SIZE } from "../lib/og.jsx";
 
 export const size = OG_SIZE;
 export const contentType = "image/png";
-export const alt = "PoE2 Currency Flip Tracker — hourly market radar";
+export const alt = "PoE2 Currency Flip Helper — hourly market radar";
 
 export default function Image() {
   return ogImageResponse({

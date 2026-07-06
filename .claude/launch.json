@@ -6,6 +6,12 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["next", "start", "apps/web", "-p", "3200"],
       "port": 3200
+    },
+    {
+      "name": "web-dev",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "dev", "apps/web", "-p", "3201"],
+      "port": 3201
     }
   ]
 }

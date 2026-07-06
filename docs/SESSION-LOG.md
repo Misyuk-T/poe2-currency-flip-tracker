@@ -2,6 +2,30 @@
 
 Newest first. One block per working session: what changed + commit refs.
 
+## 2026-06-29 — Remove legacy backend, dashboard-at-root (uncommitted working tree)
+
+**Fixed `web:dev` error loop** — `lightweight-charts` (imported by
+`SpotChart.jsx`) was unresolved; `npm install` + cleared `apps/web/.next/dev`.
+`/`, `/poe2`, `/guides` → 200, no module errors (verified via Claude Preview).
+
+**Removed the legacy standalone Node backend** (24 src files + `src/public/` +
+26 tests + `dev`/`start` scripts). Traced Next→`src/` imports to prove the app
+reuses only the radar pipeline subset; everything else was dead. Kept 17 tests
+(66 checks) — all green. Catalog icons retargeted `src/public/icons` →
+`apps/web/public/icons` (script + `.gitignore` + comments).
+
+**Dashboard at root** — `app/page.jsx` 307-redirects to `/poe2`; landing moved
+to `app/landing/page.jsx` (`/landing`, `noindex`); sitemap drops the redirecting
+root, `/poe2` → priority 1. For GGG API-developer outreach (open straight to the
+product).
+
+**Codex (GPT-5.5) review** — no FAIL; independently ran `npm test` (66) +
+`next build` (green). WARNs (sitemap root, README/catalog stale refs) all
+addressed. See [DECISIONS.md](DECISIONS.md) (three 2026-06-29 entries).
+
+**Docs:** README quickstart/architecture/live-mode/icon paths rewritten to the
+serverless single-app reality; DECISIONS + this log updated.
+
 ## 2026-06-27 — SEO P1+P2, C3 paper-trade, BMAD docs
 
 **SEO P0** — verified `NEXT_PUBLIC_SITE_URL` is already set in prod (sitemap /

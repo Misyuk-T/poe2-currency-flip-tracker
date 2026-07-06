@@ -17,6 +17,7 @@ import { buildRadarPayload, buildHistoryPayload, buildHotlistPayload } from "../
 import { ingestFixtures, ingestLive } from "../../../src/server/radar-ingest.js";
 import { createGggCxapiProvider } from "../../../src/providers/ggg-cxapi-provider.js";
 import { getSql } from "./db.js";
+import { createMemoryRepository } from "./memory-repo.js";
 
 const NO_DB = {
   status: 503,
@@ -48,6 +49,42 @@ function repository(scope) {
   return sql ? createRadarRepository({ sql, scope }) : null;
 }
 
+// Offline fixture fallback: when there's no database AND we're in fixture mode,
+// serve a full synthetic radar from an in-memory repository instead of a 503.
+// Enabled in local dev automatically; behind RADAR_FIXTURE_FALLBACK=1 elsewhere
+// so a real production database outage still degrades to an honest 503 rather
+// than masking it with synthetic data.
+const fixtureFallbackEnabled = () =>
+  process.env.NODE_ENV === "development" || process.env.RADAR_FIXTURE_FALLBACK === "1";
+
+let fixtureRepoPromise;
+function fixtureRepository(ctx) {
+  if (!fixtureRepoPromise) {
+    fixtureRepoPromise = (async () => {
+      const repo = createMemoryRepository(ctx.scope);
+      // Seed the whole catalog (not just featured markets) so the offline radar
+      // mirrors the old backend's "all currencies" mock set.
+      await ingestFixtures({
+        repo,
+        league: ctx.config.league,
+        anchors: ctx.config.anchors,
+        items: ctx.catalogManifest,
+        now: Date.now(),
+      });
+      return repo;
+    })();
+  }
+  return fixtureRepoPromise;
+}
+
+/** Postgres repo when DATABASE_URL is set; else the offline fixture repo (dev). */
+async function resolveRepo(ctx) {
+  const dbRepo = repository(ctx.scope);
+  if (dbRepo) return dbRepo;
+  if (ctx.config.providerMode === "fixture" && fixtureFallbackEnabled()) return fixtureRepository(ctx);
+  return null;
+}
+
 function resolveAnchor(searchParams, config) {
   const requested = searchParams.get("anchor");
   return config.anchors.includes(requested) ? requested : config.anchorCurrency;
@@ -67,8 +104,9 @@ export function tradableRows(rows) {
 }
 
 export async function getRadar(searchParams) {
-  const { config, catalogManifest, catalogById, names, scope } = await context();
-  const repo = repository(scope);
+  const ctx = await context();
+  const { config, catalogManifest, catalogById, names } = ctx;
+  const repo = await resolveRepo(ctx);
   if (!repo) return NO_DB;
   const anchor = resolveAnchor(searchParams, config);
   const body = await buildRadarPayload({
@@ -90,14 +128,15 @@ export async function getRadar(searchParams) {
 }
 
 export async function getHistory(searchParams) {
-  const { config, scope } = await context();
+  const ctx = await context();
+  const { config } = ctx;
   // Validate input before touching infrastructure so a malformed pair is a clean
   // 400 regardless of database availability.
   const pair = searchParams.get("pair") ?? "";
   if (!/^[\p{L}\p{N}-]+\|[\p{L}\p{N}-]+$/u.test(pair)) {
     return { status: 400, body: { error: { code: "invalid-pair", message: "invalid market pair" } } };
   }
-  const repo = repository(scope);
+  const repo = await resolveRepo(ctx);
   if (!repo) return NO_DB;
   const anchor = resolveAnchor(searchParams, config);
   const body = await buildHistoryPayload({ repo, pair, anchor });
@@ -105,8 +144,9 @@ export async function getHistory(searchParams) {
 }
 
 export async function getHotlist() {
-  const { config, names, scope } = await context();
-  const repo = repository(scope);
+  const ctx = await context();
+  const { config, names } = ctx;
+  const repo = await resolveRepo(ctx);
   if (!repo) return NO_DB;
   const body = await buildHotlistPayload({
     repo,
@@ -189,8 +229,9 @@ export async function runRadarIngest({ now = Date.now() } = {}) {
 }
 
 export async function getStatus() {
-  const { config, scope } = await context();
-  const repo = repository(scope);
+  const ctx = await context();
+  const { config } = ctx;
+  const repo = await resolveRepo(ctx);
   const base = { providerMode: config.providerMode, league: config.league, sourceMode: sourceMode(config) };
   if (!repo) return { status: 200, body: { ...base, radar: { configured: false, reason: "no-database" } } };
   const [state, candles] = await Promise.all([repo.readCxapiState(), repo.readCandleWindow()]);

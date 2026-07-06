@@ -2,6 +2,38 @@
 
 Newest first. Each entry: **what** was decided, **why**, and the date.
 
+## 2026-06-29 — Code review runs through codex with GPT-5.5
+Pre-commit code review is delegated to the **codex MCP using model GPT-5.5**
+(workspace review): it independently greps for broken references, runs
+`npm test` + `next build`, and reports PASS / WARN / FAIL before we commit.
+**Why:** an independent second model catches dangling refs and build breaks a
+single pass misses; GPT-5.5 is the agreed reviewer tier. Applied to the
+backend-removal change below.
+
+## 2026-06-29 — Removed the legacy standalone Node backend + opportunity engine
+Deleted the always-on Node HTTP server (`src/server/index.js`/`app.js`), its
+opportunity engine (`snapshot`, `constraints`, `order-book`, `offers`,
+`opportunities`, `executable-quote`, history store), the old static `src/public/`
+UI, the now-unused providers/storage (`fixture`/`ggg-exchange`/`market-provider`/
+`rate-limit`; `local`/`supabase`/`hourly`/`storage-provider`), the `dev`/`start`
+npm scripts, and the 26 tests that only covered the above — 24 src files +
+`src/public/` + 26 tests. Kept the radar pipeline `src/` subset that Next reuses
+(`config`, `radar-core`, `radar-ingest`, `domain/*`, `radar-repository`,
+`ggg-cxapi-provider`). Catalog icon output moved `src/public/icons` →
+`apps/web/public/icons`. **Why:** the deployed product is serverless (Next
+`/api/*` + cron) and provably imports none of the removed files; `yarn dev`
+launched a confusing stale UI. Codex (GPT-5.5) review: no FAIL, `npm test` 66/66
+and `next build` green. Supersedes the 2026-06-24 "always-on `src/server` is
+local-dev only" note.
+
+## 2026-06-29 — Root `/` temporarily redirects to the dashboard (landing hidden)
+`app/page.jsx` now 307-redirects to `/poe2`; the marketing landing moved to
+`app/landing/page.jsx` (route `/landing`, `robots: noindex`), and the sitemap
+lists `/poe2` (priority 1) instead of the redirecting root. **Why:** for outreach
+to the GGG API developers the site should open straight to the working dashboard,
+not a marketing page. Reversible: move `landing/page.jsx` back to `page.jsx` and
+drop the redirect.
+
 ## 2026-06-27 — Homepage = two-column hero matching the approved reference
 The landing is a left-aligned hero (serif headline, gold accent line, gold CTA)
 beside one cohesive dark MARKET RADAR panel (movers rail with real sparklines +

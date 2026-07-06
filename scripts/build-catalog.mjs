@@ -4,7 +4,7 @@
  *
  * - Rewrites src/data/catalog-poe2.json (item metadata: ids/names/categories —
  *   facts, committed). Written atomically only after schema validation.
- * - Downloads icon art into src/public/icons/<id>.png (gitignored; GGG-owned,
+ * - Downloads icon art into apps/web/public/icons/<id>.png (gitignored; GGG-owned,
  *   NOT committed). Skip with --no-icons.
  *
  * Network-gated; run manually:  node scripts/build-catalog.mjs [--no-icons]
@@ -21,7 +21,7 @@ const BASE = "https://www.pathofexile.com";
 const STATIC_URL = `${BASE}/api/trade2/data/static`;
 const UA = process.env.USER_AGENT ?? "poe2-currency-flip-tracker/0.1 (catalog build; non-commercial)";
 const CATALOG_PATH = fileURLToPath(new URL("../src/data/catalog-poe2.json", import.meta.url));
-const ICON_DIR = fileURLToPath(new URL("../src/public/icons/", import.meta.url));
+const ICON_DIR = fileURLToPath(new URL("../apps/web/public/icons/", import.meta.url));
 const noIcons = process.argv.includes("--no-icons");
 const missingIconsOnly = process.argv.includes("--missing-icons");
 

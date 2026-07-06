@@ -51,3 +51,24 @@ test("getHistory validates the pair id before infrastructure (400 even with no D
   const good = await getHistory(new URLSearchParams("pair=divine|exalted&anchor=exalted"));
   assert.equal(good.status, 503); // valid pair, but no DB
 });
+
+test("offline fixture fallback serves a full synthetic radar without a database", async () => {
+  // Opt the fallback on explicitly (the default gate is NODE_ENV=development).
+  process.env.RADAR_FIXTURE_FALLBACK = "1";
+  try {
+    const radar = await getRadar(new URLSearchParams("anchor=exalted"));
+    assert.equal(radar.status, 200);
+    assert.equal(radar.body.source.sourceMode, "fixture");
+    assert.ok(radar.body.rows.length > 100, "expected the whole catalog as synthetic markets");
+    assert.ok(
+      radar.body.rows.every((r) => r.pairId && r.status !== "no-trades-this-hour"),
+      "every served row is a tradable market",
+    );
+
+    const history = await getHistory(new URLSearchParams("pair=divine|exalted&anchor=exalted"));
+    assert.equal(history.status, 200);
+    assert.ok(history.body.series.length >= 2, "history has enough points to chart");
+  } finally {
+    delete process.env.RADAR_FIXTURE_FALLBACK;
+  }
+});

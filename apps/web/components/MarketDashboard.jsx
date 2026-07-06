@@ -1,42 +1,239 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import SpotChart from "./SpotChart.jsx";
-import { convertMarketPrice, currentPriceGuidance, workingPrice } from "../lib/price-guidance.js";
+import { currentPriceGuidance, workingPrice } from "../lib/price-guidance.js";
 import {
   apiBaseUrl,
   displayDigits,
+  fallbackIconUrl,
   formatAge,
   formatDurationHours,
   formatNumber,
   formatPercent,
   iconUrl,
+  titleize,
 } from "../lib/market.js";
 
 const MANUAL_PRICE_KEY = "poe2flip.next.manualPrices.v1";
+const CATEGORY_ICON_IDS = {
+  "Abyssal Bones": "gnawed-jawbone",
+  Breach: "breach-splinter",
+  Currency: "exalted",
+  Delirium: "simulacrum-splinter",
+  Essences: "essence-of-horror",
+  Expedition: "expedition-logbook",
+  Fragments: "runic-splinter",
+  "Lineage Support Gems": "ataluis-bloodletting",
+  Ritual: "omen-of-refreshment",
+  Runes: "storm-rune",
+  Vaal: "vaal",
+  Verisium: "verisium",
+  Waystones: "waystone-16",
+};
+const SORT_OPTIONS = [
+  { value: "activity:desc", label: "Activity" },
+  { value: "spread:desc", label: "Best spread" },
+  { value: "buy:asc", label: "Buy: cheapest first" },
+  { value: "sell:desc", label: "Sell: highest first" },
+  { value: "price:desc", label: "Price: high to low" },
+  { value: "price:asc", label: "Price: low to high" },
+  { value: "movement:desc", label: "24h gainers" },
+  { value: "movement:asc", label: "24h losers" },
+  { value: "liquidity:desc", label: "Liquidity" },
+  { value: "name:asc", label: "Name" },
+];
+const HORIZON_OPTIONS = [
+  { value: 1, label: "1h" },
+  { value: 2, label: "2h" },
+  { value: 6, label: "6h" },
+  { value: 16, label: "16h" },
+  { value: 24, label: "24h" },
+];
+const DISPLAY_CURRENCIES = [
+  { id: "exalted", label: "Exalted Orb" },
+  { id: "chaos", label: "Chaos Orb" },
+  { id: "divine", label: "Divine Orb" },
+];
 
-function formatPriceParts(price) {
-  if (!price?.unit || !Number.isFinite(price.value)) return null;
+/** Swap a missing/not-yet-downloaded GGG icon for the neutral committed glyph. */
+function onIconError(event) {
+  const img = event.currentTarget;
+  if (img.src.endsWith("_fallback.svg")) return;
+  img.onerror = null;
+  img.src = fallbackIconUrl;
+}
+
+function PricePill({ value, unit, compact = false }) {
+  if (!unit || !Number.isFinite(value)) return <span className="price-pill empty">—</span>;
+  return (
+    <span className={compact ? "price-pill compact" : "price-pill"}>
+      <span>{formatNumber(value, { maximumFractionDigits: displayDigits(value) })}</span>
+      <img src={iconUrl(unit)} onError={onIconError} alt="" title={titleize(unit)} />
+    </span>
+  );
+}
+
+function QuotePill({ quote, compact = false }) {
+  if (!quote || !Number.isFinite(quote.value)) return <span className="price-pill empty">—</span>;
+  if (quote.inverse) {
+    const value = formatNumber(quote.value, { maximumFractionDigits: displayDigits(quote.value) });
+    return (
+      <span
+        className={compact ? "price-pill inverse compact" : "price-pill inverse"}
+        title={`${value} ${titleize(quote.unit)} per ${titleize(quote.perUnit)}`}
+      >
+        <span>{value}</span>
+        <small>/</small>
+        <img src={iconUrl(quote.perUnit)} onError={onIconError} alt="" title={titleize(quote.perUnit)} />
+      </span>
+    );
+  }
+  return <PricePill value={quote.value} unit={quote.unit} compact={compact} />;
+}
+
+function pricePlaceholder(value) {
+  return Number.isFinite(value) ? formatNumber(value, { maximumFractionDigits: displayDigits(value) }) : "price";
+}
+
+function unitRates(rows, divineInExalted) {
+  const chaos = rows.find((row) => row.target === "chaos");
   return {
-    value: formatNumber(price.value, { maximumFractionDigits: displayDigits(price.value) }),
-    unit: price.unit,
+    exalted: 1,
+    chaos: Number.isFinite(chaos?.reference) && chaos.reference > 0 ? chaos.reference : null,
+    divine: Number.isFinite(divineInExalted) && divineInExalted > 0 ? divineInExalted : null,
   };
 }
 
-function formatPrice(row) {
-  const price = row?.displayPrice;
-  const parts = formatPriceParts(price);
-  return parts ? `${parts.value} ${parts.unit}` : "—";
+function quoteFromAnchor(value, { anchor = "exalted", displayCurrency = null, rates, target }) {
+  if (!Number.isFinite(value) || value <= 0 || !rates?.[anchor]) return { value: null, unit: null };
+  const exaltedValue = (value * rates[anchor]) / rates.exalted;
+  if (!Number.isFinite(exaltedValue) || exaltedValue <= 0) return { value: null, unit: null };
+
+  if (displayCurrency && rates[displayCurrency]) {
+    return { value: exaltedValue / rates[displayCurrency], unit: displayCurrency, inverse: false };
+  }
+
+  if (exaltedValue < 1 && target) {
+    return { value: 1 / exaltedValue, unit: target, perUnit: "exalted", inverse: true };
+  }
+  return { value: exaltedValue, unit: "exalted", inverse: false };
 }
 
-function PricePill({ value, unit }) {
-  if (!unit || !Number.isFinite(value)) return <span>—</span>;
+function CustomSelect({ id, value, options, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = options.find((option) => String(option.value) === String(value)) ?? options[0];
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function onPointerDown(event) {
+      if (!ref.current?.contains(event.target)) setOpen(false);
+    }
+    function onKeyDown(event) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
   return (
-    <span className="price-pill">
-      <span>{formatNumber(value, { maximumFractionDigits: displayDigits(value) })}</span>
-      <img src={iconUrl(unit)} alt="" />
-    </span>
+    <div className={open ? "custom-select open" : "custom-select"} ref={ref}>
+      <button
+        id={`${id}-button`}
+        type="button"
+        className="custom-select-button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((next) => !next)}
+      >
+        <span>{selected?.label ?? "Select"}</span>
+        <span className="custom-select-caret" aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="custom-select-menu" role="listbox" aria-labelledby={`${id}-button`}>
+          {options.map((option) => (
+            <button
+              key={String(option.value)}
+              type="button"
+              role="option"
+              aria-selected={String(option.value) === String(value)}
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
+}
+
+function rowSpread(row) {
+  if (!Number.isFinite(row?.low) || !Number.isFinite(row?.high) || row.low <= 0 || row.high <= row.low) return null;
+  return row.high / row.low - 1;
+}
+
+function sortValue(row, key) {
+  if (key === "activity") return row.activityScore;
+  if (key === "spread") return rowSpread(row);
+  if (key === "buy") return row.low;
+  if (key === "sell") return row.high;
+  if (key === "price") return row.reference;
+  if (key === "movement") return row.movement?.h24;
+  if (key === "liquidity") return row.volume;
+  if (key === "name") return row.targetName ?? row.target ?? "";
+  return row.activityScore;
+}
+
+function compareRows(a, b, sortToken) {
+  const [key, direction = "desc"] = sortToken.split(":");
+  const av = sortValue(a, key);
+  const bv = sortValue(b, key);
+  const multiplier = direction === "asc" ? 1 : -1;
+  if (typeof av === "string" || typeof bv === "string") {
+    return String(av ?? "").localeCompare(String(bv ?? "")) * multiplier;
+  }
+  const aFinite = Number.isFinite(av);
+  const bFinite = Number.isFinite(bv);
+  if (!aFinite && !bFinite) return 0;
+  if (!aFinite) return 1;
+  if (!bFinite) return -1;
+  return (av - bv) * multiplier;
+}
+
+function SortHeader({ label, sublabel, column, activeKey, direction, onSort, align = "left", defaultDirection = "desc" }) {
+  const active = activeKey === column;
+  return (
+    <button type="button" className={`sort-header ${align === "right" ? "right" : ""}`} onClick={() => onSort(column, defaultDirection)}>
+      <span>
+        {label}
+        {sublabel && <small>{sublabel}</small>}
+      </span>
+      <i className={active ? `sort-glyph ${direction}` : "sort-glyph"} aria-hidden="true" />
+    </button>
+  );
+}
+
+/** Group tradable rows into { name, count } category buckets for the sidebar. */
+function categoriesFrom(rows) {
+  const counts = new Map();
+  const icons = new Map();
+  for (const row of rows) {
+    const name = row.category || "Other";
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+    if (!icons.has(name) && row.target) icons.set(name, row.target);
+  }
+  return [...counts.entries()]
+    .map(([name, count]) => ({ name, count, icon: CATEGORY_ICON_IDS[name] ?? icons.get(name) ?? null }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 
 function loadManualPrices() {
@@ -60,8 +257,11 @@ export default function MarketDashboard() {
   const [selectedPair, setSelectedPair] = useState(null);
   const [status, setStatus] = useState("loading");
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState("activity");
-  const [horizon, setHorizon] = useState(3);
+  const [sort, setSort] = useState("activity:desc");
+  const [category, setCategory] = useState("all");
+  const [displayCurrency, setDisplayCurrency] = useState(null);
+  const [view, setView] = useState("list"); // "list" (table, default) | "chart" (trade view)
+  const [horizon, setHorizon] = useState(2);
   const [manualPrices, setManualPrices] = useState({});
   const [draftPrice, setDraftPrice] = useState("");
   const [draftUnit, setDraftUnit] = useState("exalted");
@@ -103,6 +303,9 @@ export default function MarketDashboard() {
   useEffect(() => {
     if (!selectedPair) return;
     let cancelled = false;
+    // Clear immediately so a market switch never renders the previous market's
+    // chart/guidance under the new title while the new history is in flight.
+    setHistory([]);
     fetch(`${apiBaseUrl}/api/radar/history?pair=${encodeURIComponent(selectedPair)}&anchor=exalted`, { cache: "no-store" })
       .then((res) => {
         if (!res.ok) throw new Error(`History failed: ${res.status}`);
@@ -119,38 +322,89 @@ export default function MarketDashboard() {
     };
   }, [selectedPair]);
 
-  const rows = useMemo(
-    () => (radar?.rows ?? [])
-      .filter((row) => row.pairId && row.status !== "no-trades-this-hour")
-      .filter((row) => {
-        const q = search.trim().toLowerCase();
-        return !q || row.targetName?.toLowerCase().includes(q) || row.target?.toLowerCase().includes(q);
-      })
-      .sort((a, b) => {
-        if (sort === "price") return (b.reference ?? -1) - (a.reference ?? -1);
-        if (sort === "gainers") return (b.movement?.h24 ?? -Infinity) - (a.movement?.h24 ?? -Infinity);
-        if (sort === "losers") return (a.movement?.h24 ?? Infinity) - (b.movement?.h24 ?? Infinity);
-        if (sort === "volume") return (b.volume ?? -1) - (a.volume ?? -1);
-        return (b.activityScore ?? -1) - (a.activityScore ?? -1);
-      })
-      .slice(0, 100),
-    [radar, search, sort],
+  // All tradable rows (a real pair, traded this hour) — the radar universe.
+  const tradable = useMemo(
+    () => (radar?.rows ?? []).filter((row) => row.pairId && row.status !== "no-trades-this-hour"),
+    [radar],
   );
-  const selected = rows.find((row) => row.pairId === selectedPair) ?? rows[0];
+  const rates = useMemo(() => unitRates(tradable, radar?.units?.divineInExalted), [radar?.units?.divineInExalted, tradable]);
+  const manualUnit = displayCurrency && rates[displayCurrency] ? displayCurrency : "exalted";
+
+  // Search narrows the universe; the category sidebar counts reflect the search.
+  const searched = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return tradable;
+    return tradable.filter((row) => row.targetName?.toLowerCase().includes(q) || row.target?.toLowerCase().includes(q));
+  }, [tradable, search]);
+
+  const categories = useMemo(() => categoriesFrom(searched), [searched]);
+
+  // If the active category vanishes from the (search-narrowed) list, fall back to
+  // "all" so the table can't stay filtered to a category the sidebar no longer shows.
+  useEffect(() => {
+    if (category !== "all" && !categories.some((cat) => cat.name === category)) setCategory("all");
+  }, [categories, category]);
+
+  const rows = useMemo(() => {
+    const inCategory = category === "all" ? searched : searched.filter((row) => (row.category || "Other") === category);
+    return [...inCategory].sort((a, b) => compareRows(a, b, sort)).slice(0, 200);
+  }, [searched, category, sort]);
+
+  const selected = selectedPair
+    ? rows.find((row) => row.pairId === selectedPair) ?? tradable.find((row) => row.pairId === selectedPair) ?? null
+    : null;
+  const [sortKey, sortDirection = "desc"] = sort.split(":");
+
+  function openMarket(pairId) {
+    setSelectedPair(pairId);
+    setView("chart");
+  }
+
+  function closeMarket() {
+    setSelectedPair(null);
+    setView("list");
+    setHistory([]);
+  }
+
+  function sortColumn(column, defaultDirection = "desc") {
+    setSort((current) => {
+      const [currentKey, currentDirection = defaultDirection] = current.split(":");
+      if (currentKey !== column) return `${column}:${defaultDirection}`;
+      return `${column}:${currentDirection === "desc" ? "asc" : "desc"}`;
+    });
+  }
+
   const selectedManual = selected?.pairId ? manualPrices[selected.pairId] : null;
   const currentWorkingPrice = selected
-    ? workingPrice(selected, selectedManual, { divineInExalted: radar?.units?.divineInExalted })
+    ? workingPrice(selected, selectedManual, {
+      divineInExalted: radar?.units?.divineInExalted,
+      chaosInExalted: rates.chaos,
+      preferredUnit: manualUnit,
+    })
     : { status: "missing", value: null, unit: null, anchorValue: null };
   const guidance = useMemo(
     () => currentPriceGuidance(history, currentWorkingPrice.anchorValue, { horizonHours: horizon }),
     [currentWorkingPrice.anchorValue, history, horizon],
   );
-  const guidanceUnit = currentWorkingPrice.unit ?? selected?.displayPrice?.unit ?? selected?.anchor ?? "exalted";
-  const entry = guidance.status === "ok"
-    ? convertMarketPrice(guidance.entry, selected?.anchor, guidanceUnit, radar?.units?.divineInExalted)
+  const chartUnit = displayCurrency && rates[displayCurrency] ? displayCurrency : selected?.anchor ?? "exalted";
+  const chartHistory = useMemo(() => {
+    if (!rates[selected?.anchor] || !rates[chartUnit]) return history;
+    const factor = rates[selected.anchor] / rates[chartUnit];
+    return history.map((point) => ({
+      ...point,
+      reference: Number.isFinite(point.reference) ? point.reference * factor : point.reference,
+      low: Number.isFinite(point.low) ? point.low * factor : point.low,
+      high: Number.isFinite(point.high) ? point.high * factor : point.high,
+    }));
+  }, [chartUnit, history, rates, selected?.anchor]);
+  const workingQuote = selected
+    ? quoteFromAnchor(currentWorkingPrice.anchorValue, { anchor: selected.anchor, displayCurrency, rates, target: selected.target })
     : null;
-  const exit = guidance.status === "ok"
-    ? convertMarketPrice(guidance.exit, selected?.anchor, guidanceUnit, radar?.units?.divineInExalted)
+  const entryQuote = guidance.status === "ok"
+    ? quoteFromAnchor(guidance.entry, { anchor: selected?.anchor, displayCurrency, rates, target: selected?.target })
+    : null;
+  const exitQuote = guidance.status === "ok"
+    ? quoteFromAnchor(guidance.exit, { anchor: selected?.anchor, displayCurrency, rates, target: selected?.target })
     : null;
 
   useEffect(() => {
@@ -160,17 +414,17 @@ export default function MarketDashboard() {
       setDraftPrice(String(saved.value));
       setDraftUnit(saved.unit);
     } else {
-      const fallbackUnit = selected.displayPrice?.unit ?? selected.anchor ?? "exalted";
+      const fallbackUnit = manualUnit;
       setDraftPrice("");
       setDraftUnit(fallbackUnit);
     }
-  }, [manualPrices, selected]);
+  }, [manualPrices, manualUnit, selected]);
 
   function applyManualPrice() {
     if (!selected?.pairId) return;
-    const value = Number(draftPrice);
+    const value = Number(String(draftPrice).replace(",", "."));
     const next = { ...manualPrices };
-    if (Number.isFinite(value) && value > 0 && ["exalted", "divine"].includes(draftUnit)) {
+    if (Number.isFinite(value) && value > 0 && rates[draftUnit]) {
       next[selected.pairId] = { value, unit: draftUnit, updatedAt: Date.now() };
     } else {
       delete next[selected.pairId];
@@ -187,149 +441,347 @@ export default function MarketDashboard() {
     saveManualPrices(next);
   }
 
-  return (
-    <section className="dashboard-shell">
-      <aside className="market-list" aria-label="Hourly markets">
-        <div className="panel-heading">
-          <span>{status === "ready" ? "Hourly markets" : "Loading radar…"}</span>
-          <small>{radar?.source?.sourceMode ?? "backend"}</small>
-        </div>
-        <div className="market-controls">
-          <label>
-            Search
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Currency, rune, essence…" />
-          </label>
-          <label>
-            Sort
-            <select value={sort} onChange={(event) => setSort(event.target.value)}>
-              <option value="activity">Activity</option>
-              <option value="price">Price high to low</option>
-              <option value="gainers">24h gainers</option>
-              <option value="losers">24h losers</option>
-              <option value="volume">Volume</option>
-            </select>
-          </label>
-          <small>Showing {rows.length} markets</small>
-        </div>
-        {rows.map((row) => (
-          <button
-            className={row.pairId === selected?.pairId ? "market-row active" : "market-row"}
-            key={row.pairId}
-            onClick={() => setSelectedPair(row.pairId)}
-            type="button"
-          >
-            <img src={iconUrl(row.target)} alt="" />
-            <span>
-              <strong>{row.targetName}</strong>
-              <small>{formatPrice(row)}</small>
-            </span>
-            <em className={(row.movement?.h24 ?? 0) >= 0 ? "up" : "down"}>{formatPercent(row.movement?.h24)}</em>
-          </button>
-        ))}
-        {!rows.length && <p className="empty-copy">{status}</p>}
-      </aside>
+  const sourceMode = radar?.source?.sourceMode;
+  const summaryText = status === "ready"
+    ? `${tradable.length} active markets · ${radar?.catalogCount ?? tradable.length} catalog items${sourceMode === "fixture" ? " · sample data" : ""}. Scores describe history; they do not predict a sale.`
+    : status === "loading"
+      ? "Loading completed-hour history…"
+      : status;
 
-      <div className="chart-panel">
-        <div className="chart-title-row">
-          <div>
-            <p className="eyebrow">Binance-style hourly range chart</p>
-            <h2>{selected?.targetName ?? "Select a market"} / Exalted</h2>
+  return (
+    <div className="radar-light">
+      <section className="radar-shell">
+        <aside className="radar-sidebar" aria-label="Market navigation">
+          <div className="rs-group">
+            <p className="rs-heading">Workspace</p>
+            <button className="rs-link active" type="button" aria-pressed="true">
+              <span className="rs-icon" aria-hidden="true">⌁</span>
+              <span>Market Radar</span>
+            </button>
           </div>
-          {selected && (
-            <div className="chart-kpis">
-              <span>{formatPrice(selected)}</span>
-              <strong className={(selected.movement?.h24 ?? 0) >= 0 ? "up" : "down"}>{formatPercent(selected.movement?.h24)} 24h</strong>
+          <div className="rs-group">
+            <p className="rs-heading">Categories</p>
+            <button
+              className={category === "all" ? "rs-cat active" : "rs-cat"}
+              type="button"
+              aria-pressed={category === "all"}
+              onClick={() => setCategory("all")}
+            >
+              <img className="rs-cat-icon" src={iconUrl("exalted")} onError={onIconError} alt="" aria-hidden="true" />
+              <span>All markets</span>
+              <small>{searched.length}</small>
+            </button>
+            {categories.map((cat) => (
+              <button
+                key={cat.name}
+                className={category === cat.name ? "rs-cat active" : "rs-cat"}
+                type="button"
+                aria-pressed={category === cat.name}
+                onClick={() => setCategory(cat.name)}
+              >
+                <img className="rs-cat-icon" src={iconUrl(cat.icon)} onError={onIconError} alt="" aria-hidden="true" />
+                <span className="rs-cat-name">{cat.name}</span>
+                <small>{cat.count}</small>
+              </button>
+            ))}
+          </div>
+          <p className="rs-foot">Categories come from the current GGG trade catalog.</p>
+        </aside>
+
+        <div className="radar-main">
+          <header className="radar-head">
+            <div>
+              <p className="eyebrow">Official hourly market digest</p>
+              <h2>What is moving today</h2>
+              <p className="radar-sub">{summaryText}</p>
+            </div>
+            <div className="radar-head-actions">
+              <div className="currency-toggle" role="group" aria-label="Display currency">
+                <button
+                  type="button"
+                  className="auto"
+                  aria-pressed={!displayCurrency}
+                  title="Auto display currency"
+                  onClick={() => setDisplayCurrency(null)}
+                >
+                  Auto
+                </button>
+                {DISPLAY_CURRENCIES.map((currency) => (
+                  <button
+                    key={currency.id}
+                    type="button"
+                    aria-pressed={displayCurrency === currency.id}
+                    title={currency.label}
+                    onClick={() => setDisplayCurrency((current) => (current === currency.id ? null : currency.id))}
+                    disabled={currency.id !== "exalted" && !rates[currency.id]}
+                  >
+                    <img src={iconUrl(currency.id)} onError={onIconError} alt="" />
+                  </button>
+                ))}
+              </div>
+              <div className="radar-view-toggle" role="group" aria-label="Radar display">
+                <button type="button" aria-pressed={view === "list"} onClick={closeMarket}>
+                  Table
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={view === "chart"}
+                  onClick={() => setView("chart")}
+                  disabled={!selected}
+                >
+                  Trade view
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <div className="radar-controls">
+            <label className="rc-search">
+              <span>Search markets</span>
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Currency, rune, essence…" type="search" />
+            </label>
+            <label className="rc-sort">
+              <span>Sort by</span>
+              <CustomSelect id="market-sort" value={sort} options={SORT_OPTIONS} onChange={setSort} />
+            </label>
+            <span className="rc-count" aria-live="polite">{rows.length} markets</span>
+          </div>
+
+          {view === "chart" && selected && (
+            <section className="selected-market" aria-label="Selected market">
+              <div className="selected-market-title">
+                <img src={iconUrl(selected.target)} onError={onIconError} alt="" />
+                <div>
+                  <span>{selected.category || "Currency market"}</span>
+                  <strong>{selected.targetName}</strong>
+                </div>
+              </div>
+              <div className="selected-market-stat">
+                <span>Completed-hour price</span>
+                <strong>
+                  <QuotePill quote={quoteFromAnchor(selected.reference, { anchor: selected.anchor, displayCurrency, rates, target: selected.target })} />
+                </strong>
+              </div>
+              <div className="selected-market-stat">
+                <span>24h trend</span>
+                <strong className={(selected.movement?.h24 ?? 0) >= 0 ? "up" : "down"}>{formatPercent(selected.movement?.h24)}</strong>
+              </div>
+              <div className="selected-market-stat">
+                <span>Liquidity</span>
+                <strong>{Number.isFinite(selected.volume) ? formatNumber(selected.volume, { maximumFractionDigits: 0 }) : "—"}</strong>
+              </div>
+              <button type="button" className="selected-market-action" onClick={() => setView("chart")}>
+                Open plan
+              </button>
+            </section>
+          )}
+
+          {view === "list" ? (
+            <div className="radar-table-wrap">
+              <table className="radar-table">
+                <thead>
+                  <tr>
+                    <th scope="col">
+                      <SortHeader label="Item" column="name" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} defaultDirection="asc" />
+                    </th>
+                    <th className="right" scope="col">
+                      <SortHeader label="Buy <= " sublabel="range low" column="buy" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} align="right" defaultDirection="asc" />
+                    </th>
+                    <th className="right" scope="col">
+                      <SortHeader label="Sell >= " sublabel="range high" column="sell" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} align="right" />
+                    </th>
+                    <th className="right" scope="col">
+                      <SortHeader label="Spread" column="spread" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} align="right" />
+                    </th>
+                    <th className="right" scope="col">
+                      <SortHeader label="Trend 24h" column="movement" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} align="right" />
+                    </th>
+                    <th className="right" scope="col">
+                      <SortHeader label="Liquidity" column="liquidity" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} align="right" />
+                    </th>
+                    <th className="right" scope="col">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => {
+                    const move = row.movement?.h24;
+                    const spread = rowSpread(row);
+                    return (
+                      <tr
+                        key={row.pairId}
+                        className={row.pairId === selected?.pairId ? "active" : ""}
+                        onClick={() => openMarket(row.pairId)}
+                      >
+                        <td className="cell-item">
+                          <img src={iconUrl(row.target)} onError={onIconError} alt="" loading="lazy" />
+                          <span>
+                            <strong>{row.targetName}</strong>
+                            <small>{row.category || "Other"}</small>
+                          </span>
+                        </td>
+                        <td className="right">
+                          <QuotePill quote={quoteFromAnchor(row.low, { anchor: row.anchor, displayCurrency, rates, target: row.target })} compact />
+                        </td>
+                        <td className="right">
+                          <QuotePill quote={quoteFromAnchor(row.high, { anchor: row.anchor, displayCurrency, rates, target: row.target })} compact />
+                        </td>
+                        <td className="right">{Number.isFinite(spread) ? formatPercent(spread, { signed: false }) : "—"}</td>
+                        <td className={`right ${(move ?? 0) >= 0 ? "up" : "down"}`}>{formatPercent(move)}</td>
+                        <td className="right">{Number.isFinite(row.volume) ? formatNumber(row.volume, { maximumFractionDigits: 0 }) : "—"}</td>
+                        <td className="right">
+                          <button
+                            type="button"
+                            className="row-action"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openMarket(row.pairId);
+                            }}
+                          >
+                            Plan
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {!rows.length && (
+                    <tr>
+                      <td className="empty-state" colSpan={7}>{status === "ready" ? "No markets match this filter." : status}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="radar-trade">
+              <div className="trade-view-bar">
+                <div>
+                  <p className="eyebrow">Trade view</p>
+                  <strong>{selected?.targetName ?? "Selected market"}</strong>
+                </div>
+                <button
+                  type="button"
+                  className="trade-close-button"
+                  aria-label="Close trade view"
+                  title="Close trade view"
+                  onClick={closeMarket}
+                >
+                  ×
+                </button>
+              </div>
+              <div className="rt-chart">
+                <div className="chart-title-row">
+                  <div className="chart-market-title">
+                    {selected && <img src={iconUrl(selected.target)} onError={onIconError} alt="" />}
+                    <div>
+                      <p className="eyebrow">Binance-style hourly range chart</p>
+                      <h3>{selected?.targetName ?? "Select a market"} / {titleize(chartUnit)}</h3>
+                    </div>
+                  </div>
+                  {selected && (
+                    <div className="chart-kpis">
+                      <span>
+                        <QuotePill quote={quoteFromAnchor(selected.reference, { anchor: selected.anchor, displayCurrency, rates, target: selected.target })} compact />
+                      </span>
+                      <strong className={(selected.movement?.h24 ?? 0) >= 0 ? "up" : "down"}>{formatPercent(selected.movement?.h24)} 24h</strong>
+                    </div>
+                  )}
+                </div>
+                <SpotChart points={chartHistory} />
+                <p className="rt-note">
+                  Range candles derived from official hourly low–high data. This is context, not a tick-level OHLC feed —
+                  verify the live price in game before trading.
+                </p>
+              </div>
+
+              {selected && (
+                <aside className="rt-plan" aria-label="Trade guidance">
+                  <div className="guidance-header">
+                    <div>
+                      <p className="eyebrow">Trade plan</p>
+                      <h3>{currentWorkingPrice.source === "manual" ? "Using your live price" : "Using hourly midpoint"}</h3>
+                    </div>
+                    <div className="horizon-segments" role="group" aria-label="Trade horizon">
+                      {HORIZON_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          aria-pressed={horizon === option.value}
+                          onClick={() => setHorizon(option.value)}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {guidance.status === "ok" && entryQuote?.value != null && exitQuote?.value != null ? (
+                    <>
+                      <div className="trade-answer">
+                        <article className="buy">
+                          <span>Buy at or below</span>
+                          <strong><QuotePill quote={entryQuote} /></strong>
+                          <small>{formatPercent(Math.abs(guidance.entryDiscount), { signed: false })} below working price</small>
+                        </article>
+                        <article className="sell">
+                          <span>Sell at or above</span>
+                          <strong><QuotePill quote={exitQuote} /></strong>
+                          <small>{formatPercent(guidance.exitPremium, { signed: false })} above working price</small>
+                        </article>
+                      </div>
+
+                      <div className="working-price-line">
+                        <span>Working price</span>
+                        <strong><QuotePill quote={workingQuote} compact /></strong>
+                        <small>{currentWorkingPrice.sourceLabel}{currentWorkingPrice.ageMs == null ? "" : ` · ${formatAge(currentWorkingPrice.ageMs)}`}</small>
+                      </div>
+
+                      <div className="manual-price-row">
+                        <label>
+                          Live price you see
+                          <input
+                            inputMode="decimal"
+                            onChange={(event) => setDraftPrice(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") applyManualPrice();
+                            }}
+                            placeholder={pricePlaceholder(currentWorkingPrice.value)}
+                            type="text"
+                            value={draftPrice}
+                          />
+                        </label>
+                        <span className="manual-price-unit">{titleize(draftUnit)}</span>
+                        <button type="button" onClick={applyManualPrice}>Use live</button>
+                        {currentWorkingPrice.source === "manual" && (
+                          <button className="ghost" type="button" onClick={clearManualPrice}>Reset</button>
+                        )}
+                      </div>
+
+                      <div className="guidance-grid compact">
+                        <article>
+                          <span>Reached sell price</span>
+                          <strong>{formatPercent(guidance.hitRate, { signed: false, maximumFractionDigits: 0 })}</strong>
+                          <small>{guidance.horizonSamples || guidance.samples} rolling {horizon}h windows</small>
+                        </article>
+                        <article>
+                          <span>Usual wait</span>
+                          <strong>{formatDurationHours(guidance.medianTimeToHitHours)}</strong>
+                          <small>when sell price was reached</small>
+                        </article>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="guidance-empty">
+                      {guidance.status === "insufficient-history"
+                        ? `Not enough completed-hour history yet (${guidance.samples ?? 0}/3).`
+                        : "Enter a current price, or wait for a usable hourly midpoint."}
+                    </p>
+                  )}
+                </aside>
+              )}
             </div>
           )}
         </div>
-        <SpotChart points={history} />
-        {selected && (
-          <section className="trade-guidance-panel" aria-label="Trade guidance">
-            <div className="guidance-header">
-              <div>
-                <p className="eyebrow">Manual current price</p>
-                <h3>{currentWorkingPrice.source === "manual" ? "Plan from your real quote" : "Plan from hourly midpoint"}</h3>
-                <p>
-                  Use the price you see in-game now. Hourly history is only used to estimate a conservative entry/exit
-                  envelope for the selected holding window.
-                </p>
-              </div>
-              <label>
-                Horizon
-                <select value={horizon} onChange={(event) => setHorizon(Number(event.target.value))}>
-                  <option value={1}>1h scalp</option>
-                  <option value={3}>3h</option>
-                  <option value={6}>6h</option>
-                  <option value={10}>10h overnight</option>
-                  <option value={24}>24h</option>
-                </select>
-              </label>
-            </div>
-
-            <div className="working-price-card">
-              <span>Working price</span>
-              <strong>
-                <PricePill value={currentWorkingPrice.value} unit={currentWorkingPrice.unit} />
-              </strong>
-              <small>
-                {currentWorkingPrice.sourceLabel}
-                {currentWorkingPrice.ageMs == null ? "" : ` · ${formatAge(currentWorkingPrice.ageMs)}`}
-              </small>
-            </div>
-
-            <div className="manual-price-row">
-              <input
-                inputMode="decimal"
-                min="0"
-                onChange={(event) => setDraftPrice(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") applyManualPrice();
-                }}
-                placeholder="e.g. 240"
-                type="number"
-                value={draftPrice}
-              />
-              <select value={draftUnit} onChange={(event) => setDraftUnit(event.target.value)}>
-                <option value="exalted">Exalted Orb</option>
-                <option value="divine">Divine Orb</option>
-              </select>
-              <button type="button" onClick={applyManualPrice}>Apply</button>
-              <button className="ghost" type="button" onClick={clearManualPrice}>Use hourly</button>
-            </div>
-
-            {guidance.status === "ok" && entry != null && exit != null ? (
-              <div className="guidance-grid">
-                <article>
-                  <span>Buy / enter at or below</span>
-                  <strong><PricePill value={entry} unit={guidanceUnit} /></strong>
-                  <small>{formatPercent(guidance.entryDiscount)} vs working price</small>
-                </article>
-                <article>
-                  <span>Sell / exit at or above</span>
-                  <strong><PricePill value={exit} unit={guidanceUnit} /></strong>
-                  <small>{formatPercent(guidance.exitPremium)} vs working price</small>
-                </article>
-                <article>
-                  <span>Historical hit rate</span>
-                  <strong>{formatPercent(guidance.hitRate, { signed: false, maximumFractionDigits: 0 })}</strong>
-                  <small>{guidance.horizonSamples || guidance.samples} rolling {horizon}h windows</small>
-                </article>
-                <article>
-                  <span>Median time to hit</span>
-                  <strong>{formatDurationHours(guidance.medianTimeToHitHours)}</strong>
-                  <small>when the exit was reached</small>
-                </article>
-              </div>
-            ) : (
-              <p className="guidance-empty">
-                {guidance.status === "insufficient-history"
-                  ? `Not enough completed-hour history yet (${guidance.samples ?? 0}/3).`
-                  : "Enter a current price, or wait for a usable hourly midpoint."}
-              </p>
-            )}
-          </section>
-        )}
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }

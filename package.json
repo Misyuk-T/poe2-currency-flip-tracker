@@ -8,8 +8,6 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "node src/server/index.js",
-    "dev": "node --watch src/server/index.js",
     "web:dev": "next dev apps/web",
     "web:build": "next build apps/web",
     "web:start": "next start apps/web",

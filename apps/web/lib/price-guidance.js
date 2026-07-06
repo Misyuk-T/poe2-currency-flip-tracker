@@ -1,28 +1,31 @@
-/** Convert a market price between the two supported display currencies. */
-export function convertMarketPrice(value, from, to, divineInExalted) {
-  if (!positive(value) || !["exalted", "divine"].includes(from) || !["exalted", "divine"].includes(to)) return null;
-  if (from === to) return value;
-  if (!positive(divineInExalted)) return null;
-  return from === "divine" ? value * divineInExalted : value / divineInExalted;
+/** Convert a market price between supported display currencies. */
+export function convertMarketPrice(value, from, to, ratesOrDivineInExalted) {
+  const rates = normalizeRates(ratesOrDivineInExalted);
+  if (!positive(value) || !rates[from] || !rates[to]) return null;
+  return (value * rates[from]) / rates[to];
 }
 
 /**
  * Manual observations override the delayed hourly midpoint. Otherwise the
  * latest official completed-hour reference is used, with source/age attached.
  */
-export function workingPrice(row, savedManual, { divineInExalted, now = Date.now() } = {}) {
+export function workingPrice(row, savedManual, { divineInExalted, chaosInExalted, preferredUnit: wantedUnit, now = Date.now() } = {}) {
+  const rates = normalizeRates({ divineInExalted, chaosInExalted });
+  const preferredUnit = rates[wantedUnit] ? wantedUnit : null;
   const anchor = row?.anchor;
-  const manualUnit = ["exalted", "divine"].includes(savedManual?.unit) ? savedManual.unit : null;
+  const manualUnit = rates[savedManual?.unit] ? savedManual.unit : null;
   const manualValue = Number(savedManual?.value);
   if (manualUnit && positive(manualValue)) {
-    const anchorValue = convertMarketPrice(manualValue, manualUnit, anchor, divineInExalted);
+    const anchorValue = convertMarketPrice(manualValue, manualUnit, anchor, rates);
+    const displayUnit = preferredUnit ?? manualUnit;
+    const displayValue = convertMarketPrice(anchorValue, anchor, displayUnit, rates);
     return {
       status: anchorValue == null ? "unconvertible-manual-price" : "ok",
       source: "manual",
       sourceLabel: "You entered",
       ageMs: Number.isFinite(savedManual?.updatedAt) ? Math.max(0, now - savedManual.updatedAt) : 0,
-      value: manualValue,
-      unit: manualUnit,
+      value: displayValue ?? manualValue,
+      unit: displayValue == null ? manualUnit : displayUnit,
       anchorValue,
     };
   }
@@ -39,8 +42,8 @@ export function workingPrice(row, savedManual, { divineInExalted, now = Date.now
     };
   }
 
-  const unit = row.displayPrice?.unit ?? anchor;
-  const displayValue = convertMarketPrice(row.reference, anchor, unit, divineInExalted);
+  const unit = preferredUnit ?? row.displayPrice?.unit ?? anchor;
+  const displayValue = convertMarketPrice(row.reference, anchor, unit, rates);
   return {
     status: displayValue == null ? "unconvertible-hourly-price" : "ok",
     source: "hourly",
@@ -49,6 +52,21 @@ export function workingPrice(row, savedManual, { divineInExalted, now = Date.now
     value: displayValue,
     unit,
     anchorValue: row.reference,
+  };
+}
+
+function normalizeRates(ratesOrDivineInExalted) {
+  if (typeof ratesOrDivineInExalted === "number") {
+    return {
+      exalted: 1,
+      divine: positive(ratesOrDivineInExalted) ? ratesOrDivineInExalted : null,
+      chaos: null,
+    };
+  }
+  return {
+    exalted: 1,
+    divine: positive(ratesOrDivineInExalted?.divineInExalted) ? ratesOrDivineInExalted.divineInExalted : null,
+    chaos: positive(ratesOrDivineInExalted?.chaosInExalted) ? ratesOrDivineInExalted.chaosInExalted : null,
   };
 }
 
@@ -67,18 +85,23 @@ export function currentPriceGuidance(points, currentPrice, { maxSamples = 25, mi
     .filter((point) => point.entry > 0 && point.entry <= 1 && point.exit >= 1);
   if (ratios.length < minSamples) return { status: "insufficient-history", samples: ratios.length };
 
-  const entryFactor = median(ratios.map((point) => point.entry));
   const horizon = horizonWindows(candles, { maxSamples, minSamples, horizonHours });
+  const expansion = horizon.status === "ok" ? horizonExpansion(ratios, horizonHours) : { entry: 0, exit: 0 };
+  const entryFactor = horizon.status === "ok"
+    ? median(horizon.windows.map((point) => point.futureLowFactor))
+    : median(ratios.map((point) => point.entry));
   const exitFactor = horizon.status === "ok"
     ? median(horizon.windows.map((point) => point.futureHighFactor))
     : median(ratios.map((point) => point.exit));
-  const entry = currentPrice * entryFactor;
-  const exit = currentPrice * exitFactor;
+  const adjustedEntryFactor = Math.max(0.01, entryFactor - expansion.entry);
+  const adjustedExitFactor = exitFactor + expansion.exit;
+  const entry = currentPrice * adjustedEntryFactor;
+  const exit = currentPrice * adjustedExitFactor;
   const hitRate = horizon.status === "ok"
-    ? horizon.windows.filter((point) => point.futureHighFactor >= exitFactor).length / horizon.windows.length
+    ? horizon.windows.filter((point) => point.futureHighFactor >= adjustedExitFactor).length / horizon.windows.length
     : null;
   const hitTimes = horizon.status === "ok"
-    ? horizon.windows.map((point) => timeToHit(point, exitFactor)).filter(Number.isFinite)
+    ? horizon.windows.map((point) => timeToHit(point, adjustedExitFactor)).filter(Number.isFinite)
     : [];
   const adverseMoves = horizon.status === "ok"
     ? horizon.windows.map((point) => point.futureLowFactor - 1).filter(Number.isFinite)
@@ -91,8 +114,8 @@ export function currentPriceGuidance(points, currentPrice, { maxSamples = 25, mi
     currentPrice,
     entry,
     exit,
-    entryDiscount: entryFactor - 1,
-    exitPremium: exitFactor - 1,
+    entryDiscount: adjustedEntryFactor - 1,
+    exitPremium: adjustedExitFactor - 1,
     rangePotential: entry > 0 ? exit / entry - 1 : null,
     hitRate,
     medianTimeToHitHours: hitTimes.length ? median(hitTimes) : null,
@@ -124,6 +147,18 @@ function horizonWindows(points, { maxSamples, minSamples, horizonHours }) {
   }
   const recent = windows.slice(-maxSamples);
   return recent.length >= minSamples ? { status: "ok", windows: recent } : { status: "insufficient-history", windows: recent };
+}
+
+function horizonExpansion(ratios, horizonHours) {
+  const hours = Math.max(1, Number(horizonHours) || 1);
+  const multiplier = Math.max(0, Math.sqrt(hours) - 1) * 0.15;
+  if (!multiplier) return { entry: 0, exit: 0 };
+  const entryMoves = ratios.map((point) => 1 - point.entry).filter((value) => value >= 0);
+  const exitMoves = ratios.map((point) => point.exit - 1).filter((value) => value >= 0);
+  return {
+    entry: median(entryMoves) * multiplier,
+    exit: median(exitMoves) * multiplier,
+  };
 }
 
 function timeToHit(window, factor) {

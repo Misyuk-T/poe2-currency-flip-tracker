@@ -17,12 +17,12 @@ function mockRepo({ state = { cursor: null, lastDigestId: null } } = {}) {
   };
 }
 
-test("ingestFixtures synthesizes 30 labelled-synthetic hourly digests", async () => {
+test("ingestFixtures synthesizes labelled-synthetic hourly history", async () => {
   const repo = mockRepo();
   const out = await ingestFixtures({ repo, league: "Runes of Aldur", anchors: ["exalted"], now: 1_750_000_000_000 });
   assert.equal(out.mode, "fixture");
-  assert.equal(out.digests, 30);
-  assert.equal(repo.recorded.length, 30);
+  assert.equal(out.digests, 168);
+  assert.equal(repo.recorded.length, 168);
   assert.equal(out.inserted, repo.recorded.reduce((sum, d) => sum + d.candles.length, 0));
   // Every fixture candle is clearly flagged synthetic with an honest source.
   for (const digest of repo.recorded) {

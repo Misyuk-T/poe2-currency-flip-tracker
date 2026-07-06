@@ -8,14 +8,7 @@ export const metadata = {
 
 export default function Poe2Page() {
   return (
-    <main>
-      <section className="page-heading">
-        <p className="eyebrow">Official hourly market digest</p>
-        <h1>PoE2 market radar</h1>
-        <p>
-          Discover moving currency markets, then open a trade plan and enter the current price you see in game.
-        </p>
-      </section>
+    <main className="radar-page">
       <MarketDashboard />
     </main>
   );

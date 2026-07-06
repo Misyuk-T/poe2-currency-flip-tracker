@@ -14,30 +14,31 @@ actual in-game price before trading.
 
 ```bash
 cp .env.example .env   # optional — sensible defaults work without it
-npm run dev       # backend API on http://localhost:8080
-npm run web:dev   # Next.js SEO/frontend on http://localhost:3000
+npm run web:dev   # Next.js app (UI + API) on http://localhost:3000
 ```
 
-The backend still has no compile step and runs on Node ≥ 20. The production
-frontend is a Next.js app under `apps/web/`, so SEO pages and chart bundles are
-built with `npm run web:build`. The `.env` file (if present) is loaded by a tiny
-built-in backend loader (`src/server/load-env.js`) — no `dotenv` dependency, and
-real environment variables always win over the file. Fixture mode serves
-deterministic, clearly-labelled synthetic data so every calculation and the UI
-work without touching any external API.
+The product is a single Next.js app under `apps/web/` (Node ≥ 20). Its own
+`/api/*` route handlers serve the radar/history endpoints, reusing the shared
+domain logic in `src/` (catalog, gold costs, radar core/ingest, repository) —
+there is no separate backend process to run. `.env` is loaded by Next; real
+environment variables always win over the file.
 
 ```bash
-npm test     # run the domain + server test suite (node:test)
+npm test           # run the domain test suite (node:test)
 npm run web:build  # build the Next.js frontend
 ```
 
-The old static frontend under `src/public/` is still served by the backend for
-continuity, but production SEO work now lives in `apps/web/` (Next.js App
-Router). By default the Next app talks to the backend through a same-origin
-proxy at `/backend/*`, rewritten to `BACKEND_ORIGIN` (defaults to
-`http://localhost:8080`). `NEXT_PUBLIC_API_BASE_URL` can override the browser
-API base, and `NEXT_PUBLIC_SITE_URL` controls canonical URLs, sitemap and robots
-metadata.
+`NEXT_PUBLIC_API_BASE_URL` overrides the browser API base (defaults to
+same-origin, i.e. the app's own `/api/*`), and `NEXT_PUBLIC_SITE_URL` controls
+canonical URLs, sitemap and robots metadata.
+
+**Offline data in dev:** with no `DATABASE_URL` and `PROVIDER_MODE=fixture`, the
+read routes serve a full synthetic radar (the whole catalog) from an in-memory
+fixture repository, so `npm run web:dev` shows data with no database — labelled
+`sourceMode: fixture`. This fallback is automatic under `next dev` and otherwise
+gated behind `RADAR_FIXTURE_FALLBACK=1`, so a real production database outage
+still degrades to an honest 503 instead of masking it with synthetic data. A
+live/persistent feed uses Postgres + the `/api/cron/radar` ingest.
 
 ## What changed vs. the original prototype
 
@@ -81,9 +82,11 @@ Production does **not** run the always-on Node server. It is split:
   (`on conflict do nothing`) + monotonic cursor → no distributed lock needed.
   Migration `004_radar_ingest_cron.sql` schedules it.
 
-The always-on server (`src/server/index.js`) is kept for **local development and
-self-hosting** (offline fixtures, the experimental live-book engine); it is not
-part of the Vercel deployment.
+There is no separate always-on server: the product is fully serverless on Vercel,
+and local dev runs the same Next app (`npm run web:dev`). The legacy standalone
+Node server, its experimental live-book opportunity engine, and the old static
+`src/public/` UI have been removed; only the shared radar/domain library in
+`src/` remains, reused by the Next `/api/*` route handlers.
 
 ### Environment (set in the Vercel project, never committed)
 
@@ -94,68 +97,46 @@ part of the Vercel deployment.
 | `PROVIDER_MODE` | `fixture` (until a `service:cxapi` OAuth token exists) |
 | `CRON_SECRET` | long random string; also stored in Supabase Vault as `radar_cron_secret` |
 
-`NEXT_PUBLIC_API_BASE_URL` stays unset in production (same-origin `/api`); set it
-to `/backend` only for local dev against the Node server.
+`NEXT_PUBLIC_API_BASE_URL` stays unset in both production and local dev — the app
+always calls its own same-origin `/api/*` route handlers.
 
-## Architecture (local dev / self-host server)
+## Architecture
 
-> The tree below is the always-on Node server used for local development and
-> self-hosting. The deployed product uses the serverless model in **Production
-> architecture** above.
+The repo is a single Next.js app (`apps/web/`) plus a shared, framework-free
+library in `src/` that its `/api/*` route handlers reuse. No separate process.
 
 ```
-src/
-  server/        HTTP app, config, snapshot store/poller (I/O only)
-    index.js     entry point: config -> registry -> provider -> server + poller
-    app.js       routes, in-memory snapshot, static serving, error states
-    config.js    env-driven config (no hardcoded seasonal league)
-    snapshot.js  fetch books (I/O)  +  compute opportunities (pure)
-  providers/     where executable offers come from (isolated behind one interface)
-    market-provider.js     factory + interface docs
-    fixture-provider.js    deterministic offline data (default)
-    ggg-exchange-provider.js  EXPERIMENTAL live GGG source (env-gated)
-    rate-limit.js          header-driven backoff, Retry-After
-  domain/        pure, deterministic market math (no HTTP, no DOM)
-    offers.js          normalize raw offers -> book levels
-    order-book.js      sort + sweep depth for a requested quantity
-    executable-quote.js  VWAP / worst price / partial fill / freshness
-    gold-costs.js      per-leg + round-trip gold (integer, rounded up)
-    opportunities.js   sizing, limiting-resource, metrics
-  data/
-    gold-costs-poe2.js   versioned PoE2 gold table (never shared with PoE1)
-    fixtures/            synthetic exchange recordings
-  public/        frontend (served by the backend)
-test/            domain + server tests
+apps/web/
+  app/            routes: /poe2 (dashboard), /poe2/currencies, /guides, /landing
+    page.jsx      root /: temporary 307 redirect to /poe2 (landing hidden)
+    api/          route handlers: radar, radar/history, status, config,
+                  hotlist, opportunities, cron/radar (Bearer CRON_SECRET)
+  components/     MarketDashboard, SpotChart, HomeMiniRadar, …
+  lib/            radar-backend, currency-summary, market, db, http, guides
+  public/icons/   neutral fallback glyph (GGG art gitignored, not committed)
+src/              shared domain logic (pure, no HTTP, no DOM)
+  server/         config.js, radar-core.js, radar-ingest.js
+  domain/         market-radar, cx-market, hotlist, gold-costs, radar-payload,
+                  catalog, paper-trade, market-price-display
+  storage/        radar-repository.js (Postgres)
+  providers/      ggg-cxapi-provider.js (OAuth-gated live cxapi feed)
+  data/           catalog-poe2.json (749 items), gold-costs-poe2.js, fixtures/
+test/             domain + Next-pipeline tests (node:test)
 ```
 
-The `MarketProvider` interface is the seam between "where data comes from" and
-everything else. `domain/offers.normalizeResult` is the **single** place that
-understands the GGG response contract, so swapping providers never changes
-parsing.
+`src/domain/cx-market.js` is the **single** place that understands the GGG cxapi
+response contract, so the rest of the pipeline never re-parses upstream shapes.
 
-### HTTP API
+### HTTP API (Next route handlers, same-origin `/api`)
 
-- `GET /health` — `{ status, providerMode, league }`
-- `GET /api/config` — league/anchor/shortlist/provider metadata
-- `GET /api/opportunities?capital=&gold=&reserve=&horizon=&maxPosition=&anchor=&rank=` —
-  ranked opportunities from the cached snapshot. **Numeric inputs are validated
-  server-side**: negative capital/gold/reserve/horizon are clamped, a reserve is
-  capped at available gold, and a negative reserve can never inflate the budget
-  (`constraintAdjustments` echoes what was changed). Public reads can never
-  trigger an upstream request. On data failure with no cached snapshot it
-  returns **HTTP 503** with `state:"error"` and never
-  fabricates rows.
-- `GET /api/history[?target=]` — market-only time series (best entry/exit
-  price, spread %, depth) per target, used for the trend charts.
+- `GET /api/radar?anchor=` — the completed-hour market radar payload.
+- `GET /api/radar/history?pair=&anchor=` — per-pair hourly low/high range series.
+- `GET /api/status`, `GET /api/config`, `GET /api/hotlist` — metadata + digests.
+- `POST /api/cron/radar` — Bearer `CRON_SECRET`; ingests one completed hour
+  (fixture synth or live cxapi catch-up). Idempotent + monotonic cursor.
 
-### Refresh semantics (honest)
-
-- The **Refresh button** only re-reads the backend cache. Only the backend
-  scheduler, or the token-protected `POST /admin/refresh`, can call a provider.
-- The frontend **auto re-fetches** on `pollIntervalMs`, and a 1-second ticker
-  keeps the displayed snapshot **age live**.
-- Overlapping provider cycles are coalesced server-side; live requests also go
-  through the header-driven limiter and circuit breaker.
+On a data failure with no stored snapshot, reads return **HTTP 503**
+(`{ error: { code: "no-database" } }`) and never fabricate rows.
 
 ### Catalog & icons (Phase C1)
 
@@ -166,13 +147,13 @@ with a `supported | unknown-gold-cost` status per item.
 
 Icon **art is © Grinding Gear Games and is NOT committed.** Run
 `npm run catalog:build` to refresh the catalog and download icons into
-`src/public/icons/` (gitignored); the UI falls back to a neutral glyph for any
+`apps/web/public/icons/` (gitignored); the UI falls back to a neutral glyph for any
 icon not downloaded. The script validates the response, restricts downloads to
 GGG/CDN hosts, and guards against path traversal. Non-commercial fan use;
 **commercial use requires written permission from GGG.**
 
 Because the art is gitignored, production must run `npm run catalog:build` as a
-controlled build step and include `src/public/icons/` in the resulting artifact,
+controlled build step and include `apps/web/public/icons/` in the resulting artifact,
 or copy approved assets from object storage. A plain Git checkout intentionally
 contains only the fallback. Do not enable GGG art in a paid deployment without
 written permission.
@@ -354,23 +335,18 @@ default shortlist intentionally includes `vaal`, which has **no** brief-verified
 cost, to exercise this honest "unrankable" path; add a sourced row to the gold
 table to make it rankable.
 
-## Experimental live mode — read before enabling
+## Live data (official cxapi feed)
 
-```bash
-PROVIDER_MODE=live LEAGUE="Your League" node src/server/index.js
-```
+The live radar feed comes from GGG's official OAuth-gated `service:cxapi`
+currency-exchange API, isolated in `src/providers/ggg-cxapi-provider.js` and
+driven by the env-gated `POST /api/cron/radar` ingest route. It returns hourly
+digests and omits the incomplete current hour — good for history and candidate
+generation, **not** for five-minute execution quotes.
 
-This calls `POST https://www.pathofexile.com/api/trade2/exchange/poe2/{league}`,
-a **website-internal, undocumented** endpoint. It is **not** the supported
-third-party OAuth API and is **not approved** for commercial use.
-
-- Live access is isolated in `ggg-exchange-provider.js` and gated by env.
-- The provider parses `X-Rate-Limit-*` headers and self-throttles; on `429` it
-  obeys `Retry-After`. It does **not** rotate IPs or accounts.
-- `POESESSID`, if used, is **server-side only** and never exposed to the
-  browser. Default is no session cookie.
-- A narrow live canary (Exalted ↔ Chaos) succeeded on 2026-06-20. That verifies
-  the observed shape once, not endpoint stability or permission for production.
+> The earlier **experimental** path that called the website-internal, undocumented
+> `trade2/exchange` endpoint (`ggg-exchange-provider.js`, run via the standalone
+> Node server) has been **removed**. A narrow live canary (Exalted ↔ Chaos)
+> verified that shape once on 2026-06-20; it was never approved for production.
 
 **Commercial production must seek written permission from GGG.** This is a
 product constraint, not an implementation detail to hide. References:
@@ -378,12 +354,6 @@ product constraint, not an implementation detail to hide. References:
 - https://www.pathofexile.com/developer/docs
 - https://www.pathofexile.com/developer/docs/reference#currencyexchange
 - https://www.pathofexile.com/legal/terms-of-use-and-privacy-policy
-
-The official `service:cxapi` currency-exchange API gives hourly digests (and
-omits the incomplete current hour) — good for history/candidate generation,
-**not** for five-minute execution quotes. A future version should use it for the
-candidate shortlist and reserve live exchange calls for validating that
-shortlist.
 
 ## Current limitations / unverified assumptions
 

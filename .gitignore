@@ -2,8 +2,8 @@ node_modules/
 apps/web/.next/
 .data/
 # Downloaded GGG icon art (not committed); keep only the neutral fallback.
-src/public/icons/*
-!src/public/icons/_fallback.svg
+apps/web/public/icons/*
+!apps/web/public/icons/_fallback.svg
 .env
 .env.*
 !.env.example

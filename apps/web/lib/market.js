@@ -25,14 +25,14 @@ export function titleize(id) {
     .join(" ");
 }
 
-// GGG item art is not committed (licensing is deferred per the project brief)
-// and the Next app does not serve per-item icons, so every icon currently
-// resolves to a neutral committed glyph served from apps/web/public/icons.
-// When the art pipeline + licensing land, restore per-id URLs here.
+// GGG item art is © GGG and is NOT committed. `npm run catalog:build` downloads
+// per-item PNGs into apps/web/public/icons/<id>.png (gitignored); until an icon
+// is present the UI falls back to a neutral committed glyph via the <img onError>
+// handler. Hotlinking GGG's CDN is intentionally avoided (licensing stance).
 export const fallbackIconUrl = "/icons/_fallback.svg";
 
-export function iconUrl() {
-  return fallbackIconUrl;
+export function iconUrl(id) {
+  return id ? `/icons/${encodeURIComponent(id)}.png` : fallbackIconUrl;
 }
 
 /**

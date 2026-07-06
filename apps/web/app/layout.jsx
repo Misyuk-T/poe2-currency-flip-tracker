@@ -3,13 +3,13 @@ import "./globals.css";
 export const metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   title: {
-    default: "PoE2 Currency Flip Tracker",
-    template: "%s · PoE2 Currency Flip Tracker",
+    default: "PoE2 Currency Flip Helper",
+    template: "%s · PoE2 Currency Flip Helper",
   },
   description:
     "Path of Exile 2 currency market radar using official completed-hour data and user-entered current prices.",
   openGraph: {
-    title: "PoE2 Currency Flip Tracker",
+    title: "PoE2 Currency Flip Helper",
     description:
       "Find moving PoE2 currency markets, verify your current price, and plan conservative entry and exit levels.",
     type: "website",
@@ -23,14 +23,18 @@ export default function RootLayout({ children }) {
         <div className="app-shell">
           <header className="site-header">
             <a className="brand" href="/">
-              <span className="brand-mark">⌁</span>
-              <span>PoE2 Flip Tracker</span>
+              <span className="brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 32 32" focusable="false">
+                  <path d="M16 7v18" />
+                  <path d="M10 25h12" />
+                  <path d="M8 11h16" />
+                  <path d="M16 8l-6 3 6 3 6-3-6-3Z" />
+                  <path d="M9 12 5.5 19h7L9 12Z" />
+                  <path d="M23 12 19.5 19h7L23 12Z" />
+                </svg>
+              </span>
+              <span>PoE2 Flip Helper</span>
             </a>
-            <nav aria-label="Main navigation">
-              <a href="/poe2">Market radar</a>
-              <a href="/poe2/currencies">Currencies</a>
-              <a href="/guides">Guides</a>
-            </nav>
           </header>
           {children}
         </div>

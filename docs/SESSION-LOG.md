@@ -2,6 +2,32 @@
 
 Newest first. One block per working session: what changed + commit refs.
 
+## 2026-07-09 — BMAD BA review, strategic pivot, gold-cost research (docs only)
+
+**Product status reviewed** — Phases A/B/C1/C2a/C3a-b + D1–D4 shipped and live
+(serverless Vercel + Supabase, fixture data); SEO P0–P2 + dark UI revamp done.
+Blocked track is unchanged: everything live-data (C2b, C3c, SEO P3, D5) waits on
+the un-applied-for GGG `service:cxapi` OAuth grant.
+
+**BMAD business-analyst review** (persona "Mary") — verdict: A-grade portfolio
+piece, C-grade business. **User agreed with all findings.** Recorded as two
+DECISIONS entries: (1) strategic pivot — free tool, gold-wedge as hero, drop the
+$5 sub, ship a labelled decision signal, resolve the two existential GGG risks
+with one email; (2) gold-cost model is an honest approximation.
+
+**Gold-cost research** — confirmed GGG publishes **no exact formula**; the
+verified mechanic is per-order, per want-side item, scaling linearly with the
+exchange ratio (rarity). Our `ceil(received_qty * goldPerUnit)` is a faithful
+labelled approximation; only gap is static-table vs live-ratio scaling. Sources
+in DECISIONS.md.
+
+**Codex MCP note** — the codex (GPT-5.5) reviewer MCP is **not connected in this
+session**; codex review must be run from an interactive `claude` where the server
+is registered.
+
+**Next (agreed sequencing):** polish dashboard + design into a beautiful demo →
+*then* send the GGG cxapi application. Queue Search Console + analytics.
+
 ## 2026-06-29 — Remove legacy backend, dashboard-at-root (uncommitted working tree)
 
 **Fixed `web:dev` error loop** — `lightweight-charts` (imported by

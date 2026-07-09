@@ -53,6 +53,49 @@ export function createGoldRegistry(records, opts = {}) {
 }
 
 /**
+ * Demo/pre-live PLACEHOLDER registry: a single flat gold-per-unit for EVERY id.
+ *
+ * This is intentionally NOT sourced per-currency data — it is a uniform stand-in
+ * used only so the demo surface is complete (nothing shows as "unrankable /
+ * unknown-gold-cost") before we obtain real per-currency gold costs from live
+ * data. It is honest precisely because it is uniform and labelled a placeholder
+ * in its provenance; it must never be presented as verified per-currency gold.
+ *
+ * The canonical, verifiable {@link createGoldRegistry} + POE2_GOLD_COSTS table is
+ * left untouched (the domain test-suite exercises the real values). Swap this out
+ * the moment sourced gold data lands.
+ *
+ * @param {{ game?: string, goldPerUnit?: number, note?: string }} [opts]
+ */
+export function createFlatGoldRegistry(opts = {}) {
+  const game = opts.game ?? "poe2";
+  const flat = opts.goldPerUnit ?? 600;
+  const note = opts.note ?? "placeholder-flat: uniform stand-in until live gold data";
+  return {
+    game,
+    isPlaceholder: true,
+    placeholderNote: note,
+    /** @returns {number} the flat placeholder gold-per-unit for any id. */
+    goldPerUnit(_itemId) {
+      return flat;
+    },
+    has(_itemId) {
+      return true;
+    },
+    record(itemId) {
+      return { game, itemId, goldPerUnit: flat, source: note, placeholder: true };
+    },
+    ids() {
+      return [];
+    },
+    /** Everything is "covered" by the flat placeholder. */
+    coverage(ids) {
+      return { covered: [...ids], missing: [] };
+    },
+  };
+}
+
+/**
  * Validate that every actionable id (anchor + shortlist targets) has a known,
  * versioned gold cost. Targets without a cost are NOT guessed: they are reported
  * as gaps so the caller can surface them and mark them unrankable.

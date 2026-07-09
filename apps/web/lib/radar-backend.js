@@ -10,7 +10,7 @@
 
 import { loadConfig } from "../../../src/server/config.js";
 import { loadCatalog, buildManifest, nameMapFromCatalog } from "../../../src/domain/catalog.js";
-import { createGoldRegistry } from "../../../src/domain/gold-costs.js";
+import { createGoldRegistry, createFlatGoldRegistry } from "../../../src/domain/gold-costs.js";
 import { POE2_GOLD_COSTS } from "../../../src/data/gold-costs-poe2.js";
 import { createRadarRepository } from "../../../src/storage/radar-repository.js";
 import { buildRadarPayload, buildHistoryPayload, buildHotlistPayload } from "../../../src/server/radar-core.js";
@@ -29,7 +29,18 @@ function context() {
   if (!contextPromise) {
     contextPromise = (async () => {
       const config = loadConfig();
-      const goldRegistry = createGoldRegistry(POE2_GOLD_COSTS, { game: config.poeGame });
+      // DEMO PLACEHOLDER (pre-live): a uniform flat gold cost for every currency
+      // so the radar/catalog surface is complete (nothing "unrankable") before we
+      // obtain real per-currency gold data. Flat value is honest-by-uniformity and
+      // labelled a placeholder. Set GOLD_PLACEHOLDER_PER_UNIT=0 (or "off") to fall
+      // back to the canonical verified POE2_GOLD_COSTS table.
+      const placeholderRaw = process.env.GOLD_PLACEHOLDER_PER_UNIT ?? "600";
+      const placeholderPerUnit = Number(placeholderRaw);
+      const usePlaceholder =
+        placeholderRaw !== "off" && Number.isFinite(placeholderPerUnit) && placeholderPerUnit > 0;
+      const goldRegistry = usePlaceholder
+        ? createFlatGoldRegistry({ game: config.poeGame, goldPerUnit: placeholderPerUnit })
+        : createGoldRegistry(POE2_GOLD_COSTS, { game: config.poeGame });
       const catalog = await loadCatalog();
       const manifest = buildManifest(catalog, goldRegistry);
       return {

@@ -2,6 +2,64 @@
 
 Newest first. Each entry: **what** was decided, **why**, and the date.
 
+## 2026-07-09 — Strategic pivot accepted (BMAD BA review): free tool, gold-wedge hero, apply for cxapi
+Ran a BMAD-style business-analyst review of product-market fit. **User agreed with
+all of it.** Fixed decisions:
+- **Drop the $5/mo subscription premise.** Category price anchor is $0
+  (poe.ninja / poe2scout are free), audience is small + league-seasonal, and a
+  paid tier on GGG data/art likely conflicts with GGG's commercial-use permission.
+  Model, if any, is **free tool + "buy me a coffee"/Patreon** — reputation asset,
+  not revenue.
+- **The gold-cost-aware wedge is the hero — BUT it is contested (see correction
+  below).** "profit per 100k gold" / limiting-resource framing is the sharpest
+  differentiator vs. the *giants*; promote it to the primary surface, demote
+  radar/guides/paper-trade to support.
+  **Correction (same-day BA follow-up):** the flip workbench is NOT a green field.
+  poe.ninja owns the price-check reflex + builds; poe2scout owns PoE2-native depth
+  + an open API (it's becoming *infrastructure* others build on). Both ignore the
+  flipper's workbench — but the long tail already rushed in: **poe2fun.com** ships
+  a gold-cost-aware flip calculator (literal "10K Gold Additional Cost" input),
+  **exiledtools** ships a flip finder with ROI + liquidity, and **poe2scout-mcp**
+  advertises arbitrage detection. So "we account for gold" is NOT unique. The wedge
+  survives only on **(a) provable correctness of the gold model, (b) the
+  gold-constrained *small* flipper persona nobody serves (~40k gold, where the tax
+  kills a nominal 5% edge), and (c) an honest-but-decisive answer.** Next action:
+  spend an hour in poe2fun + exiledtools and find exactly where their gold math is
+  wrong/missing — that specific gap is the real opening, not gold-awareness in the
+  abstract.
+- **"Honesty / no-fabrication" is table stakes, not a moat** — keep it in the
+  DATA, but stop being timid in the PRODUCT: ship a calibrated, labelled,
+  backtested *decision signal* (e.g. "cleared within horizon in X of Y comparable
+  past windows — historical, not a forecast") instead of only `null`/`insufficient`.
+- **Two existential risks, both previously deferred:** (R1) live data needs a GGG
+  `service:cxapi` OAuth grant not yet applied for; (R2) commercial use of GGG
+  data + art needs written permission. Resolving both = **one email to GGG**,
+  which gates everything.
+- **Sequencing (user's call):** polish the dashboard + design into a beautiful
+  demo FIRST, then send the GGG API-developer / cxapi application (a nice demo
+  strengthens the outreach). Also queue: Google Search Console + privacy
+  analytics for a real demand signal.
+**Why:** work had been flowing to comfortable engineering (OG images, card grids)
+and away from the two non-engineering unknowns that actually decide the outcome.
+See [ADVICE.md](ADVICE.md) for the full assessment.
+
+## 2026-07-09 — Gold-cost model is an honestly-labelled approximation (no public GGG formula)
+Researched how PoE2's Currency Exchange charges gold. **Finding: GGG has not
+published an exact formula.** The community-verified mechanic (PoE Wiki) is: gold
+is charged **per order, only on placement** (lost even if you cancel), **per item
+on the "want"/buy side**, and **scales linearly with the exchange ratio** (rarer/
+pricier target ⇒ more gold per item); design intent is early-campaign anti-bot
+friction, negligible in endgame. If the exchange finds a better rate you may get
+gold+currency back (never more than you tried to buy). Our model
+`gold_for_leg = ceil(received_quantity * goldPerUnit)` matches "per want-item ×
+rarity"; the one honest gap is that real gold scales with the **live ratio**,
+whereas `goldPerUnit` is a **static per-currency snapshot** (already labelled a
+"versioned snapshot, not a permanent formula"). **Decision:** keep the current
+model, keep it labelled an approximation; a later improvement is to scale gold by
+the live exchange ratio rather than a static table — but GGG's exact constant is
+not public, so any formula stays an explicit approximation (fits the honesty rule).
+Sources: poewiki.net / poe2wiki.net "Currency exchange market", maxroll, mobalytics.
+
 ## 2026-06-29 — Code review runs through codex with GPT-5.5
 Pre-commit code review is delegated to the **codex MCP using model GPT-5.5**
 (workspace review): it independently greps for broken references, runs

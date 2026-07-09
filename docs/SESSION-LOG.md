@@ -2,6 +2,33 @@
 
 Newest first. One block per working session: what changed + commit refs.
 
+## 2026-07-10 — Trading-terminal dashboard: gold columns (the wedge, made visible)
+
+**Backup first** — committed the pre-redesign state as restore point
+`4f23f6f` + tag `backup-classic-dashboard` (user asked for a return point).
+
+**Design review** — captured the live `/poe2` dashboard, found the #1 gap: the
+gold wedge was invisible (no component referenced gold; columns were the same
+BUY/SELL/SPREAD/TREND/LIQUIDITY as poe.ninja/poe2scout). Built two artifacts:
+a written review, and 3 clickable full prototypes (Signal-first / Trading
+terminal / Decision workbench). **User picked Trading terminal.**
+
+**Implemented (real app)** — added two gold-aware columns to the radar table,
+keeping all real GGG icons/logo/assets (`iconUrl`+fallback) untouched per the
+user's ask:
+- **Gold · 1-unit flip** — round-trip gold to flip one unit, via the domain
+  `roundTripGold` (same model the paper-trade engine uses — nothing invented).
+- **Profit / 100k** — quantity-independent gold-efficiency (anchor profit per
+  100k gold); the metric free tools never show. Sortable + first sort option.
+- Threaded `goldPerAnchor` through the radar payload (`radar-payload.js`) so the
+  exit leg is priced correctly in placeholder AND real-gold modes.
+- **Deliberately NOT added:** a "limiting resource" chip — no such logic exists
+  in the current pipeline, so fabricating one would break the honesty rule.
+- Default sort kept at `activity` (leads with recognisable liquid markets);
+  profit/100k is a prominent column + top sort option.
+Verified via Claude Preview: columns render, values real, gold-bright styling,
+no page h-scroll (table scrolls in its own container), 68/68 domain tests green.
+
 ## 2026-07-09 — BMAD BA review, strategic pivot, gold-cost research (docs only)
 
 **Product status reviewed** — Phases A/B/C1/C2a/C3a-b + D1–D4 shipped and live

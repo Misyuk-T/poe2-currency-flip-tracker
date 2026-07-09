@@ -92,6 +92,10 @@ export function buildRadarResponse({
 
   return {
     anchor,
+    // Gold-per-unit of the anchor currency, so the browser can price the exit leg
+    // of a round trip (gold is charged on the anchor received when selling back).
+    // Placeholder-flat today; real per-currency value once live gold data lands.
+    goldPerAnchor: catalogById.get(anchor)?.goldPerUnit ?? null,
     units: { divineInExalted: currentDivineInExalted },
     generatedAt: new Date(now).toISOString(),
     source,

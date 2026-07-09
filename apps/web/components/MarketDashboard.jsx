@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import SpotChart from "./SpotChart.jsx";
+import { roundTripGold } from "../../../src/domain/gold-costs.js";
 import { currentPriceGuidance, workingPrice } from "../lib/price-guidance.js";
 import {
   apiBaseUrl,
@@ -32,6 +33,7 @@ const CATEGORY_ICON_IDS = {
   Waystones: "waystone-16",
 };
 const SORT_OPTIONS = [
+  { value: "profit100k:desc", label: "Profit / 100k gold" },
   { value: "activity:desc", label: "Activity" },
   { value: "spread:desc", label: "Best spread" },
   { value: "buy:asc", label: "Buy: cheapest first" },
@@ -181,7 +183,36 @@ function rowSpread(row) {
   return row.high / row.low - 1;
 }
 
+/**
+ * Gold-aware metrics for a one-unit round-trip flip (buy 1 target at the range
+ * low, sell it back at the range high). Uses the SAME domain gold model as the
+ * paper-trade engine — nothing is invented here. `profitPer100k` is the
+ * quantity-independent wedge metric (anchor profit per 100k gold spent); it is
+ * exactly what free tools never show. Returns nulls when the range or a gold
+ * cost is unknown, so the column shows "—" rather than a fabricated number.
+ */
+function goldMetrics(row, goldPerAnchor) {
+  const goldPerTarget = row?.gold?.goldPerUnit;
+  const goldAnchor = Number.isFinite(goldPerAnchor) ? goldPerAnchor : goldPerTarget;
+  const { low, high } = row ?? {};
+  if (!Number.isFinite(goldPerTarget) || !Number.isFinite(low) || !Number.isFinite(high) || low <= 0 || high <= low) {
+    return { goldPerFlip: null, profitPer100k: null };
+  }
+  const { totalGold } = roundTripGold({
+    receivedTarget: 1, // buy 1 target unit → gold charged on the 1 received
+    receivedAnchorOnExit: high, // sell it → receive `high` anchor → gold on that
+    goldPerTarget,
+    goldPerAnchor: goldAnchor,
+  });
+  const profit = high - low; // anchor profit per unit flipped
+  return {
+    goldPerFlip: totalGold,
+    profitPer100k: Number.isFinite(totalGold) && totalGold > 0 ? (profit / totalGold) * 100_000 : null,
+  };
+}
+
 function sortValue(row, key) {
+  if (key === "profit100k") return row._profitPer100k;
   if (key === "activity") return row.activityScore;
   if (key === "spread") return rowSpread(row);
   if (key === "buy") return row.low;
@@ -345,10 +376,17 @@ export default function MarketDashboard() {
     if (category !== "all" && !categories.some((cat) => cat.name === category)) setCategory("all");
   }, [categories, category]);
 
+  const goldPerAnchor = radar?.goldPerAnchor;
   const rows = useMemo(() => {
     const inCategory = category === "all" ? searched : searched.filter((row) => (row.category || "Other") === category);
-    return [...inCategory].sort((a, b) => compareRows(a, b, sort)).slice(0, 200);
-  }, [searched, category, sort]);
+    // Attach gold-aware metrics once, so the table cells and the sort read the
+    // same computed values (no double computation, no drift).
+    const enriched = inCategory.map((row) => {
+      const { goldPerFlip, profitPer100k } = goldMetrics(row, goldPerAnchor);
+      return { ...row, _goldPerFlip: goldPerFlip, _profitPer100k: profitPer100k };
+    });
+    return enriched.sort((a, b) => compareRows(a, b, sort)).slice(0, 200);
+  }, [searched, category, sort, goldPerAnchor]);
 
   const selected = selectedPair
     ? rows.find((row) => row.pairId === selectedPair) ?? tradable.find((row) => row.pairId === selectedPair) ?? null
@@ -443,7 +481,7 @@ export default function MarketDashboard() {
 
   const sourceMode = radar?.source?.sourceMode;
   const summaryText = status === "ready"
-    ? `${tradable.length} active markets · ${radar?.catalogCount ?? tradable.length} catalog items${sourceMode === "fixture" ? " · sample data" : ""}. Scores describe history; they do not predict a sale.`
+    ? `${tradable.length} active markets · every flip priced in gold${sourceMode === "fixture" ? " · sample data (gold = placeholder)" : ""}. Scores describe history; they do not predict a sale.`
     : status === "loading"
       ? "Loading completed-hour history…"
       : status;
@@ -593,6 +631,12 @@ export default function MarketDashboard() {
                     <th className="right" scope="col">
                       <SortHeader label="Spread" column="spread" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} align="right" />
                     </th>
+                    <th className="right" scope="col" title="Round-trip gold to flip one unit (buy + sell back). Placeholder 600/unit until live gold data.">
+                      <span className="sort-header right static"><span>Gold<small>1-unit flip</small></span></span>
+                    </th>
+                    <th className="right" scope="col">
+                      <SortHeader label="Profit / 100k" sublabel="gold-adjusted" column="profit100k" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} align="right" />
+                    </th>
                     <th className="right" scope="col">
                       <SortHeader label="Trend 24h" column="movement" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} align="right" />
                     </th>
@@ -626,6 +670,19 @@ export default function MarketDashboard() {
                           <QuotePill quote={quoteFromAnchor(row.high, { anchor: row.anchor, displayCurrency, rates, target: row.target })} compact />
                         </td>
                         <td className="right">{Number.isFinite(spread) ? formatPercent(spread, { signed: false }) : "—"}</td>
+                        <td className="right cell-gold">
+                          {Number.isFinite(row._goldPerFlip) ? formatNumber(row._goldPerFlip, { maximumFractionDigits: 0 }) : "—"}
+                        </td>
+                        <td className="right cell-profit">
+                          {Number.isFinite(row._profitPer100k) ? (
+                            <strong className={row._profitPer100k >= 0 ? "profit-pos" : "profit-neg"}>
+                              {row._profitPer100k >= 0 ? "+" : "−"}
+                              {formatNumber(Math.abs(row._profitPer100k), { maximumFractionDigits: 0 })}
+                            </strong>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
                         <td className={`right ${(move ?? 0) >= 0 ? "up" : "down"}`}>{formatPercent(move)}</td>
                         <td className="right">{Number.isFinite(row.volume) ? formatNumber(row.volume, { maximumFractionDigits: 0 }) : "—"}</td>
                         <td className="right">
@@ -645,7 +702,7 @@ export default function MarketDashboard() {
                   })}
                   {!rows.length && (
                     <tr>
-                      <td className="empty-state" colSpan={7}>{status === "ready" ? "No markets match this filter." : status}</td>
+                      <td className="empty-state" colSpan={9}>{status === "ready" ? "No markets match this filter." : status}</td>
                     </tr>
                   )}
                 </tbody>

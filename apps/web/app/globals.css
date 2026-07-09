@@ -1870,7 +1870,7 @@ body:has(.home-page) {
 
 /* ----- table (default view) ----- */
 .radar-table-wrap { border: 1px solid var(--rl-border); border-radius: 14px; overflow: auto; background: var(--rl-surface); }
-.radar-table { width: 100%; min-width: 980px; border-collapse: collapse; }
+.radar-table { width: 100%; min-width: 1120px; border-collapse: collapse; }
 .radar-table thead th {
   position: sticky;
   top: 0;
@@ -1947,6 +1947,13 @@ body:has(.home-page) {
 .cell-item small { margin-top: 2px; color: var(--rl-muted); font-size: 0.72rem; font-weight: 600; text-transform: capitalize; }
 .radar-table td.up { color: var(--rl-profit); font-weight: 700; }
 .radar-table td.down { color: var(--rl-loss); font-weight: 700; }
+/* Gold-aware columns — the wedge free tools don't show. */
+.sort-header.static { cursor: default; }
+.sort-header.static:hover { color: inherit; }
+.radar-table td.cell-gold { color: var(--rl-muted); font-variant-numeric: tabular-nums; }
+.radar-table td.cell-profit { font-variant-numeric: tabular-nums; }
+.cell-profit .profit-pos { color: var(--rl-gold-bright); font-weight: 800; }
+.cell-profit .profit-neg { color: var(--rl-loss); font-weight: 800; }
 .signal-pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.74rem; font-weight: 700; }
 .signal-pill.hot { background: var(--rl-loss-soft); color: var(--rl-loss); }
 .signal-pill.warm { background: var(--rl-gold-soft); color: var(--rl-gold-bright); }

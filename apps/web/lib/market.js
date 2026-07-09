@@ -1,3 +1,5 @@
+import catalog from "../../../src/data/catalog-poe2.json" with { type: "json" };
+
 export const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 // Same-origin by default: the hosted app calls its own Next /api/* route
 // handlers. Override with NEXT_PUBLIC_API_BASE_URL=/backend for local dev
@@ -25,14 +27,20 @@ export function titleize(id) {
     .join(" ");
 }
 
-// GGG item art is © GGG and is NOT committed. `npm run catalog:build` downloads
-// per-item PNGs into apps/web/public/icons/<id>.png (gitignored); until an icon
-// is present the UI falls back to a neutral committed glyph via the <img onError>
-// handler. Hotlinking GGG's CDN is intentionally avoided (licensing stance).
+// GGG item art is © GGG and is NOT committed to the repo. Rather than self-host
+// per-item PNGs (the Vercel build has no step to download them), the UI hotlinks
+// GGG's official image CDN via the URL carried in the committed catalog metadata
+// — the same approach poe.ninja / poe2scout use. Ids with no catalog image fall
+// back to the neutral committed glyph via the <img onError> handler.
 export const fallbackIconUrl = "/icons/_fallback.svg";
 
+// id -> official GGG image URL, from the committed catalog metadata.
+const ICON_URLS = new Map(
+  (catalog.items ?? []).filter((item) => item.id && item.image).map((item) => [item.id, item.image]),
+);
+
 export function iconUrl(id) {
-  return id ? `/icons/${encodeURIComponent(id)}.png` : fallbackIconUrl;
+  return (id && ICON_URLS.get(id)) || fallbackIconUrl;
 }
 
 /**

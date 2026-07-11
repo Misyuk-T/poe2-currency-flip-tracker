@@ -97,7 +97,7 @@ function timeLabel(timestamp) {
   });
 }
 
-export default function SpotChart({ points, height = 420, bucketHours: bucketHoursProp }) {
+export default function SpotChart({ points, height = 420, bucketHours: bucketHoursProp, loading = false }) {
   const hostRef = useRef(null);
   const { rows } = useMemo(() => toChartRows(points, bucketHoursProp), [points, bucketHoursProp]);
   const precision = useMemo(() => precisionFor(rows), [rows]);
@@ -167,7 +167,18 @@ export default function SpotChart({ points, height = 420, bucketHours: bucketHou
   }, [height, precision, rows]);
 
   if (rows.length < 2) {
-    return <p className="chart-empty">At least two completed hourly points are required.</p>;
+    // Reserve the chart's height so the modal doesn't resize when history arrives.
+    return (
+      <div className="spot-chart-wrap">
+        <div className="spot-chart spot-chart-placeholder" style={{ height }}>
+          {loading ? (
+            <span className="rt-spinner" aria-label="Loading chart" />
+          ) : (
+            <p>At least two completed hourly points are required.</p>
+          )}
+        </div>
+      </div>
+    );
   }
 
   const low = Math.min(...rows.map((row) => row.candle.low));

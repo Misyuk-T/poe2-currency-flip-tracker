@@ -321,6 +321,7 @@ function saveManualPrices(prices) {
 export default function MarketDashboard() {
   const [radar, setRadar] = useState(null);
   const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [selectedPair, setSelectedPair] = useState(null);
   const [status, setStatus] = useState("loading");
   const [search, setSearch] = useState("");
@@ -373,6 +374,7 @@ export default function MarketDashboard() {
     // Clear immediately so a market switch never renders the previous market's
     // chart/guidance under the new title while the new history is in flight.
     setHistory([]);
+    setHistoryLoading(true);
     fetch(`${apiBaseUrl}/api/radar/history?pair=${encodeURIComponent(selectedPair)}&anchor=exalted`, { cache: "no-store" })
       .then((res) => {
         if (!res.ok) throw new Error(`History failed: ${res.status}`);
@@ -383,6 +385,9 @@ export default function MarketDashboard() {
       })
       .catch(() => {
         if (!cancelled) setHistory([]);
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
       });
     return () => {
       cancelled = true;
@@ -814,7 +819,7 @@ export default function MarketDashboard() {
                     ))}
                   </div>
                 </div>
-                <SpotChart points={chartHistory} bucketHours={horizon} />
+                <SpotChart points={chartHistory} bucketHours={horizon} loading={historyLoading} />
                 <p className="rt-note">Range-derived from official hourly low/high — context, not a tick-level feed.</p>
               </div>
 
@@ -827,7 +832,11 @@ export default function MarketDashboard() {
                     </div>
                   </div>
 
-                  {guidance.status === "ok" && entryQuote?.value != null && exitQuote?.value != null ? (
+                  {historyLoading ? (
+                    <div className="rt-plan-loading">
+                      <span className="rt-spinner" aria-label="Loading trade plan" />
+                    </div>
+                  ) : guidance.status === "ok" && entryQuote?.value != null && exitQuote?.value != null ? (
                     <>
                       <div className="trade-answer">
                         <article className="buy">

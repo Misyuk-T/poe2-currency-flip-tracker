@@ -3,15 +3,55 @@
 import { useEffect, useMemo, useRef } from "react";
 import { CandlestickSeries, HistogramSeries, LineSeries, createChart } from "lightweight-charts";
 
-function toChartRows(points) {
+// Keep the chart readable: once the horizon holds more hourly points than
+// this, consecutive hours are merged into wider candles (2h/4h/…).
+const TARGET_BARS = 60;
+const BUCKET_HOURS = [1, 2, 4, 6, 12, 24];
+
+function pickBucketHours(count) {
+  return BUCKET_HOURS.find((step) => count / step <= TARGET_BARS) ?? BUCKET_HOURS.at(-1);
+}
+
+function pointVolume(point) {
+  const volume = Number(point.volume?.[point.target] ?? point.volume?.[point.base] ?? 0);
+  return Number.isFinite(volume) ? volume : 0;
+}
+
+function aggregatePoints(points, bucketHours) {
+  if (bucketHours <= 1) return points.map((point) => ({ ...point, bucketVolume: pointVolume(point) }));
+  const spanMs = bucketHours * 3_600_000;
+  const out = [];
+  for (const point of points) {
+    const bucketEnd = Math.ceil((point.completedHour ?? 0) / spanMs) * spanMs;
+    const prev = out.at(-1);
+    if (prev && prev.completedHour === bucketEnd) {
+      prev.low = Math.min(prev.low, point.low);
+      prev.high = Math.max(prev.high, point.high);
+      prev.reference = point.reference;
+      prev.bucketVolume += pointVolume(point);
+    } else {
+      out.push({ ...point, completedHour: bucketEnd, bucketVolume: pointVolume(point) });
+    }
+  }
+  return out;
+}
+
+function toChartRows(points, explicitBucketHours) {
   const usable = (points ?? [])
     .filter((point) => Number.isFinite(point?.reference) && Number.isFinite(point?.low) && Number.isFinite(point?.high))
     .sort((a, b) => (a.completedHour ?? 0) - (b.completedHour ?? 0));
 
-  return usable.map((point, index) => {
-    const prior = usable[index - 1]?.reference ?? point.reference;
+  // Caller can pin the candle interval (the timeframe pills); otherwise auto-pick
+  // a readable bucket size from the number of hourly points.
+  const bucketHours = Number.isFinite(explicitBucketHours) && explicitBucketHours >= 1
+    ? explicitBucketHours
+    : pickBucketHours(usable.length);
+  const aggregated = aggregatePoints(usable, bucketHours);
+
+  const rows = aggregated.map((point, index) => {
+    const prior = aggregated[index - 1]?.reference ?? point.reference;
     const time = Math.floor((point.completedHour ?? Date.now()) / 1000);
-    const volume = Number(point.volume?.[point.target] ?? point.volume?.[point.base] ?? 0);
+    const volume = point.bucketVolume;
     const up = point.reference >= prior;
     return {
       candle: {
@@ -29,6 +69,8 @@ function toChartRows(points) {
       },
     };
   });
+
+  return { rows, bucketHours };
 }
 
 function precisionFor(rows) {
@@ -55,9 +97,9 @@ function timeLabel(timestamp) {
   });
 }
 
-export default function SpotChart({ points, height = 420 }) {
+export default function SpotChart({ points, height = 420, bucketHours: bucketHoursProp }) {
   const hostRef = useRef(null);
-  const rows = useMemo(() => toChartRows(points), [points]);
+  const { rows } = useMemo(() => toChartRows(points, bucketHoursProp), [points, bucketHoursProp]);
   const precision = useMemo(() => precisionFor(rows), [rows]);
 
   useEffect(() => {
@@ -141,16 +183,6 @@ export default function SpotChart({ points, height = 420 }) {
         <span>low {fmt(low, precision)}</span>
       </div>
       <div className="spot-chart" ref={hostRef} style={{ height }} />
-      <div className="spot-chart-legend">
-        <span><i className="legend-up" /> Up range candle</span>
-        <span><i className="legend-down" /> Down range candle</span>
-        <span><i className="legend-mid" /> Hourly midpoint</span>
-        <span>bars: volume</span>
-      </div>
-      <p className="chart-note">
-        Candles are derived from official hourly low/high ranges. Body open/close follows the midpoint reference, not a
-        tick-level OHLC feed.
-      </p>
     </div>
   );
 }

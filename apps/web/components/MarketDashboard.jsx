@@ -33,9 +33,8 @@ const CATEGORY_ICON_IDS = {
   Waystones: "waystone-16",
 };
 const SORT_OPTIONS = [
-  { value: "profit100k:desc", label: "Profit / 100k gold" },
+  { value: "spread:desc", label: "Best profit" },
   { value: "activity:desc", label: "Activity" },
-  { value: "spread:desc", label: "Best spread" },
   { value: "buy:asc", label: "Buy: cheapest first" },
   { value: "sell:desc", label: "Sell: highest first" },
   { value: "price:desc", label: "Price: high to low" },
@@ -211,6 +210,40 @@ function goldMetrics(row, goldPerAnchor) {
   };
 }
 
+/**
+ * Hover text for the Profit cell — moves the gold-efficiency detail out of a
+ * dedicated column and into a tooltip: exalted profit per 100k gold of trade
+ * tax, plus the raw gold cost of one round-trip flip. Falls back gracefully
+ * when gold data is missing.
+ */
+function goldTooltip(row) {
+  const parts = ["Buy at the range low, sell at the range high."];
+  if (Number.isFinite(row?._profitPer100k)) {
+    parts.push(`≈ ${formatNumber(row._profitPer100k, { maximumFractionDigits: 1 })} exalted profit per 100,000 gold of trade tax.`);
+  }
+  if (Number.isFinite(row?._goldPerFlip)) {
+    parts.push(`Gold cost per 1-unit flip ≈ ${formatNumber(row._goldPerFlip, { maximumFractionDigits: 0 })} (placeholder).`);
+  }
+  return parts.join(" ");
+}
+
+/**
+ * Qualitative liquidity band from the visible-market volume terciles, so the
+ * "High / Medium / Low" label is data-driven (relative to the current universe)
+ * rather than a hard-coded threshold pretending to be absolute truth.
+ */
+function liquidityBand(volume, thresholds) {
+  if (!Number.isFinite(volume) || !thresholds) return null;
+  if (volume >= thresholds.p66) return "high";
+  if (volume >= thresholds.p33) return "med";
+  return "low";
+}
+
+function liquidityLabel(volume, thresholds) {
+  const band = liquidityBand(volume, thresholds);
+  return band === "high" ? "High" : band === "med" ? "Medium" : band === "low" ? "Low" : "—";
+}
+
 function sortValue(row, key) {
   if (key === "profit100k") return row._profitPer100k;
   if (key === "activity") return row.activityScore;
@@ -240,15 +273,18 @@ function compareRows(a, b, sortToken) {
   return (av - bv) * multiplier;
 }
 
-function SortHeader({ label, sublabel, column, activeKey, direction, onSort, align = "left", defaultDirection = "desc" }) {
+function SortHeader({ label, sublabel, column, activeKey, direction, onSort, align = "left", defaultDirection = "desc", title }) {
   const active = activeKey === column;
   return (
-    <button type="button" className={`sort-header ${align === "right" ? "right" : ""}`} onClick={() => onSort(column, defaultDirection)}>
+    <button type="button" title={title} className={`sort-header ${align === "right" ? "right" : ""}`} onClick={() => onSort(column, defaultDirection)}>
       <span>
         {label}
         {sublabel && <small>{sublabel}</small>}
       </span>
-      <i className={active ? `sort-glyph ${direction}` : "sort-glyph"} aria-hidden="true" />
+      <svg className={active ? `sort-glyph ${direction}` : "sort-glyph"} viewBox="0 0 16 16" aria-hidden="true">
+        <path className="chev-up" d="M4.5 7 L8 3.8 L11.5 7" />
+        <path className="chev-down" d="M4.5 9 L8 12.2 L11.5 9" />
+      </svg>
     </button>
   );
 }
@@ -292,7 +328,7 @@ export default function MarketDashboard() {
   const [category, setCategory] = useState("all");
   const [displayCurrency, setDisplayCurrency] = useState(null);
   const [view, setView] = useState("list"); // "list" (table, default) | "chart" (trade view)
-  const [horizon, setHorizon] = useState(2);
+  const [horizon, setHorizon] = useState(6);
   const [manualPrices, setManualPrices] = useState({});
   const [draftPrice, setDraftPrice] = useState("");
   const [draftUnit, setDraftUnit] = useState("exalted");
@@ -353,6 +389,21 @@ export default function MarketDashboard() {
     };
   }, [selectedPair]);
 
+  // Plan modal: Escape closes it and background scroll is locked while it is open.
+  useEffect(() => {
+    if (view !== "chart") return undefined;
+    function onKeyDown(event) {
+      if (event.key === "Escape") setView("list");
+    }
+    document.addEventListener("keydown", onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [view]);
+
   // All tradable rows (a real pair, traded this hour) — the radar universe.
   const tradable = useMemo(
     () => (radar?.rows ?? []).filter((row) => row.pairId && row.status !== "no-trades-this-hour"),
@@ -360,6 +411,16 @@ export default function MarketDashboard() {
   );
   const rates = useMemo(() => unitRates(tradable, radar?.units?.divineInExalted), [radar?.units?.divineInExalted, tradable]);
   const manualUnit = displayCurrency && rates[displayCurrency] ? displayCurrency : "exalted";
+
+  // Volume terciles across the tradable universe → qualitative liquidity band.
+  const liquidityThresholds = useMemo(() => {
+    const vols = tradable
+      .map((row) => row.volume)
+      .filter((v) => Number.isFinite(v) && v > 0)
+      .sort((a, b) => a - b);
+    if (vols.length < 3) return null;
+    return { p33: vols[Math.floor(vols.length * 0.33)], p66: vols[Math.floor(vols.length * 0.66)] };
+  }, [tradable]);
 
   // Search narrows the universe; the category sidebar counts reflect the search.
   const searched = useMemo(() => {
@@ -393,15 +454,21 @@ export default function MarketDashboard() {
     : null;
   const [sortKey, sortDirection = "desc"] = sort.split(":");
 
+  // Gold-wedge + freshness context for the trade modal header/plan.
+  const selectedMetrics = selected ? goldMetrics(selected, goldPerAnchor) : null;
+  const selectedSpread = selected ? rowSpread(selected) : null;
+  const freshnessAgeMs = radar?.generatedAt ? Date.now() - Date.parse(radar.generatedAt) : null;
+  const freshness = Number.isFinite(freshnessAgeMs)
+    ? freshnessAgeMs < 60_000 ? "just now" : formatAge(freshnessAgeMs)
+    : null;
+
   function openMarket(pairId) {
     setSelectedPair(pairId);
     setView("chart");
   }
 
   function closeMarket() {
-    setSelectedPair(null);
     setView("list");
-    setHistory([]);
   }
 
   function sortColumn(column, defaultDirection = "desc") {
@@ -480,8 +547,11 @@ export default function MarketDashboard() {
   }
 
   const sourceMode = radar?.source?.sourceMode;
+  // On ready we show no subtitle — the header stays clean. Loading/error states
+  // still surface a short status line. (Placeholder-gold honesty lives on the
+  // "unofficial" eyebrow and the Profit tooltip, so nothing is misrepresented.)
   const summaryText = status === "ready"
-    ? `${tradable.length} active markets · every flip priced in gold${sourceMode === "fixture" ? " · sample data (gold = placeholder)" : ""}. Scores describe history; they do not predict a sale.`
+    ? ""
     : status === "loading"
       ? "Loading completed-hour history…"
       : status;
@@ -497,7 +567,7 @@ export default function MarketDashboard() {
               <span>Market Radar</span>
             </button>
           </div>
-          <div className="rs-group">
+          <div className="rs-group rs-categories">
             <p className="rs-heading">Categories</p>
             <button
               className={category === "all" ? "rs-cat active" : "rs-cat"}
@@ -529,9 +599,9 @@ export default function MarketDashboard() {
         <div className="radar-main">
           <header className="radar-head">
             <div>
-              <p className="eyebrow">Official hourly market digest</p>
+              <p className="eyebrow">Hourly market digest · unofficial</p>
               <h2>What is moving today</h2>
-              <p className="radar-sub">{summaryText}</p>
+              {summaryText && <p className="radar-sub">{summaryText}</p>}
             </div>
             <div className="radar-head-actions">
               <div className="currency-toggle" role="group" aria-label="Display currency">
@@ -576,66 +646,41 @@ export default function MarketDashboard() {
           <div className="radar-controls">
             <label className="rc-search">
               <span>Search markets</span>
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Currency, rune, essence…" type="search" />
-            </label>
-            <label className="rc-sort">
-              <span>Sort by</span>
-              <CustomSelect id="market-sort" value={sort} options={SORT_OPTIONS} onChange={setSort} />
+              <span className="rc-search-box">
+                <svg className="rc-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7" />
+                  <line x1="16.5" y1="16.5" x2="21" y2="21" />
+                </svg>
+                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Currency, rune, essence…" type="search" />
+              </span>
             </label>
             <span className="rc-count" aria-live="polite">{rows.length} markets</span>
           </div>
 
-          {view === "chart" && selected && (
-            <section className="selected-market" aria-label="Selected market">
-              <div className="selected-market-title">
-                <img src={iconUrl(selected.target)} onError={onIconError} alt="" />
-                <div>
-                  <span>{selected.category || "Currency market"}</span>
-                  <strong>{selected.targetName}</strong>
-                </div>
-              </div>
-              <div className="selected-market-stat">
-                <span>Completed-hour price</span>
-                <strong>
-                  <QuotePill quote={quoteFromAnchor(selected.reference, { anchor: selected.anchor, displayCurrency, rates, target: selected.target })} />
-                </strong>
-              </div>
-              <div className="selected-market-stat">
-                <span>24h trend</span>
-                <strong className={(selected.movement?.h24 ?? 0) >= 0 ? "up" : "down"}>{formatPercent(selected.movement?.h24)}</strong>
-              </div>
-              <div className="selected-market-stat">
-                <span>Liquidity</span>
-                <strong>{Number.isFinite(selected.volume) ? formatNumber(selected.volume, { maximumFractionDigits: 0 }) : "—"}</strong>
-              </div>
-              <button type="button" className="selected-market-action" onClick={() => setView("chart")}>
-                Open plan
-              </button>
-            </section>
-          )}
-
-          {view === "list" ? (
-            <div className="radar-table-wrap">
+          <div className="radar-table-wrap">
               <table className="radar-table">
                 <thead>
                   <tr>
                     <th scope="col">
-                      <SortHeader label="Item" column="name" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} defaultDirection="asc" />
+                      <SortHeader label="Item" sublabel="market" column="name" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} defaultDirection="asc" />
                     </th>
                     <th className="right" scope="col">
-                      <SortHeader label="Buy <= " sublabel="range low" column="buy" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} align="right" defaultDirection="asc" />
+                      <SortHeader label="Buy price" sublabel="(low)" column="buy" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} align="right" defaultDirection="asc" />
                     </th>
                     <th className="right" scope="col">
-                      <SortHeader label="Sell >= " sublabel="range high" column="sell" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} align="right" />
+                      <SortHeader label="Sell price" sublabel="(high)" column="sell" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} align="right" />
                     </th>
                     <th className="right" scope="col">
-                      <SortHeader label="Spread" column="spread" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} align="right" />
-                    </th>
-                    <th className="right" scope="col" title="Round-trip gold to flip one unit (buy + sell back). Placeholder 600/unit until live gold data.">
-                      <span className="sort-header right static"><span>Gold<small>1-unit flip</small></span></span>
-                    </th>
-                    <th className="right" scope="col">
-                      <SortHeader label="Profit / 100k" sublabel="gold-adjusted" column="profit100k" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} align="right" />
+                      <SortHeader
+                        label="Profit"
+                        sublabel="(buy → sell)"
+                        title="Return on the flip: buy at the range low, sell at the range high. Hover a row for the gold-efficiency detail (exalted profit per 100k gold of trade tax)."
+                        column="spread"
+                        activeKey={sortKey}
+                        direction={sortDirection}
+                        onSort={sortColumn}
+                        align="right"
+                      />
                     </th>
                     <th className="right" scope="col">
                       <SortHeader label="Trend 24h" column="movement" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} align="right" />
@@ -669,15 +714,10 @@ export default function MarketDashboard() {
                         <td className="right">
                           <QuotePill quote={quoteFromAnchor(row.high, { anchor: row.anchor, displayCurrency, rates, target: row.target })} compact />
                         </td>
-                        <td className="right">{Number.isFinite(spread) ? formatPercent(spread, { signed: false }) : "—"}</td>
-                        <td className="right cell-gold">
-                          {Number.isFinite(row._goldPerFlip) ? formatNumber(row._goldPerFlip, { maximumFractionDigits: 0 }) : "—"}
-                        </td>
                         <td className="right cell-profit">
-                          {Number.isFinite(row._profitPer100k) ? (
-                            <strong className={row._profitPer100k >= 0 ? "profit-pos" : "profit-neg"}>
-                              {row._profitPer100k >= 0 ? "+" : "−"}
-                              {formatNumber(Math.abs(row._profitPer100k), { maximumFractionDigits: 0 })}
+                          {Number.isFinite(spread) ? (
+                            <strong className="profit-pos" title={goldTooltip(row)}>
+                              {formatPercent(spread, { signed: false })}
                             </strong>
                           ) : (
                             "—"
@@ -702,72 +742,88 @@ export default function MarketDashboard() {
                   })}
                   {!rows.length && (
                     <tr>
-                      <td className="empty-state" colSpan={9}>{status === "ready" ? "No markets match this filter." : status}</td>
+                      <td className="empty-state" colSpan={7}>{status === "ready" ? "No markets match this filter." : status}</td>
                     </tr>
                   )}
                 </tbody>
               </table>
-            </div>
-          ) : (
-            <div className="radar-trade">
-              <div className="trade-view-bar">
-                <div>
-                  <p className="eyebrow">Trade view</p>
-                  <strong>{selected?.targetName ?? "Selected market"}</strong>
-                </div>
-                <button
-                  type="button"
-                  className="trade-close-button"
-                  aria-label="Close trade view"
-                  title="Close trade view"
-                  onClick={closeMarket}
-                >
-                  ×
-                </button>
-              </div>
-              <div className="rt-chart">
-                <div className="chart-title-row">
-                  <div className="chart-market-title">
-                    {selected && <img src={iconUrl(selected.target)} onError={onIconError} alt="" />}
-                    <div>
-                      <p className="eyebrow">Binance-style hourly range chart</p>
-                      <h3>{selected?.targetName ?? "Select a market"} / {titleize(chartUnit)}</h3>
-                    </div>
+          </div>
+
+          {view === "chart" && selected && (
+            <div className="rt-modal-backdrop" role="presentation" onClick={closeMarket}>
+              <div
+                className="rt-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-label={`Trade plan for ${selected?.targetName ?? "market"}`}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="radar-trade">
+              <header className="rt-head">
+                <div className="rt-head-id">
+                  <img src={iconUrl(selected.target)} onError={onIconError} alt="" />
+                  <div>
+                    <strong>{selected.targetName}</strong>
+                    <span>{selected.category || "Market"}</span>
                   </div>
-                  {selected && (
-                    <div className="chart-kpis">
-                      <span>
-                        <QuotePill quote={quoteFromAnchor(selected.reference, { anchor: selected.anchor, displayCurrency, rates, target: selected.target })} compact />
-                      </span>
-                      <strong className={(selected.movement?.h24 ?? 0) >= 0 ? "up" : "down"}>{formatPercent(selected.movement?.h24)} 24h</strong>
+                </div>
+                <div className="rt-head-metrics">
+                  <div className="rt-metric">
+                    <strong className="rt-price">
+                      <QuotePill quote={quoteFromAnchor(selected.reference, { anchor: selected.anchor, displayCurrency, rates, target: selected.target })} compact />
+                    </strong>
+                    <small className={(selected.movement?.h24 ?? 0) >= 0 ? "up" : "down"}>{formatPercent(selected.movement?.h24)} · 24h</small>
+                  </div>
+                  <div className="rt-metric">
+                    <strong>{Number.isFinite(selected.volume) ? formatNumber(selected.volume, { maximumFractionDigits: 0 }) : "—"}</strong>
+                    <small className={`liq-${liquidityBand(selected.volume, liquidityThresholds) ?? "na"}`}>
+                      {liquidityLabel(selected.volume, liquidityThresholds)} liquidity
+                    </small>
+                  </div>
+                  {freshness && (
+                    <div className="rt-metric rt-metric-fresh">
+                      <small>Updated {freshness}</small>
                     </div>
                   )}
                 </div>
-                <SpotChart points={chartHistory} />
-                <p className="rt-note">
-                  Range candles derived from official hourly low–high data. This is context, not a tick-level OHLC feed —
-                  verify the live price in game before trading.
-                </p>
+                <div className="rt-head-controls">
+                  <button
+                    type="button"
+                    className="trade-close-button"
+                    aria-label="Close trade plan"
+                    title="Close"
+                    onClick={closeMarket}
+                  >
+                    ×
+                  </button>
+                </div>
+              </header>
+              <div className="rt-chart">
+                <div className="chart-title-row">
+                  <h3>{selected.targetName} / {titleize(chartUnit)}</h3>
+                  <div className="horizon-segments" role="group" aria-label="Chart timeframe">
+                    {HORIZON_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        aria-pressed={horizon === option.value}
+                        onClick={() => setHorizon(option.value)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <SpotChart points={chartHistory} bucketHours={horizon} />
+                <p className="rt-note">Range-derived from official hourly low/high — context, not a tick-level feed.</p>
               </div>
 
               {selected && (
                 <aside className="rt-plan" aria-label="Trade guidance">
                   <div className="guidance-header">
                     <div>
-                      <p className="eyebrow">Trade plan</p>
-                      <h3>{currentWorkingPrice.source === "manual" ? "Using your live price" : "Using hourly midpoint"}</h3>
-                    </div>
-                    <div className="horizon-segments" role="group" aria-label="Trade horizon">
-                      {HORIZON_OPTIONS.map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          aria-pressed={horizon === option.value}
-                          onClick={() => setHorizon(option.value)}
-                        >
-                          {option.label}
-                        </button>
-                      ))}
+                      <h3>Trade plan</h3>
+                      <p className="rt-subtle">{currentWorkingPrice.source === "manual" ? "Using your live price" : "Using hourly midpoint"}</p>
                     </div>
                   </div>
 
@@ -775,12 +831,12 @@ export default function MarketDashboard() {
                     <>
                       <div className="trade-answer">
                         <article className="buy">
-                          <span>Buy at or below</span>
+                          <span className="ta-head">Buy<i className="ta-arrow" aria-hidden="true">→</i></span>
                           <strong><QuotePill quote={entryQuote} /></strong>
                           <small>{formatPercent(Math.abs(guidance.entryDiscount), { signed: false })} below working price</small>
                         </article>
                         <article className="sell">
-                          <span>Sell at or above</span>
+                          <span className="ta-head">Sell<i className="ta-arrow" aria-hidden="true">→</i></span>
                           <strong><QuotePill quote={exitQuote} /></strong>
                           <small>{formatPercent(guidance.exitPremium, { signed: false })} above working price</small>
                         </article>
@@ -792,9 +848,20 @@ export default function MarketDashboard() {
                         <small>{currentWorkingPrice.sourceLabel}{currentWorkingPrice.ageMs == null ? "" : ` · ${formatAge(currentWorkingPrice.ageMs)}`}</small>
                       </div>
 
+                      {Number.isFinite(selectedSpread) && (
+                        <p className="rt-gold-caption">
+                          <strong>{formatPercent(selectedSpread, { signed: false })} margin</strong>
+                          {Number.isFinite(selectedMetrics?.profitPer100k)
+                            ? ` · ≈ ${formatNumber(selectedMetrics.profitPer100k, { maximumFractionDigits: 1 })} ex / 100k gold`
+                            : ""}
+                        </p>
+                      )}
+
+                      <p className="rt-section-label">Seeing a different price in-game?</p>
+                      <p className="rt-hint">Data lags ~1h. Enter the price you see now and the plan re-computes against it.</p>
                       <div className="manual-price-row">
                         <label>
-                          Live price you see
+                          Live price
                           <input
                             inputMode="decimal"
                             onChange={(event) => setDraftPrice(event.target.value)}
@@ -807,12 +874,13 @@ export default function MarketDashboard() {
                           />
                         </label>
                         <span className="manual-price-unit">{titleize(draftUnit)}</span>
-                        <button type="button" onClick={applyManualPrice}>Use live</button>
+                        <button type="button" onClick={applyManualPrice}>Update plan</button>
                         {currentWorkingPrice.source === "manual" && (
                           <button className="ghost" type="button" onClick={clearManualPrice}>Reset</button>
                         )}
                       </div>
 
+                      <p className="rt-section-label">Live stats</p>
                       <div className="guidance-grid compact">
                         <article>
                           <span>Reached sell price</span>
@@ -835,6 +903,8 @@ export default function MarketDashboard() {
                   )}
                 </aside>
               )}
+                </div>
+              </div>
             </div>
           )}
         </div>

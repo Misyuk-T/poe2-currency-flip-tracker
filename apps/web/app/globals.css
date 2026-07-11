@@ -1714,6 +1714,12 @@ body:has(.home-page) {
 .radar-controls { display: flex; gap: 14px; align-items: end; flex-wrap: wrap; }
 .radar-controls label { display: flex; flex-direction: column; gap: 5px; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--rl-muted); }
 .rc-search { flex: 1 1 240px; }
+.rc-search-box { position: relative; display: block; }
+.rc-search-box .rc-search-icon {
+  position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+  width: 16px; height: 16px; color: var(--rl-muted); pointer-events: none;
+}
+.radar-controls .rc-search-box input { width: 100%; padding-left: 38px; }
 .radar-controls input {
   min-height: 40px; padding: 8px 11px;
   border: 1px solid var(--rl-border-strong); border-radius: 10px;
@@ -1870,17 +1876,25 @@ body:has(.home-page) {
 
 /* ----- table (default view) ----- */
 .radar-table-wrap { border: 1px solid var(--rl-border); border-radius: 14px; overflow: auto; background: var(--rl-surface); }
-.radar-table { width: 100%; min-width: 1120px; border-collapse: collapse; }
+/* Fixed layout so the Item column can no longer stretch the table past the
+   viewport — numeric columns get explicit widths, Item takes the remainder and
+   ellipsizes. min-width keeps it scrollable only on genuinely narrow screens. */
+.radar-table { width: 100%; min-width: 880px; table-layout: fixed; border-collapse: collapse; }
+.radar-table th:nth-child(2), .radar-table th:nth-child(3) { width: 120px; } /* buy / sell */
+.radar-table th:nth-child(4) { width: 116px; } /* profit % */
+.radar-table th:nth-child(5) { width: 120px; } /* trend */
+.radar-table th:nth-child(6) { width: 120px; } /* liquidity */
+.radar-table th:nth-child(7) { width: 96px; }  /* action */
 .radar-table thead th {
   position: sticky;
   top: 0;
   z-index: 1;
-  text-align: left; padding: 12px 16px;
-  font-size: 0.7rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--rl-muted); background: var(--rl-surface-2); border-bottom: 1px solid var(--rl-border);
+  text-align: left; padding: 13px 14px;
+  font-size: 0.82rem; font-weight: 700; letter-spacing: 0.01em;
+  color: #c6bba7; background: var(--rl-surface-3); border-bottom: 1px solid var(--rl-border-strong);
 }
 .radar-table th.right, .radar-table td.right { text-align: right; }
-.radar-table thead th small { display: block; margin-top: 2px; font-size: 0.62rem; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--rl-muted); }
+.radar-table thead th small { display: block; margin-top: 3px; font-size: 0.7rem; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--rl-muted); }
 .sort-header {
   display: inline-flex;
   align-items: center;
@@ -1906,36 +1920,21 @@ body:has(.home-page) {
   outline-offset: 3px;
   border-radius: 4px;
 }
-.sort-glyph {
-  width: 8px;
-  height: 12px;
-  opacity: 0.35;
-  position: relative;
-  flex: none;
+.sort-glyph { width: 13px; height: 13px; flex: none; }
+.sort-glyph path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.3;
 }
-.sort-glyph::before,
-.sort-glyph::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
-}
-.sort-glyph::before {
-  top: 0;
-  border-bottom: 5px solid currentColor;
-}
-.sort-glyph::after {
-  bottom: 0;
-  border-top: 5px solid currentColor;
-}
-.sort-glyph.asc,
-.sort-glyph.desc { opacity: 1; color: var(--rl-gold-bright); }
-.sort-glyph.asc::after { opacity: 0.25; }
-.sort-glyph.desc::before { opacity: 0.25; }
-.radar-table tbody td { padding: 12px 16px; border-bottom: 1px solid rgba(240, 169, 59, 0.105); font-size: 0.94rem; font-variant-numeric: tabular-nums; color: var(--rl-ink-soft); }
+.sort-glyph.asc .chev-up,
+.sort-glyph.desc .chev-down { opacity: 1; stroke: var(--rl-gold-bright); }
+.radar-table tbody td { padding: 13px 14px; border-bottom: 1px solid rgba(240, 169, 59, 0.105); font-size: 0.94rem; font-variant-numeric: tabular-nums; color: var(--rl-ink-soft); }
+.radar-table .price-pill { font-variant-numeric: tabular-nums; }
 .radar-table tbody tr { cursor: pointer; }
-.radar-table tbody tr:hover { background: rgba(255, 255, 255, 0.035); }
+.radar-table tbody tr:hover { background: rgba(240, 169, 59, 0.05); }
 .radar-table tbody tr.active { background: linear-gradient(90deg, rgba(240, 169, 59, 0.12), rgba(240, 169, 59, 0.035)); }
 .radar-table tbody tr:last-child td { border-bottom: 0; }
 .cell-item { display: flex; align-items: center; gap: 10px; font-weight: 650; color: var(--rl-ink); }
@@ -1944,7 +1943,7 @@ body:has(.home-page) {
 .cell-item strong,
 .cell-item small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cell-item strong { color: var(--rl-ink); font-size: 0.98rem; font-weight: 750; }
-.cell-item small { margin-top: 2px; color: var(--rl-muted); font-size: 0.72rem; font-weight: 600; text-transform: capitalize; }
+.cell-item small { margin-top: 3px; color: #a99e8c; font-size: 0.74rem; font-weight: 600; text-transform: capitalize; }
 .radar-table td.up { color: var(--rl-profit); font-weight: 700; }
 .radar-table td.down { color: var(--rl-loss); font-weight: 700; }
 /* Gold-aware columns — the wedge free tools don't show. */
@@ -1954,6 +1953,8 @@ body:has(.home-page) {
 .radar-table td.cell-profit { font-variant-numeric: tabular-nums; }
 .cell-profit .profit-pos { color: var(--rl-gold-bright); font-weight: 800; }
 .cell-profit .profit-neg { color: var(--rl-loss); font-weight: 800; }
+.cell-profit strong { display: inline-flex; align-items: center; gap: 4px; justify-content: flex-end; }
+.cell-profit .profit-unit { width: 13px; height: 13px; opacity: 0.82; flex: none; }
 .signal-pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.74rem; font-weight: 700; }
 .signal-pill.hot { background: var(--rl-loss-soft); color: var(--rl-loss); }
 .signal-pill.warm { background: var(--rl-gold-soft); color: var(--rl-gold-bright); }
@@ -1994,7 +1995,87 @@ body:has(.home-page) {
 }
 
 /* ----- trade view (chart toggle) ----- */
+/* Plan modal — the trade view lifted into an overlay dialog over the table.
+   Backdrop is fixed to the viewport; clicking it (or Escape) closes the modal. */
+.rt-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: clamp(16px, 5vh, 60px) 16px;
+  background: rgba(6, 8, 10, 0.66);
+  backdrop-filter: blur(3px);
+  overflow-y: auto;
+  animation: rtModalFade 0.14s ease-out;
+}
+.rt-modal {
+  width: 100%;
+  max-width: 1080px;
+  background: var(--rl-surface-2);
+  border: 1px solid var(--rl-border-strong);
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.62);
+  animation: rtModalRise 0.16s ease-out;
+}
+@keyframes rtModalFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rtModalRise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
 .radar-trade { display: grid; grid-template-columns: 1.6fr 1fr; gap: 18px; align-items: start; }
+
+/* Trade-modal header — full-width identity + live metrics + timeframe + close. */
+.rt-head {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 30px;
+  padding: 4px 4px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--rl-border);
+  background: transparent;
+}
+.rt-head-id { display: flex; align-items: center; gap: 12px; min-width: 0; margin-right: auto; }
+.rt-head-id img {
+  width: 46px; height: 46px; flex: none;
+  border: 1px solid var(--rl-border); border-radius: 10px;
+  padding: 4px; background: rgba(0, 0, 0, 0.24); object-fit: contain;
+}
+.rt-head-id strong { display: block; color: var(--rl-ink); font-size: 1.2rem; line-height: 1.15; }
+.rt-head-id span { display: block; margin-top: 2px; color: var(--rl-muted); font-size: 0.78rem; text-transform: capitalize; }
+.rt-head-metrics { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+.rt-metric { display: flex; flex-direction: column; gap: 3px; font-variant-numeric: tabular-nums; }
+.rt-metric > strong { color: var(--rl-ink); font-size: 1.1rem; line-height: 1; }
+.rt-metric > small { color: var(--rl-muted); font-size: 0.75rem; font-weight: 700; }
+.rt-metric .up { color: var(--rl-profit); }
+.rt-metric .down { color: var(--rl-loss); }
+.rt-metric .liq-high { color: var(--rl-profit); }
+.rt-metric .liq-med { color: var(--rl-gold-bright); }
+.rt-metric .liq-low, .rt-metric .liq-na { color: var(--rl-muted); }
+.rt-metric-fresh small { color: var(--rl-muted); font-weight: 600; }
+.rt-price .price-pill { gap: 6px; }
+.rt-price .price-pill img { width: 20px; height: 20px; }
+.rt-head-controls { display: flex; align-items: center; gap: 10px; }
+
+/* Profit + gold wedge line inside the plan — the differentiator, made visible. */
+.rt-gold-caption {
+  margin: -2px 0 12px;
+  color: var(--rl-muted);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+.rt-gold-caption strong { color: var(--rl-gold-bright); font-weight: 800; }
+
+.rt-section-label {
+  margin: 2px 0 8px; color: var(--rl-muted);
+  font-size: 0.8rem; font-weight: 700; letter-spacing: 0; text-transform: none;
+}
+.rt-subtle { margin: 3px 0 0; color: var(--rl-muted); font-size: 0.85rem; font-weight: 500; }
+.rt-hint { margin: 0 0 8px; color: var(--rl-muted); font-size: 0.78rem; line-height: 1.35; }
+.radar-light .chart-title-row { align-items: center; }
+.radar-light .chart-title-row .horizon-segments { flex: none; }
 .trade-view-bar {
   grid-column: 1 / -1;
   display: flex;
@@ -2045,7 +2126,10 @@ body:has(.home-page) {
 
 /* Re-skin the reused trade-guidance markup for the light surface. */
 .radar-light .chart-title-row { display: flex; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
-.radar-light .chart-title-row h2, .radar-light .chart-title-row h3 { color: var(--rl-ink); margin: 4px 0 0; font-size: 1.38rem; }
+.radar-light .chart-title-row h2, .radar-light .chart-title-row h3 {
+  color: var(--rl-ink); margin: 0; font-size: 1.05rem; font-weight: 700;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .chart-market-title { display: flex; min-width: 0; align-items: center; gap: 12px; }
 .chart-market-title img {
   width: 42px;
@@ -2103,34 +2187,39 @@ body:has(.home-page) {
   margin-bottom: 10px;
 }
 .trade-answer article {
-  min-height: 148px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: flex-start;
+  gap: 9px;
   border: 1px solid var(--rl-border);
   border-radius: 12px;
-  padding: 16px;
+  padding: 14px;
   background: var(--rl-surface-2);
 }
 .trade-answer article.buy {
-  border-color: rgba(14, 203, 129, 0.35);
-  background: linear-gradient(180deg, rgba(14, 203, 129, 0.115), rgba(14, 203, 129, 0.035)), var(--rl-surface-2);
+  border-color: rgba(14, 203, 129, 0.3);
+  background: rgba(14, 203, 129, 0.045);
 }
 .trade-answer article.sell {
-  border-color: rgba(240, 169, 59, 0.42);
-  background: linear-gradient(180deg, rgba(240, 169, 59, 0.13), rgba(240, 169, 59, 0.035)), var(--rl-surface-2);
+  border-color: rgba(240, 100, 80, 0.32);
+  background: rgba(240, 100, 80, 0.05);
 }
-.trade-answer span {
-  color: var(--rl-muted);
-  font-size: 0.78rem;
-  font-weight: 900;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+.trade-answer .ta-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--rl-ink);
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: none;
 }
+.trade-answer article.buy .ta-head { color: var(--rl-profit); }
+.trade-answer article.sell .ta-head { color: var(--rl-loss); }
+.trade-answer .ta-arrow { font-style: normal; font-weight: 700; opacity: 0.55; }
 .trade-answer strong {
   color: var(--rl-ink);
-  font-size: 1.95rem;
+  font-size: 1.55rem;
   line-height: 1;
 }
 .trade-answer .price-pill {
@@ -2162,10 +2251,10 @@ body:has(.home-page) {
 }
 .working-price-line span {
   color: var(--rl-muted);
-  font-size: 0.72rem;
-  font-weight: 900;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
 }
 .working-price-line strong {
   justify-self: end;
@@ -2256,11 +2345,17 @@ body:has(.home-page) {
 .radar-light .guidance-empty { color: var(--rl-muted); padding: 12px; }
 
 @media (max-width: 920px) {
-  .radar-shell { grid-template-columns: 1fr; }
+  .radar-shell { grid-template-columns: minmax(0, 1fr); }
+  .radar-main { min-width: 0; }
   .radar-sidebar { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--rl-border); }
   .radar-sidebar .rs-group { flex: 1 1 220px; }
-  .selected-market { grid-template-columns: minmax(0, 1fr) 1fr 1fr; }
-  .selected-market-action { grid-column: 1 / -1; }
+  /* Categories become a horizontal chip strip so the market table isn't buried
+     under a 16-item vertical list on narrow screens. */
+  .radar-sidebar .rs-categories { flex: 1 1 100%; flex-direction: row; flex-wrap: nowrap; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
+  .radar-sidebar .rs-categories .rs-heading { display: none; }
+  .radar-sidebar .rs-categories .rs-cat { width: auto; flex: 0 0 auto; min-height: 36px; padding: 7px 12px; }
+  .radar-sidebar .rs-categories .rs-cat small { margin-left: 6px; }
+  .rs-foot { display: none; }
   .radar-trade { grid-template-columns: 1fr; }
   .radar-light .manual-price-row { grid-template-columns: minmax(0, 1fr) auto auto; }
 }
@@ -2268,27 +2363,37 @@ body:has(.home-page) {
 @media (max-width: 620px) {
   .app-shell:has(.radar-page) { width: min(100% - 20px, 1480px); }
   .app-shell:has(.radar-page) .site-header { align-items: flex-start; flex-direction: column; gap: 12px; padding-top: 14px; }
-  .radar-main { padding: 18px 14px 20px; }
-  .radar-sidebar { padding: 16px 14px; }
+  .radar-main { padding: 18px 12px 20px; }
+  .radar-sidebar { padding: 14px 12px; }
   .radar-head { gap: 12px; }
   .radar-head-actions,
   .currency-toggle,
   .radar-view-toggle,
-  .radar-view-toggle button,
-  .selected-market-action { width: 100%; }
+  .radar-view-toggle button { width: 100%; }
   .currency-toggle { justify-content: space-between; }
   .radar-view-toggle button { flex: 1; }
-  .selected-market { grid-template-columns: 1fr; }
-  .selected-market-title strong { white-space: normal; }
   .radar-controls label,
   .rc-search,
-  .rc-sort,
   .rc-count { width: 100%; margin-left: 0; }
+  /* Table → compact on phones: keep Item + Profit + Plan; drop Buy/Sell/Trend/
+     Liquidity (tapping a row opens the full plan modal). */
+  .radar-table { min-width: 0; }
+  .radar-table th:nth-child(2), .radar-table td:nth-child(2),
+  .radar-table th:nth-child(3), .radar-table td:nth-child(3),
+  .radar-table th:nth-child(5), .radar-table td:nth-child(5),
+  .radar-table th:nth-child(6), .radar-table td:nth-child(6) { display: none; }
+  .radar-table th:nth-child(4) { width: 84px; }
+  .radar-table th:nth-child(7) { width: 70px; }
+  /* Plan modal → tighter on phones: compact header, close pinned top-right. */
+  .rt-modal-backdrop { padding: 16px 10px; }
+  .rt-head { position: relative; gap: 8px 18px; padding-right: 46px; }
+  .rt-head-id { margin-right: 0; flex: 1 1 100%; }
+  .rt-head-metrics { gap: 8px 16px; }
+  .rt-head-controls { position: absolute; top: 0; right: 0; }
   .radar-light .chart-title-row { flex-direction: column; align-items: stretch; }
   .radar-light .guidance-header,
   .trade-answer,
   .radar-light .guidance-grid { grid-template-columns: 1fr; }
-  .radar-light .chart-kpis { align-items: flex-start; }
   .radar-light .manual-price-row { grid-template-columns: 1fr; }
   .horizon-segments { width: 100%; }
   .horizon-segments button { flex: 1; min-width: 0; }

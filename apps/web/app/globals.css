@@ -1963,6 +1963,48 @@ body:has(.home-page) {
 .row-action:hover { background: var(--rl-gold-soft); }
 .radar-table .empty-state { text-align: center; color: var(--rl-muted); padding: 40px 16px; }
 
+/* Skeleton loader — shimmer placeholders while the first radar payload loads. */
+.radar-table tbody tr.skeleton-row { cursor: default; }
+.radar-table tbody tr.skeleton-row:hover { background: none; }
+.sk {
+  display: inline-block;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 25%, rgba(240, 169, 59, 0.10) 50%, rgba(255, 255, 255, 0.04) 75%);
+  background-size: 400% 100%;
+  animation: sk-shimmer 1.4s ease-in-out infinite;
+}
+.sk-icon { width: 26px; height: 26px; border-radius: 7px; flex: none; }
+.sk-lines { display: inline-flex; flex-direction: column; gap: 6px; vertical-align: middle; width: 100%; }
+.sk-line { height: 11px; width: 62%; }
+.sk-line.short { height: 9px; width: 38%; }
+.sk-pill { height: 14px; width: 78px; border-radius: 999px; }
+.sk-pill.narrow { width: 52px; }
+.radar-table tbody tr.skeleton-row .cell-item { display: flex; align-items: center; gap: 10px; }
+@keyframes sk-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sk { animation: none; }
+}
+
+/* Error card — replaces the raw "Radar failed: 502" text with a clear message + retry. */
+.radar-error { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 28px 16px; text-align: center; }
+.radar-error strong { color: var(--rl-ink); font-size: 1rem; font-weight: 750; }
+.radar-error span { color: var(--rl-muted); font-size: 0.85rem; }
+.radar-retry {
+  margin-top: 4px;
+  border: 1px solid var(--rl-border-strong);
+  background: var(--rl-gold-soft);
+  color: var(--rl-gold-bright);
+  font: inherit;
+  font-weight: 750;
+  padding: 8px 20px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.radar-retry:hover { background: rgba(240, 169, 59, 0.2); }
+
 .radar-light .price-pill {
   display: inline-flex;
   align-items: center;

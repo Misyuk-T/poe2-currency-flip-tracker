@@ -325,6 +325,7 @@ export default function MarketDashboard() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [selectedPair, setSelectedPair] = useState(null);
   const [status, setStatus] = useState("loading");
+  const [reloadKey, setReloadKey] = useState(0);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("activity:desc");
   const [category, setCategory] = useState("all");
@@ -363,7 +364,7 @@ export default function MarketDashboard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   useEffect(() => {
     if (!selectedPair) return;
@@ -552,11 +553,9 @@ export default function MarketDashboard() {
   // On ready we show no subtitle — the header stays clean. Loading/error states
   // still surface a short status line. (Placeholder-gold honesty lives on the
   // "unofficial" eyebrow and the Profit tooltip, so nothing is misrepresented.)
-  const summaryText = status === "ready"
-    ? ""
-    : status === "loading"
-      ? "Loading completed-hour history…"
-      : status;
+  // Error text is surfaced in the table's error card (with a retry), so the
+  // header subtitle only carries the loading hint — never a raw error string.
+  const summaryText = status === "loading" ? "Loading completed-hour history…" : "";
 
   return (
     <div className="radar-light">
@@ -742,9 +741,39 @@ export default function MarketDashboard() {
                       </tr>
                     );
                   })}
-                  {!rows.length && (
+                  {!rows.length && status === "loading" &&
+                    Array.from({ length: 8 }).map((_, index) => (
+                      <tr className="skeleton-row" key={`skeleton-${index}`} aria-hidden="true">
+                        <td className="cell-item">
+                          <span className="sk sk-icon" />
+                          <span className="sk-lines">
+                            <span className="sk sk-line" />
+                            <span className="sk sk-line short" />
+                          </span>
+                        </td>
+                        <td className="right"><span className="sk sk-pill" /></td>
+                        <td className="right"><span className="sk sk-pill" /></td>
+                        <td className="right"><span className="sk sk-pill narrow" /></td>
+                        <td className="right"><span className="sk sk-pill narrow" /></td>
+                        <td className="right"><span className="sk sk-pill narrow" /></td>
+                        <td className="right"><span className="sk sk-pill narrow" /></td>
+                      </tr>
+                    ))}
+                  {!rows.length && status !== "loading" && (
                     <tr>
-                      <td className="empty-state" colSpan={7}>{status === "ready" ? "No markets match this filter." : status}</td>
+                      <td className="empty-state" colSpan={7}>
+                        {status === "ready" ? (
+                          "No markets match this filter."
+                        ) : (
+                          <div className="radar-error" role="alert">
+                            <strong>Market radar is temporarily unavailable.</strong>
+                            <span>{status}</span>
+                            <button type="button" className="radar-retry" onClick={() => setReloadKey((key) => key + 1)}>
+                              Try again
+                            </button>
+                          </div>
+                        )}
+                      </td>
                     </tr>
                   )}
                 </tbody>

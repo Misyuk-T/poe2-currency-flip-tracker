@@ -6,6 +6,33 @@ export const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:300
 // against the always-on Node server.
 export const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
+/**
+ * Fetch JSON with a few retries on transient server failures. The serverless
+ * radar API returns a one-off 502 on the first request after the lambda /
+ * database connection has been idle (cold connection, or Supabase waking up).
+ * The database is already healthy by the time the user would hit reload — so
+ * retrying with backoff makes that blip invisible: attempt two lands on a warm
+ * connection. Only 5xx / network errors are retried; a 4xx is a real request
+ * error and fails fast. On final failure it throws with the last status so the
+ * existing "Radar failed: <status>" copy still matches.
+ */
+export async function fetchJsonWithRetry(url, { attempts = 3, delayMs = 400, ...init } = {}) {
+  let lastError;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      const res = await fetch(url, init);
+      if (res.ok) return await res.json();
+      if (res.status < 500) throw new Error(`Request failed: ${res.status}`); // client error — don't retry
+      lastError = new Error(`Radar failed: ${res.status}`);
+    } catch (error) {
+      if (error?.message?.startsWith("Request failed:")) throw error; // 4xx propagates immediately
+      lastError = error;
+    }
+    if (i < attempts - 1) await new Promise((resolve) => setTimeout(resolve, delayMs * (i + 1)));
+  }
+  throw lastError;
+}
+
 export const popularCurrencies = [
   { id: "divine", name: "Divine Orb", summary: "High-value anchor market for larger flips and overnight price checks." },
   { id: "exalted", name: "Exalted Orb", summary: "Primary liquid trading currency for small and mid-sized market moves." },

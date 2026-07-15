@@ -8,6 +8,7 @@ import {
   apiBaseUrl,
   displayDigits,
   fallbackIconUrl,
+  fetchJsonWithRetry,
   formatAge,
   formatDurationHours,
   formatNumber,
@@ -341,11 +342,7 @@ export default function MarketDashboard() {
   useEffect(() => {
     let cancelled = false;
     setStatus("loading");
-    fetch(`${apiBaseUrl}/api/radar?anchor=exalted`, { cache: "no-store" })
-      .then((res) => {
-        if (!res.ok) throw new Error(`Radar failed: ${res.status}`);
-        return res.json();
-      })
+    fetchJsonWithRetry(`${apiBaseUrl}/api/radar?anchor=exalted`, { cache: "no-store" })
       .then((data) => {
         if (cancelled) return;
         setRadar(data);

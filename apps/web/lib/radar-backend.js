@@ -16,7 +16,7 @@ import { createRadarRepository } from "../../../src/storage/radar-repository.js"
 import { buildRadarPayload, buildHistoryPayload, buildHotlistPayload } from "../../../src/server/radar-core.js";
 import { ingestFixtures, ingestLive } from "../../../src/server/radar-ingest.js";
 import { createGggCxapiProvider } from "../../../src/providers/ggg-cxapi-provider.js";
-import { getSql } from "./db.js";
+import { getSql, withDbRetry } from "./db.js";
 import { createMemoryRepository } from "./memory-repo.js";
 
 const NO_DB = {
@@ -120,18 +120,20 @@ export async function getRadar(searchParams) {
   const repo = await resolveRepo(ctx);
   if (!repo) return NO_DB;
   const anchor = resolveAnchor(searchParams, config);
-  const body = await buildRadarPayload({
-    repo,
-    anchor,
-    anchors: config.anchors,
-    shortlist: config.shortlist,
-    names,
-    catalogManifest,
-    catalogById,
-    source: { sourceMode: sourceMode(config), providerMode: config.providerMode },
-    radarMaxHotTargets: config.radarMaxHotTargets,
-    now: Date.now(),
-  });
+  const body = await withDbRetry(() =>
+    buildRadarPayload({
+      repo,
+      anchor,
+      anchors: config.anchors,
+      shortlist: config.shortlist,
+      names,
+      catalogManifest,
+      catalogById,
+      source: { sourceMode: sourceMode(config), providerMode: config.providerMode },
+      radarMaxHotTargets: config.radarMaxHotTargets,
+      now: Date.now(),
+    }),
+  );
   // Send only tradable rows over the wire; the no-trade catalog placeholders are
   // the bulk of the payload and no browser consumer renders them.
   body.rows = tradableRows(body.rows);
@@ -150,7 +152,7 @@ export async function getHistory(searchParams) {
   const repo = await resolveRepo(ctx);
   if (!repo) return NO_DB;
   const anchor = resolveAnchor(searchParams, config);
-  const body = await buildHistoryPayload({ repo, pair, anchor });
+  const body = await withDbRetry(() => buildHistoryPayload({ repo, pair, anchor }));
   return { status: 200, body };
 }
 
@@ -159,14 +161,16 @@ export async function getHotlist() {
   const { config, names } = ctx;
   const repo = await resolveRepo(ctx);
   if (!repo) return NO_DB;
-  const body = await buildHotlistPayload({
-    repo,
-    anchors: config.anchors,
-    shortlist: config.shortlist,
-    names,
-    radarMaxHotTargets: config.radarMaxHotTargets,
-    now: Date.now(),
-  });
+  const body = await withDbRetry(() =>
+    buildHotlistPayload({
+      repo,
+      anchors: config.anchors,
+      shortlist: config.shortlist,
+      names,
+      radarMaxHotTargets: config.radarMaxHotTargets,
+      now: Date.now(),
+    }),
+  );
   return { status: 200, body };
 }
 
@@ -254,7 +258,9 @@ export async function getStatus() {
   const repo = await resolveRepo(ctx);
   const base = { providerMode: config.providerMode, league: config.league, sourceMode: sourceMode(config) };
   if (!repo) return { status: 200, body: { ...base, radar: { configured: false, reason: "no-database" } } };
-  const [state, candles] = await Promise.all([repo.readCxapiState(), repo.readCandleWindow()]);
+  const [state, candles] = await withDbRetry(() =>
+    Promise.all([repo.readCxapiState(), repo.readCandleWindow()]),
+  );
   const pairs = new Set(candles.map((c) => c.pairId));
   const latestHour = candles.reduce((max, c) => Math.max(max, c.completedHour), 0);
   return {

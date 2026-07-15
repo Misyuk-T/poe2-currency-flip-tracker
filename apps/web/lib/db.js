@@ -26,3 +26,33 @@ export function getSql() {
   }
   return client;
 }
+
+// Transient connection failures we retry: a warm instance's cached client can
+// hold a connection the Supavisor pooler has already dropped (idle_timeout), so
+// the first query throws before postgres.js transparently reconnects. Retrying
+// the operation lands on the fresh connection. Also covers cold-start / waking
+// database timeouts. A statement/query *logic* error is not in here and fails fast.
+const RETRYABLE_DB_ERROR =
+  /CONNECTION_CLOSED|CONNECTION_ENDED|CONNECT_TIMEOUT|ECONNRESET|ETIMEDOUT|EPIPE|termination|terminating|timeout|socket|closed/i;
+
+/**
+ * Run a database operation, retrying once on a transient connection error.
+ * The retry reuses the module-cached client, which reconnects on the next query
+ * — so attempt two typically succeeds on a warm connection instead of surfacing
+ * a 502. Non-connection errors (bad SQL, constraint violations) propagate
+ * immediately.
+ */
+export async function withDbRetry(fn, { attempts = 2, delayMs = 150 } = {}) {
+  let lastError;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      const text = `${error?.code ?? ""} ${error?.message ?? ""}`;
+      if (i === attempts - 1 || !RETRYABLE_DB_ERROR.test(text)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delayMs * (i + 1)));
+    }
+  }
+  throw lastError;
+}

@@ -78,22 +78,37 @@ export function createRadarRepository({
    * hundreds of pairs over a 30-day retention.
    */
   async function readCandleWindow() {
+    // Top `maxHoursPerPair` completed hours per pair. A window function
+    // (row_number over partition by pair_id) forces Postgres to read EVERY
+    // in-window row for every pair and sort them — tens of seconds once the
+    // fixture catalog fills the 30-day retention (~500k rows). Instead we
+    // enumerate the distinct pairs, then LATERAL-join the newest N rows of each
+    // via an index range scan (see hourly_market_candles_pair_recent_idx:
+    // scope + pair_id + completed_hour desc), so each pair reads only ~N rows.
+    // No global ORDER BY: groupCandlesByPair re-sorts per pair downstream, so
+    // the outer sort was pure overhead (a large on-disk sort).
     const rows = await withTimeout(
       sql`
-        select completed_hour, digest_id, pair_id, base_currency, quote_currency,
-               low_ratio, high_ratio, reference_ratio, reference_kind, volume, stock, source
+        select c.completed_hour, c.digest_id, c.pair_id, c.base_currency, c.quote_currency,
+               c.low_ratio, c.high_ratio, c.reference_ratio, c.reference_kind, c.volume, c.stock, c.source
         from (
-          select extract(epoch from completed_hour) * 1000 as completed_hour,
-                 digest_id, pair_id, base_currency, quote_currency, low_ratio,
-                 high_ratio, reference_ratio, reference_kind, volume, stock, source,
-                 row_number() over (partition by pair_id order by completed_hour desc) as rn
+          select distinct pair_id
           from hourly_market_candles
           where game = ${scope.game} and realm = ${scope.realm} and league = ${scope.league}
             and provider = ${scope.mode}
             and completed_hour >= now() - make_interval(days => ${windowDays})
-        ) q
-        where rn <= ${maxHoursPerPair}
-        order by completed_hour asc`,
+        ) p
+        cross join lateral (
+          select extract(epoch from h.completed_hour) * 1000 as completed_hour,
+                 h.digest_id, h.pair_id, h.base_currency, h.quote_currency, h.low_ratio,
+                 h.high_ratio, h.reference_ratio, h.reference_kind, h.volume, h.stock, h.source
+          from hourly_market_candles h
+          where h.game = ${scope.game} and h.realm = ${scope.realm} and h.league = ${scope.league}
+            and h.provider = ${scope.mode} and h.pair_id = p.pair_id
+            and h.completed_hour >= now() - make_interval(days => ${windowDays})
+          order by h.completed_hour desc
+          limit ${maxHoursPerPair}
+        ) c`,
       opTimeoutMs,
       "radar candle window",
     );

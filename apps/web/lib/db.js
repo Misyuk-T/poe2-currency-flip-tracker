@@ -27,20 +27,25 @@ export function getSql() {
   return client;
 }
 
-// Transient connection failures we retry: a warm instance's cached client can
+// Transient CONNECTION failures we retry: a warm instance's cached client can
 // hold a connection the Supavisor pooler has already dropped (idle_timeout), so
 // the first query throws before postgres.js transparently reconnects. Retrying
-// the operation lands on the fresh connection. Also covers cold-start / waking
-// database timeouts. A statement/query *logic* error is not in here and fails fast.
+// the operation lands on the fresh connection. Also covers connection-establish
+// timeouts (CONNECT_TIMEOUT / ETIMEDOUT) and server shutdown/failure codes.
+//
+// Deliberately NOT retried: a *statement* timeout (Postgres 57014, "canceling
+// statement due to statement timeout"). That means the query itself is too slow
+// — retrying just fires the same doomed query again and piles load on the DB.
+// The fix for slow queries is an index, not a retry (see readCandleWindow).
 const RETRYABLE_DB_ERROR =
-  /CONNECTION_CLOSED|CONNECTION_ENDED|CONNECT_TIMEOUT|ECONNRESET|ETIMEDOUT|EPIPE|termination|terminating|timeout|socket|closed/i;
+  /CONNECTION_CLOSED|CONNECTION_ENDED|CONNECTION_DESTROYED|CONNECT_TIMEOUT|ECONNRESET|ETIMEDOUT|EPIPE|ENOTFOUND|EAI_AGAIN|57P01|08006|08003|08001/i;
 
 /**
  * Run a database operation, retrying once on a transient connection error.
  * The retry reuses the module-cached client, which reconnects on the next query
  * — so attempt two typically succeeds on a warm connection instead of surfacing
- * a 502. Non-connection errors (bad SQL, constraint violations) propagate
- * immediately.
+ * a 502. Query errors (bad SQL, constraint violations, statement timeouts)
+ * propagate immediately.
  */
 export async function withDbRetry(fn, { attempts = 2, delayMs = 150 } = {}) {
   let lastError;

@@ -24,6 +24,29 @@ run and still times out (harmless: idempotent accumulation, data stays fresh).
 Low priority; bound it (synthesize only the newest hour after initial backfill)
 when convenient. Not a go-live blocker (fixture is dev/demo only).
 
+## Pre-activation checklist (before flipping PROVIDER_MODE=live)
+The local live-data canary PASSED (`scripts/canary-live.mjs`): 28 real poe2 hours,
+511 price-orientation checks independently verified vs raw ratios (121 inverse +
+390 direct), volume-side provenance, cross-anchor reciprocal (divine@ex × ex@div =
+1.00000, divine ≈ 407.5 ex), league isolation, identity, structural invariants.
+Price-normalization correctness is activation-quality. Remaining MUSTs (codex):
+1. **Terminal-hour poisoning fix.** `ingestLive` currently normalizes + records the
+   terminal/in-progress digest (next_change_id <= digestId) then breaks. Today the
+   terminal is empty (harmless), but a nonempty all-zero terminal would persist NULL
+   candles for hour T; `ON CONFLICT DO NOTHING` then blocks the real T candles from
+   replacing them. Fix: do NOT persist a terminal digest (break before recordCxDigest)
+   — or make conflict handling let valid data replace a null-price candle. Ripples
+   the ingest test mocks (they use next==id as a data-bearing "stop"); update them.
+2. **Disposable/staging Postgres round-trip** through the REAL provider → ingestLive
+   → recordCxDigest → readCandleWindow → buildRadarPayload, with all public leagues
+   and an overlapping repeat ingest. Validates what the in-memory canary can't:
+   serialization/hydration, PK conflict (null-then-valid), migration/index/plans,
+   10s op limits, cursor transactionality, provider="live" read isolation. Use a
+   throwaway DB/schema — NOT the prod `live` scope (cursor is keyed (game,realm,
+   provider); a stray write could touch prod cursor state).
+3. Flip `PROVIDER_MODE=live` + cron `:05`→`:10`, with monitoring: cursor age,
+   latest-candle age, inserted-row counts, null-price rate, ingest errors.
+
 ## Phase 3 mapping — Metadata → {id, name, icon, category} data source (DECIDE)
 Live CX candles are keyed by Metadata paths (`Metadata/Items/<Class>/<Leaf>`).
 The radar needs a reliable map to real ids/names/icons. Findings (2026-07-21):

@@ -81,7 +81,27 @@ injectable `ingestLiveStreams`/`recentStartHour` (DB-free tested). Not activated
 orchestration test. **100 green.** Committed 73d4137. BACKLOG: multi-stream
 compounds the 60s ingest-timeout blocker.
 
-**Phase 3 (mapping) — BLOCKED ON A DATA-SOURCE DECISION.** Live candles store
+**Phase 3a SHIPPED — identity layer (data-source problem SOLVED).** Found
+RePoE-fork poe2 base_items (GGPK-derived, MIT): resolves 100% of observed live CX
+currencies and the anchor CORRECTLY (`CurrencyAddModToRare` -> "Exalted Orb", where
+the catalog art-bridge was WRONG). `scripts/build-identity.mjs` joins RePoE names
+to catalog icons/short-ids BY NAME (art-path join collides — gave Greater/Perfect
+Exalted the base "exalted"). `src/data/cx-identity-poe2.json` (4825 names, 773
+icons) + `src/domain/cx-identity.js` (resolveCurrency / metadataForShortId /
+humanize). next.config traces the JSON. Codex (gpt-5.6-sol): fixed P1 art-collision
+(-> name join) + reverse-map order + P2 tracing/tests. 108 green. Committed 1e996ac.
+Not wired into routes yet (prod unaffected).
+
+**Next (3b) — wire identity into the radar (the anchor unblock):** resolve the
+requested anchor to the stored namespace (fixture=short-id, live=Metadata via
+metadataForShortId) so `candleForAnchor`/market-radar match live candles; attach
+resolveCurrency names/icons in radar-payload; fix the history route rejecting `/`
+in Metadata pair ids. Gated/namespace-agnostic so the working fixture radar is
+unchanged; unit-tested (can't live-verify until activation). Then 4 selector, 5
+canary + activate (+ the 60s ingest fix).
+
+--- superseded note (Phase 3 was blocked, now resolved in 3a) ---
+Live candles store
 Metadata paths (`Metadata/Items/<Class>/<Leaf>`); the radar needs a
 Metadata→{id,name,icon,category} map to (a) fix anchor matching (`candleForAnchor`
 compares short-id `exalted` vs stored Metadata path), (b) fix the history route

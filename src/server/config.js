@@ -94,6 +94,13 @@ export function loadConfig(env = process.env) {
     // a service:cxapi token. Defaults to cdn now that no token is needed.
     cxapiSource: (env.CXAPI_SOURCE ?? "cdn").toLowerCase() === "oauth" ? "oauth" : "cdn",
     cxapiCdnBaseUrl: env.CXAPI_CDN_BASE_URL ?? null,
+    // Live ingest streams: one CDN stream per (game, realm). PoE1 + PoE2 by
+    // default; each stream carries every league in its hourly digest. Format:
+    // CXAPI_STREAMS="poe1:poe1,poe2:poe2" (game:realm, comma-separated).
+    cxapiStreams: streams(env.CXAPI_STREAMS, [
+      { game: "poe1", realm: "poe1" },
+      { game: "poe2", realm: "poe2" },
+    ]),
     cxapiAccessToken: env.CXAPI_ACCESS_TOKEN ?? null,
     cxapiStartId: env.CXAPI_START_ID ? posInt(env.CXAPI_START_ID, 0, 1) : null,
     cxapiTimeoutMs: posInt(env.CXAPI_TIMEOUT_MS, 10_000, 1000),
@@ -119,6 +126,26 @@ function posInt(value, fallback, min) {
   const n = Number.parseInt(value, 10);
   if (!Number.isFinite(n) || n < min) return fallback < min ? min : fallback;
   return n;
+}
+
+/**
+ * Parse "game:realm,game:realm" into [{game, realm}], DEDUPED by (game, realm).
+ * One CDN stream feeds one cursor, so a duplicate pair would just double the work
+ * within an invocation. Falls back when empty.
+ */
+function streams(value, fallback) {
+  if (!value) return fallback;
+  const seen = new Set();
+  const parsed = [];
+  for (const pair of value.split(",").map((s) => s.trim()).filter(Boolean)) {
+    const [game, realm] = pair.split(":").map((p) => p.trim());
+    if (!game || !realm) continue;
+    const key = `${game}|${realm}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    parsed.push({ game, realm });
+  }
+  return parsed.length ? parsed : fallback;
 }
 
 function list(value, fallback) {

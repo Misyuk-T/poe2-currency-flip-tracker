@@ -21,6 +21,15 @@
 
 const CDN_BASE = "https://web.poecdn.com/api/currency-exchange";
 
+// Map our realm label -> the CDN path segment. PoE1 PC is the CDN default (no
+// segment); poe2/xbox/sony are explicit. Unknown labels pass through verbatim.
+const CDN_REALM_SEGMENT = { poe1: "", pc: "", poe2: "poe2", xbox: "xbox", sony: "sony" };
+
+function realmSegment(realm) {
+  const seg = CDN_REALM_SEGMENT[realm] ?? realm;
+  return seg ? `/${encodeURIComponent(seg)}` : "";
+}
+
 export function createGggCdnCxapiProvider(config) {
   const fetchImpl = config._cxFetch ?? globalThis.fetch;
   const base = config.cxapiCdnBaseUrl ?? CDN_BASE;
@@ -33,7 +42,7 @@ export function createGggCdnCxapiProvider(config) {
       const suffix = id == null ? "" : `/${encodeURIComponent(String(id))}`;
       let response;
       try {
-        response = await fetchImpl(`${base}/${encodeURIComponent(config.poeRealm)}${suffix}`, {
+        response = await fetchImpl(`${base}${realmSegment(config.poeRealm)}${suffix}`, {
           headers: {
             Accept: "application/json",
             // No Authorization: the CDN endpoint is unauthenticated. Keep an

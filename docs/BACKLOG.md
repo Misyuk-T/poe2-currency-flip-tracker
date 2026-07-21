@@ -14,6 +14,11 @@ Fix directions: make ingest incremental/bounded per run (don't re-seed the full
 fixture catalog hourly; cap digests + rows per invocation), stream/paginate the
 write, or split ingest into a queue/multiple smaller invocations. Blocker for
 Phase 5 (go-live activation).
+**2c compounds this:** the live path now loops N streams (PoE1 + PoE2) serially,
+each up to `min(maxBackfillHours,12)` digests — ~24 fetches/txns per invocation,
+and if stream 1 eats the budget or throws, stream 2 never runs. Live activation
+needs a TOTAL invocation deadline/budget across streams (or per-stream scheduled
+cron jobs), not just a per-stream cap.
 
 ## Inventory valuation ("оцінка всього інвентарю")
 Value a player's entire inventory/stash against current CX market data: paste or

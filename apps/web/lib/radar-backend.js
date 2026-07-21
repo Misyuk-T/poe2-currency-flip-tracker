@@ -14,7 +14,7 @@ import { createGoldRegistry, createFlatGoldRegistry } from "../../../src/domain/
 import { POE2_GOLD_COSTS } from "../../../src/data/gold-costs-poe2.js";
 import { createRadarRepository } from "../../../src/storage/radar-repository.js";
 import { buildRadarPayload, buildHistoryPayload, buildHotlistPayload } from "../../../src/server/radar-core.js";
-import { ingestFixtures, ingestLive } from "../../../src/server/radar-ingest.js";
+import { ingestFixtures, ingestLiveStreams } from "../../../src/server/radar-ingest.js";
 import { createCxapiProvider } from "../../../src/providers/create-cxapi-provider.js";
 import { getSql, withDbRetry } from "./db.js";
 import { createMemoryRepository } from "./memory-repo.js";
@@ -102,12 +102,6 @@ function resolveAnchor(searchParams, config) {
 }
 
 const sourceMode = (config) => (config.providerMode === "live" ? "official" : "fixture");
-
-/** Last completed hour minus a bounded backfill window, in unix seconds. */
-function recentStartHour(nowMs, backfillHours) {
-  const lastCompleted = Math.floor(nowMs / 3600_000) * 3600 - 3600;
-  return lastCompleted - Math.max(1, Math.min(backfillHours, 48)) * 3600;
-}
 
 /**
  * Drop no-trade placeholder rows from a radar payload's `rows`. Every browser
@@ -232,27 +226,19 @@ export async function runRadarIngest({ now = Date.now() } = {}) {
   const repo = repository(scope);
   if (!repo) return NO_DB;
   if (config.providerMode === "live") {
-    const provider = createCxapiProvider(config);
-    const cursor = (await repo.readCxapiState()).cursor;
-    // The CDN's no-id endpoint returns the FIRST hour of ALL history (Dec 2024),
-    // so a fresh DB with no cursor and no configured start id would crawl the
-    // entire archive. Default CDN live to a recent backfill window instead, so
-    // activation is safe even without CXAPI_START_ID. (The OAuth feed's no-id is
-    // "latest", so it needs no such default.)
-    const startId =
-      config.cxapiStartId ??
-      (config.cxapiSource === "cdn" && cursor == null ? recentStartHour(now, config.cxapiMaxBackfillHours) : null);
-    const catchingUp = cursor != null || startId != null;
-    const summary = await ingestLive({
-      repo,
-      provider,
-      league: config.league,
-      startId,
-      // Cap per-invocation backfill so one cron run stays well under the function
-      // timeout; the cursor persists, so catch-up continues on the next run.
-      maxDigests: catchingUp ? Math.min(config.cxapiMaxBackfillHours, 12) : 1,
+    // One CDN stream per (game, realm) — PoE1 + PoE2 — each carrying every public
+    // league with its own per-(game,realm) cursor. NB (Phase-5 blocker): streams
+    // run serially and each may fetch up to cxapiMaxBackfillHours/12 digests, so
+    // 2 streams can mean ~24 fetches/txns per invocation — the 60s function budget
+    // needs a total deadline/limit before live activation (see docs/BACKLOG.md).
+    const streams = await ingestLiveStreams({
+      streams: config.cxapiStreams,
+      config,
+      now,
+      makeRepo: repository,
+      makeProvider: createCxapiProvider,
     });
-    return { status: 200, body: summary };
+    return { status: 200, body: { mode: "live", streams } };
   }
   // Seed the whole catalog (not just featured markets) so the deployed radar
   // mirrors the offline/local fixture's "all currencies" set. Idempotent, so the

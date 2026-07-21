@@ -3,6 +3,18 @@
 Ideas parked for later. Not committed work — candidates to pull into a phase.
 Newest first.
 
+## ⚠️ Ingest exceeds the 60s budget (found 2026-07-21, must fix before go-live)
+Every hourly `radar-ingest-hourly` run times out at the 60s pg_net limit
+(observed on requests 625–629; the Vercel function `maxDuration=60` too). In
+FIXTURE mode it still limps because `ingestFixtures` re-seeds the whole 676k-row
+catalog each run and idempotent backfill accumulates across runs — but the run
+never cleanly finishes. Live mode (real ~2MB/hr digests × all public leagues × 2
+games) will be far heavier and 60s will not be enough.
+Fix directions: make ingest incremental/bounded per run (don't re-seed the full
+fixture catalog hourly; cap digests + rows per invocation), stream/paginate the
+write, or split ingest into a queue/multiple smaller invocations. Blocker for
+Phase 5 (go-live activation).
+
 ## Inventory valuation ("оцінка всього інвентарю")
 Value a player's entire inventory/stash against current CX market data: paste or
 import a set of items → total worth in exalted/divine, per-item breakdown,

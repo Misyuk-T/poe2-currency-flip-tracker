@@ -60,9 +60,23 @@ pause the ingest cron, apply 006, deploy, observe one fixture ingest. Reads
 and prod is fixture-only. Migration file is committed; **prod apply deferred to
 the coordinated deploy window.**
 
+**Phase 2b ROLLED OUT TO PROD (coordinated via Supabase + Vercel MCP):** paused
+the `radar-ingest-hourly` pg_cron → applied migration 006 (verified new PK
+`game,realm,provider`, league column dropped, 1 row preserved) → merged branch to
+`main` + pushed → Vercel auto-deployed `dpl_HdFpQR…` (commit 93e5e5d, READY) →
+verified end-to-end (a manual ingest trigger advanced `cxapi_state.updated_at`
+under the NEW schema, which old code could not have done) → re-enabled the cron.
+Prod healthy; reads never affected.
+
+**Finding (pre-existing, not a regression):** every hourly ingest request times
+out at the 60s pg_net/function limit (requests 625–629). Fixture ingest re-seeds
+the full 676k catalog each run. Logged in docs/BACKLOG.md as a Phase-5 blocker —
+live/multi-league/multi-game ingest needs to be incremental/bounded.
+
 **Next (2c):** multi-game ingest loop (iterate poe1+poe2, feed normalize with the
 all-public default) + single-ingester-per-stream invariant; then 3 mapping per
-game, 4 frontend game/league selector, 5 canary + activate.
+game, 4 frontend game/league selector, 5 canary + activate (with the ingest
+performance fix).
 
 ## 2026-07-10 — Trading-terminal dashboard: gold columns (the wedge, made visible)
 

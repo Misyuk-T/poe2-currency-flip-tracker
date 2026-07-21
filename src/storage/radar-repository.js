@@ -158,6 +158,11 @@ export function createRadarRepository({
   async function recordCxDigest(digest) {
     return withTimeout(
       sql.begin(async (tx) => {
+        // Bound each statement server-side and don't wait forever on a lock —
+        // belt-and-suspenders in case the Supavisor pooler doesn't preserve the
+        // startup statement_timeout on a fresh transaction connection.
+        await tx`set local statement_timeout = '8000ms'`;
+        await tx`set local lock_timeout = '3000ms'`;
         let inserted = 0;
         if (digest.candles?.length) {
           const rows = digest.candles.map((c) => ({
@@ -180,8 +185,15 @@ export function createRadarRepository({
             stock: JSON.stringify(c.stock),
             source: c.source,
           }));
-          const result = await tx`insert into hourly_market_candles ${tx(rows)} on conflict do nothing`;
-          inserted = result.count ?? 0;
+          // Batch the insert. One ~2000-row unnamed (prepare:false) insert is a
+          // huge extended-protocol message that can stall at the pooler boundary
+          // (statement_timeout doesn't cover that wait) and hang the sole max:1
+          // connection. Small chunks keep each statement light and quick.
+          const CHUNK = 250;
+          for (let i = 0; i < rows.length; i += CHUNK) {
+            const result = await tx`insert into hourly_market_candles ${tx(rows.slice(i, i + CHUNK))} on conflict do nothing`;
+            inserted += result.count ?? 0;
+          }
         }
         // Monotonic cursor: never let a late/overlapping invocation move the
         // cursor backward (e.g. an older digest committing after a newer one).

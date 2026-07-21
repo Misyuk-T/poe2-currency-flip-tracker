@@ -67,6 +67,7 @@ export async function ingestLive({ repo, provider, league = null, leagues = null
     // cursor persists, so the next cron run resumes exactly here.
     if (deadline()) break;
     const requestedId = id;
+    const t0 = Date.now();
     const raw = await provider.fetchDigest({ id });
     // league/leagues null => keep ALL public leagues (multi-league live ingest).
     // translate => canonicalize Metadata ids to short ids where known.
@@ -78,7 +79,12 @@ export async function ingestLive({ repo, provider, league = null, leagues = null
     // written for it, on-conflict-do-nothing would block the real values. Leave
     // the cursor where it is so the next run re-fetches this hour once complete.
     if (requestedId != null && (nextId == null || nextId <= normalized.digestId)) break;
-    inserted += await repo.recordCxDigest(normalized);
+    const t1 = Date.now();
+    const n = await repo.recordCxDigest(normalized);
+    // Per-digest timing in the runtime logs — the fastest way to see whether a
+    // write stalls at the pooler boundary again.
+    console.log(`[cxapi] digest=${normalized.digestId} candles=${normalized.candles.length} inserted=${n} fetch=${t1 - t0}ms write=${Date.now() - t1}ms`);
+    inserted += n;
     digests += 1;
     lastDigestId = normalized.digestId;
     id = nextId;
@@ -143,10 +149,16 @@ export async function ingestLiveStreams({ streams, config, now, makeRepo, makePr
     const catchingUp = cursor != null || startId != null;
     const summary = await ingestLive({
       repo,
+      // Ingest ONLY the read scope's league for now — reads are single-league, so
+      // all-public (`league: null`) just wrote ~2000 rows/digest that nothing reads
+      // and stressed the write path. Restore all-public once the write is proven
+      // + a league selector surfaces it.
+      league: config.league,
       provider,
-      league: null, // all public leagues
       startId,
-      maxDigests: catchingUp ? Math.min(config.cxapiMaxBackfillHours, 12) : 1,
+      // Small per-invocation cap while write timings are being proven in prod (the
+      // shared budget also bounds it); the cursor persists so catch-up continues.
+      maxDigests: catchingUp ? Math.min(config.cxapiMaxBackfillHours, 4) : 1,
       // Game-scoped: only PoE2 has an identity map, so PoE1 streams pass through.
       translate: translatorForGame(stream.game),
       deadline, // shared budget: stop mid-stream once the invocation time is spent

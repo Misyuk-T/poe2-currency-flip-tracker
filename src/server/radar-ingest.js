@@ -71,13 +71,20 @@ export async function ingestLive({ repo, provider, league = null, leagues = null
     // league/leagues null => keep ALL public leagues (multi-league live ingest).
     // translate => canonicalize Metadata ids to short ids where known.
     const normalized = normalizeCxDigest(raw.payload, { digestId: raw.digestId, league, leagues, translate });
+    const nextId = normalized.nextChangeId;
+    // In-progress / terminal hour: an explicit request whose cursor does not
+    // advance past this digest (next <= id) is the incomplete live edge. Do NOT
+    // persist it — the hour may fill in later, and once null-price candles are
+    // written for it, on-conflict-do-nothing would block the real values. Leave
+    // the cursor where it is so the next run re-fetches this hour once complete.
+    if (requestedId != null && (nextId == null || nextId <= normalized.digestId)) break;
     inserted += await repo.recordCxDigest(normalized);
     digests += 1;
     lastDigestId = normalized.digestId;
-    id = normalized.nextChangeId;
-    // The no-id endpoint returns the latest completed digest; do not loop into
-    // the future. Historical catch-up only follows a real prior cursor.
-    if (requestedId == null || id == null || id <= normalized.digestId) break;
+    id = nextId;
+    // The no-id bootstrap returns the latest completed digest; record it once but
+    // do not loop into the future (only a real prior cursor drives catch-up).
+    if (requestedId == null || nextId == null) break;
   }
   return { mode: "live", configured: true, digests, inserted, lastDigestId };
 }

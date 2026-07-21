@@ -70,7 +70,7 @@ test("production single-league ingest records ONLY the requested league from a m
   const provider = {
     configured: true,
     async fetchDigest() {
-      return { digestId: 1, payload: { next_change_id: 1, markets: payload.markets } };
+      return { digestId: 1, payload: { next_change_id: 3601, markets: payload.markets } };
     },
   };
   const recorded = [];

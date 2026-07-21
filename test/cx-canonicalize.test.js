@@ -21,7 +21,7 @@ function streamHarness(recorded) {
     }),
     makeProvider: () => ({
       configured: true,
-      async fetchDigest({ id }) { return { digestId: id, payload: { next_change_id: id, markets: [market] } }; },
+      async fetchDigest({ id }) { return { digestId: id, payload: { next_change_id: id + 3600, markets: [market] } }; },
     }),
   };
 }

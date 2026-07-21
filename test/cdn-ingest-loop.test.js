@@ -49,14 +49,44 @@ test("CDN provider walks the cursor forward and stops at the live-edge terminal"
   const repo = mockRepo(T0);
   const out = await ingestLive({ repo, provider, league: "L", maxDigests: 10 });
 
-  // Requested T0, T0+3600, T0+7200(terminal) -> 3 digests, then break.
-  assert.equal(out.digests, 3);
-  assert.deepEqual(repo.recorded.map((d) => d.digestId), [T0, T0 + 3600, T0 + 7200]);
+  // Requested T0, T0+3600 (completed) are recorded; T0+7200 is the in-progress
+  // terminal hour (next == id) — fetched, but NOT persisted, so a later corrected
+  // version of that hour isn't blocked by on-conflict-do-nothing. The cursor is
+  // left at T0+7200 for the next run to re-fetch once it completes.
+  assert.equal(out.digests, 2);
+  assert.deepEqual(repo.recorded.map((d) => d.digestId), [T0, T0 + 3600]);
   // digestId is the REQUESTED hour throughout (never next-3600).
-  assert.equal(repo.recorded[2].digestId, T0 + 7200);
-  // Terminal digest carries no candles but is still recorded (cursor advances).
-  assert.equal(repo.recorded[2].candles.length, 0);
+  assert.equal(repo.recorded[1].digestId, T0 + 3600);
   // Completed hours produced real candles at the integer-ratio price 220/1.. etc.
   assert.ok(repo.recorded[0].candles.length > 0);
-  assert.equal(out.lastDigestId, T0 + 7200);
+  assert.equal(out.lastDigestId, T0 + 3600);
+  // The persisted cursor (last recorded nextChangeId) points AT the terminal hour,
+  // so the next run re-fetches T0+7200 once it completes.
+  assert.equal(repo.recorded[1].nextChangeId, T0 + 7200);
+});
+
+test("does NOT persist an in-progress terminal digest, then the same hour lands cleanly", async () => {
+  // The live edge returns next == id. Even a NONEMPTY terminal (stock but no trades
+  // -> zero ratios -> null candles) must not be persisted: on-conflict-do-nothing
+  // would later block the real values for that hour. Regression for the poisoning risk.
+  const T = 1784613600;
+  let completed = false;
+  const provider = {
+    configured: true,
+    async fetchDigest({ id }) {
+      return completed
+        ? { digestId: id, payload: { next_change_id: id + 3600, markets: [{ league: "L", market_id: "a|b", lowest_ratio: { a: 1, b: 2 }, highest_ratio: { a: 1, b: 2 } }] } }
+        : { digestId: id, payload: { next_change_id: id, markets: [{ league: "L", market_id: "a|b", lowest_ratio: { a: 0, b: 0 }, highest_ratio: { a: 0, b: 0 } }] } };
+    },
+  };
+  const repo = mockRepo(T);
+  const first = await ingestLive({ repo, provider, league: "L", maxDigests: 5 });
+  assert.equal(first.digests, 0, "in-progress terminal hour not persisted");
+  assert.equal(repo.recorded.length, 0);
+
+  completed = true;
+  const second = await ingestLive({ repo, provider, league: "L", maxDigests: 1 });
+  assert.equal(second.digests, 1, "the same hour persists once complete");
+  assert.equal(repo.recorded[0].digestId, T);
+  assert.ok(repo.recorded[0].candles.length > 0);
 });

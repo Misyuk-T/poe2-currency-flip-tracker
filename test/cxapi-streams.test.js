@@ -47,8 +47,8 @@ test("ingestLive with league=null keeps ALL public leagues, drops private", asyn
   const provider = {
     configured: true,
     async fetchDigest() {
-      // terminal digest (next == id) so the loop stops after one
-      return { digestId: 1000, payload: { next_change_id: 1000, markets } };
+      // a completed hour (next = id + 3600); maxDigests:1 stops after one
+      return { digestId: 1000, payload: { next_change_id: 4600, markets } };
     },
   };
   const recorded = [];
@@ -132,7 +132,7 @@ test("ingestLiveStreams: partial — stream 1 runs, stream 2 skipped when budget
   let t = 0;
   const clock = () => t;
   const makeRepo = () => ({ async readCxapiState() { return { cursor: 1000 }; }, async recordCxDigest(d) { t = 80000; return d.candles.length; } });
-  const makeProvider = () => ({ configured: true, async fetchDigest({ id }) { return { digestId: id, payload: { next_change_id: id, markets: [] } }; } });
+  const makeProvider = () => ({ configured: true, async fetchDigest({ id }) { return { digestId: id, payload: { next_change_id: id + 3600, markets: [] } }; } });
   const out = await ingestLiveStreams({ streams: config.cxapiStreams, config, now: 0, makeRepo, makeProvider, budgetMs: 100000, clock });
   assert.equal(out[0].game, "poe1");
   assert.ok(!out[0].skipped, "stream 1 ran");

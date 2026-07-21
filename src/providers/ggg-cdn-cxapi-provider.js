@@ -9,8 +9,8 @@
  * Verified CDN semantics (probed live, 2026-07-21):
  *  - `id` is a unix-hour cursor. The response `markets[]` are the digest FOR the
  *    requested hour `id`; `next_change_id` is the NEXT hour to request (id + 3600).
- *  - At the live edge the in-progress hour returns `next_change_id === id` with an
- *    empty `markets[]` — the terminal marker ("you have reached the end").
+ *  - At the live edge the in-progress hour may return either a terminal payload
+ *    (`next_change_id === id`, empty `markets[]`) or HTTP 404 until published.
  *  - No `id` returns the FIRST hour of all history (Dec 2024), NOT the latest.
  *    Callers must supply a recent start id for live catch-up (see config).
  *
@@ -32,6 +32,7 @@ function realmSegment(realm) {
 
 export function createGggCdnCxapiProvider(config) {
   const fetchImpl = config._cxFetch ?? globalThis.fetch;
+  const now = config._cxNow ?? Date.now;
   const base = config.cxapiCdnBaseUrl ?? CDN_BASE;
   const trace = typeof config.cxapiTrace === "function" ? config.cxapiTrace : () => {};
   return {
@@ -58,6 +59,16 @@ export function createGggCdnCxapiProvider(config) {
       }
       trace("provider.fetch.headers.end", { source: "cdn", realm: config.poeRealm, digestId: id, status: response.status });
       if (response.status === 429) throw new CxapiError("rate-limited", "cxapi cdn returned 429");
+      // The CDN can expose the cursor for an hour before that hour's object is
+      // published. Near the live edge a 404 therefore means "retry this cursor
+      // later", not an ingest failure. Return the same terminal shape as the
+      // explicit empty response so ingestLive leaves the cursor in place.
+      const requestedId = Number(id);
+      const currentHour = Math.floor(now() / 3600_000) * 3600;
+      if (response.status === 404 && Number.isInteger(requestedId) && requestedId > 0 && requestedId >= currentHour - 3600) {
+        trace("provider.fetch.terminal", { source: "cdn", realm: config.poeRealm, digestId: requestedId, status: 404 });
+        return { digestId: requestedId, payload: { next_change_id: requestedId, markets: [] } };
+      }
       if (!response.ok) throw new CxapiError("http", `cxapi cdn returned ${response.status}`);
       trace("provider.fetch.body.start", { source: "cdn", realm: config.poeRealm, digestId: id });
       const payload = await response.json();

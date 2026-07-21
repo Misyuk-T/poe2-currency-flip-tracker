@@ -4,10 +4,11 @@ import { createGggCdnCxapiProvider } from "../src/providers/ggg-cdn-cxapi-provid
 
 const base = { poeRealm: "poe2", cxapiTimeoutMs: 1000, userAgent: "agent/1.0" };
 
-function providerReturning(body, { status = 200, ok = true } = {}) {
+function providerReturning(body, { status = 200, ok = true } = {}, config = {}) {
   let seen;
   const p = createGggCdnCxapiProvider({
     ...base,
+    ...config,
     _cxFetch: async (url, opts) => {
       seen = { url, headers: opts.headers };
       return { ok, status, async json() { return body; } };
@@ -45,6 +46,21 @@ test("cdn provider: terminal (next === requested id) keeps digestId = requested 
   const { p } = providerReturning({ next_change_id: id, markets: [] });
   const d = await p.fetchDigest({ id });
   assert.equal(d.digestId, id);
+});
+
+test("cdn provider: a near-live-edge 404 is a retryable terminal, not an ingest failure", async () => {
+  const currentHour = 1784653200;
+  const id = currentHour - 3600;
+  const { p } = providerReturning({}, { status: 404, ok: false }, { _cxNow: () => currentHour * 1000 });
+  const d = await p.fetchDigest({ id });
+  assert.equal(d.digestId, id);
+  assert.deepEqual(d.payload, { next_change_id: id, markets: [] });
+});
+
+test("cdn provider: an old historical 404 remains an HTTP error", async () => {
+  const currentHour = 1784653200;
+  const { p } = providerReturning({}, { status: 404, ok: false }, { _cxNow: () => currentHour * 1000 });
+  await assert.rejects(() => p.fetchDigest({ id: currentHour - 7200 }), (e) => e.code === "http");
 });
 
 test("cdn provider: bootstrap (no id) resolves digest from next-3600", async () => {

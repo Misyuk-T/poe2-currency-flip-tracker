@@ -105,6 +105,11 @@ export function loadConfig(env = process.env) {
     cxapiStartId: env.CXAPI_START_ID ? posInt(env.CXAPI_START_ID, 0, 1) : null,
     cxapiTimeoutMs: posInt(env.CXAPI_TIMEOUT_MS, 10_000, 1000),
     cxapiMaxBackfillHours: posInt(env.CXAPI_MAX_BACKFILL_HOURS, 48, 1),
+    // Total wall-clock ceiling for one live-ingest invocation, shared across all
+    // streams. The ingester reserves the next unit's worst case internally and
+    // stops well before this, so a run always returns under the 60s function/
+    // pg_net limit; the cursor persists so catch-up continues next cron run.
+    cxapiIngestBudgetMs: posInt(env.CXAPI_INGEST_BUDGET_MS, 55_000, 5_000),
     radarMaxHotTargets: posInt(env.RADAR_MAX_HOT_TARGETS, 8, 1),
     radarMinTenureMs: posInt(env.RADAR_MIN_TENURE_MS, 2 * 3600_000, 60_000),
     exchangeRequestBudget: posInt(env.EXCHANGE_REQUEST_BUDGET, 24, 1),

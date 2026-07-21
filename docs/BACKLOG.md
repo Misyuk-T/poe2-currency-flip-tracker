@@ -14,11 +14,15 @@ Fix directions: make ingest incremental/bounded per run (don't re-seed the full
 fixture catalog hourly; cap digests + rows per invocation), stream/paginate the
 write, or split ingest into a queue/multiple smaller invocations. Blocker for
 Phase 5 (go-live activation).
-**2c compounds this:** the live path now loops N streams (PoE1 + PoE2) serially,
-each up to `min(maxBackfillHours,12)` digests — ~24 fetches/txns per invocation,
-and if stream 1 eats the budget or throws, stream 2 never runs. Live activation
-needs a TOTAL invocation deadline/budget across streams (or per-stream scheduled
-cron jobs), not just a per-stream cap.
+**2c compounds this:** the live path loops N streams (PoE1 + PoE2) serially,
+each up to `min(maxBackfillHours,12)` digests — ~24 fetches/txns per invocation.
+**RESOLVED for LIVE (Phase 5a):** `ingestLiveStreams` now enforces a shared
+wall-clock budget (`cxapiIngestBudgetMs`, default 45s) across all streams +
+mid-stream, so a run always returns under 60s; cursors persist for catch-up.
+**Still open — FIXTURE:** `ingestFixtures` re-seeds the whole 676k catalog every
+run and still times out (harmless: idempotent accumulation, data stays fresh).
+Low priority; bound it (synthesize only the newest hour after initial backfill)
+when convenient. Not a go-live blocker (fixture is dev/demo only).
 
 ## Phase 3 mapping — Metadata → {id, name, icon, category} data source (DECIDE)
 Live CX candles are keyed by Metadata paths (`Metadata/Items/<Class>/<Leaf>`).

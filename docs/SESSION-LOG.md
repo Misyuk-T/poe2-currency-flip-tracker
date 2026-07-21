@@ -105,9 +105,25 @@ live candles (the documented blocker). Codex (gpt-5.6-sol): fixed P1 (PoE2
 translator was applied to PoE1 -> game-scoped) + P2 tests. 113 green. Can't
 live-verify until activation; unit-covered. NOT deployed (branch).
 
-**Next: 4** frontend game/league selector, **5** canary + activate (with the 60s
-ingest bounded-budget fix). Known residual (backlog): finiteNonNegative(null)===0;
-truly-unknown-to-RePoE ids render raw (rare — rebuild map).
+**MERGED 2c+3a+3b to `main` + deployed to prod (c63791b).** All behavior-preserving
+for fixture (translator no-op, multi-stream is live-only, history regex is a
+superset), NO schema change, so no cron/migration coordination needed — just merge
+→ Vercel auto-deploy → verify fixture radar healthy. Prod still PROVIDER_MODE=fixture;
+nothing activated. The whole go-live pipeline (provider → multi-league → multi-game
+→ identity → anchor unblock) is now on prod, dormant behind the fixture flag.
+
+**Phase 5a shipped (branch feat/cxapi-ingest-budget) — bounded live ingest.**
+`ingestLiveStreams` enforces a shared wall-clock ceiling (`cxapiIngestBudgetMs`,
+default 55s) minus a worst-case reserve (cursor read + fetch + tx ≈ 30s), so it
+stops STARTING work at ~25s elapsed and the invocation always returns under the
+60s function/pg_net limit; cursors persist for catch-up. `rotateStreams` rotates
+the starting stream hourly so neither stream is starved. Codex (gpt-5.6-sol):
+raised P1 (45s didn't guarantee <60s) — fixed with the reserve; confirmed P1+P2
+clear. 117 green. FIXTURE ingest timeout left as-is (idempotent/harmless, backlog).
+
+**Next: 4** frontend game/league selector, then **5** canary + PROVIDER_MODE=live.
+Residual (backlog): finiteNonNegative(null)===0; duplicate cursor read in the live
+loop (minor); truly-unknown-to-RePoE ids render raw (rare).
 
 --- superseded note (Phase 3 was blocked, now resolved in 3a) ---
 Live candles store

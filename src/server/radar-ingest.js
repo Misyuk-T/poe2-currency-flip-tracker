@@ -54,7 +54,7 @@ export async function ingestFixtures({ repo, league, anchors, items = [], now = 
  * latest completed digest (never requests into the future).
  * @param {{ repo: any, provider: any, league: string, startId?: number|null, maxDigests?: number }} input
  */
-export async function ingestLive({ repo, provider, league = null, leagues = null, startId = null, maxDigests = 1, translate = (id) => id }) {
+export async function ingestLive({ repo, provider, league = null, leagues = null, startId = null, maxDigests = 1, translate = (id) => id, deadline = () => false }) {
   if (!provider?.configured) return { mode: "live", configured: false, digests: 0, inserted: 0 };
   const state = await repo.readCxapiState();
   let id = state.cursor ?? startId;
@@ -63,6 +63,9 @@ export async function ingestLive({ repo, provider, league = null, leagues = null
   let digests = 0;
   let lastDigestId = null;
   for (let i = 0; i < limit; i += 1) {
+    // Stop before starting another fetch once the invocation budget is spent; the
+    // cursor persists, so the next cron run resumes exactly here.
+    if (deadline()) break;
     const requestedId = id;
     const raw = await provider.fetchDigest({ id });
     // league/leagues null => keep ALL public leagues (multi-league live ingest).
@@ -85,6 +88,16 @@ export function recentStartHour(nowMs, backfillHours) {
   return lastCompleted - Math.max(1, Math.min(backfillHours, 48)) * 3600;
 }
 
+/** Rotate the stream list by the current hour so a fixed order can't starve the
+ *  later streams of the shared ingest budget. Deterministic (uses the logical
+ *  `now`), so it needs no clock/randomness. */
+export function rotateStreams(streams, now) {
+  const list = streams ?? [];
+  if (list.length < 2) return list;
+  const offset = Number.isFinite(now) ? Math.floor(now / 3600_000) % list.length : 0;
+  return list.slice(offset).concat(list.slice(0, offset));
+}
+
 /**
  * Ingest every configured live stream — one CDN stream per (game, realm), each
  * carrying all public leagues and its own per-(game,realm) cursor. Dependencies
@@ -93,10 +106,22 @@ export function recentStartHour(nowMs, backfillHours) {
  * time. A fresh stream with no cursor/start id defaults to a recent window so the
  * CDN's no-id "first hour of history" crawl is never triggered.
  */
-export async function ingestLiveStreams({ streams, config, now, makeRepo, makeProvider }) {
+export async function ingestLiveStreams({ streams, config, now, makeRepo, makeProvider, budgetMs = 55_000, reserveMs = null, clock = () => Date.now() }) {
+  const started = clock();
+  // A single wall-clock budget shared across ALL streams. Because the check gates
+  // STARTING work — not interrupting it — reserve the worst-case time between two
+  // gate checks: a cursor read (~10s guard) + a fetch (cxapiTimeoutMs) + a write
+  // tx (~10s guard). So nothing we start can push the invocation past the 60s
+  // function/pg_net limit. Stop at budget - reserve.
+  const reserve = reserveMs ?? (config.cxapiTimeoutMs ?? 10_000) + 20_000;
+  const stopAt = Math.max(0, budgetMs - reserve);
+  const deadline = () => clock() - started >= stopAt;
   const results = [];
   const seen = new Set();
-  for (const stream of streams) {
+  // Rotate the starting stream each hour so no single stream is perpetually first
+  // (and thus never starved of the shared budget). Cursors persist regardless.
+  for (const stream of rotateStreams(streams, now)) {
+    if (deadline()) { results.push({ game: stream.game, realm: stream.realm, skipped: "budget" }); continue; }
     const key = `${stream.game}|${stream.realm}`;
     if (seen.has(key)) continue; // defense in depth; config already dedupes
     seen.add(key);
@@ -117,6 +142,7 @@ export async function ingestLiveStreams({ streams, config, now, makeRepo, makePr
       maxDigests: catchingUp ? Math.min(config.cxapiMaxBackfillHours, 12) : 1,
       // Game-scoped: only PoE2 has an identity map, so PoE1 streams pass through.
       translate: translatorForGame(stream.game),
+      deadline, // shared budget: stop mid-stream once the invocation time is spent
     });
     results.push({ game: stream.game, realm: stream.realm, ...summary });
   }

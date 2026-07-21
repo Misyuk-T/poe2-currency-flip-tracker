@@ -233,16 +233,17 @@ export async function runRadarIngest({ now = Date.now() } = {}) {
   if (!repo) return NO_DB;
   if (config.providerMode === "live") {
     // One CDN stream per (game, realm) — PoE1 + PoE2 — each carrying every public
-    // league with its own per-(game,realm) cursor. NB (Phase-5 blocker): streams
-    // run serially and each may fetch up to cxapiMaxBackfillHours/12 digests, so
-    // 2 streams can mean ~24 fetches/txns per invocation — the 60s function budget
-    // needs a total deadline/limit before live activation (see docs/BACKLOG.md).
+    // league with its own per-(game,realm) cursor. Streams run serially under a
+    // shared wall-clock budget (cxapiIngestBudgetMs) so one invocation always
+    // returns under the 60s function/pg_net limit; cursors persist, so catch-up
+    // spills into the next cron run.
     const streams = await ingestLiveStreams({
       streams: config.cxapiStreams,
       config,
       now,
       makeRepo: repository,
       makeProvider: createCxapiProvider,
+      budgetMs: config.cxapiIngestBudgetMs,
     });
     return { status: 200, body: { mode: "live", streams } };
   }

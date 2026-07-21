@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { loadConfig } from "../src/server/config.js";
 import { createGggCdnCxapiProvider } from "../src/providers/ggg-cdn-cxapi-provider.js";
-import { ingestLive, ingestLiveStreams } from "../src/server/radar-ingest.js";
+import { ingestLive, ingestLiveStreams, rotateStreams } from "../src/server/radar-ingest.js";
 
 test("config: default streams cover PoE1 + PoE2", () => {
   const cfg = loadConfig({});
@@ -103,4 +103,46 @@ test("ingestLiveStreams: a null repo (no DB) skips that stream, not the run", as
   const makeProvider = () => ({ configured: true, async fetchDigest({ id }) { return { digestId: id, payload: { next_change_id: id, markets: [] } }; } });
   const out = await ingestLiveStreams({ streams: config.cxapiStreams, config, now: 1_784_600_000_000, makeRepo, makeProvider });
   assert.deepEqual(out.map((s) => s.game), ["poe2"]); // poe1 skipped (no repo), poe2 still ran
+});
+
+test("ingestLiveStreams: a spent budget skips remaining streams (cursor persists)", async () => {
+  const config = { league: "L", cxapiSource: "cdn", cxapiStartId: null, cxapiMaxBackfillHours: 48,
+    cxapiStreams: [{ game: "poe1", realm: "poe1" }, { game: "poe2", realm: "poe2" }] };
+  let recorded = 0;
+  const makeRepo = () => ({ async readCxapiState() { return { cursor: 1000 }; }, async recordCxDigest(d) { recorded += 1; return d.candles.length; } });
+  const makeProvider = () => ({ configured: true, async fetchDigest({ id }) { return { digestId: id, payload: { next_change_id: id, markets: [] } }; } });
+  const out = await ingestLiveStreams({ streams: config.cxapiStreams, config, now: 1_784_600_000_000, makeRepo, makeProvider, budgetMs: 0 });
+  assert.deepEqual(out.map((s) => s.skipped), ["budget", "budget"]);
+  assert.equal(recorded, 0); // nothing fetched or written once the budget is spent
+});
+
+test("ingestLive: deadline stops the digest loop early, cursor left for next run", async () => {
+  let calls = 0;
+  const provider = { configured: true, async fetchDigest({ id }) { calls += 1; return { digestId: id, payload: { next_change_id: id + 3600, markets: [] } }; } };
+  const repo = { async readCxapiState() { return { cursor: 1000 }; }, async recordCxDigest(d) { return d.candles.length; } };
+  let n = 0;
+  const out = await ingestLive({ repo, provider, maxDigests: 5, deadline: () => n++ >= 1 });
+  assert.equal(out.digests, 1); // one digest, then the deadline trips before the 2nd
+  assert.equal(calls, 1);
+});
+
+test("ingestLiveStreams: partial — stream 1 runs, stream 2 skipped when budget spent", async () => {
+  const config = { league: "L", cxapiSource: "cdn", cxapiStartId: null, cxapiMaxBackfillHours: 48, cxapiTimeoutMs: 10000,
+    cxapiStreams: [{ game: "poe1", realm: "poe1" }, { game: "poe2", realm: "poe2" }] };
+  let t = 0;
+  const clock = () => t;
+  const makeRepo = () => ({ async readCxapiState() { return { cursor: 1000 }; }, async recordCxDigest(d) { t = 80000; return d.candles.length; } });
+  const makeProvider = () => ({ configured: true, async fetchDigest({ id }) { return { digestId: id, payload: { next_change_id: id, markets: [] } }; } });
+  const out = await ingestLiveStreams({ streams: config.cxapiStreams, config, now: 0, makeRepo, makeProvider, budgetMs: 100000, clock });
+  assert.equal(out[0].game, "poe1");
+  assert.ok(!out[0].skipped, "stream 1 ran");
+  assert.equal(out[1].skipped, "budget", "stream 2 skipped after budget spent mid-run");
+});
+
+test("rotateStreams rotates the starting stream by the hour (no starvation)", () => {
+  const s = [{ game: "a" }, { game: "b" }, { game: "c" }];
+  assert.deepEqual(rotateStreams(s, 0).map((x) => x.game), ["a", "b", "c"]);
+  assert.deepEqual(rotateStreams(s, 3600_000).map((x) => x.game), ["b", "c", "a"]);
+  assert.deepEqual(rotateStreams(s, 2 * 3600_000).map((x) => x.game), ["c", "a", "b"]);
+  assert.deepEqual(rotateStreams([{ game: "solo" }], 99 * 3600_000).map((x) => x.game), ["solo"]);
 });

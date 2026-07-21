@@ -23,3 +23,14 @@ test("key currency cards and sparkline degrade cleanly when data is absent", () 
   assert.equal(sparklinePoints([1]), "");
   assert.match(sparklinePoints([1, 2, 1.5]), /^\d/);
 });
+
+test("PoE1 chaos anchor still produces all three key currency cards", () => {
+  const cards = keyCurrencyCards([
+    { target: "divine", anchor: "chaos", reference: 190, sparkline24h: [180, 190], movement: { h24: 1 / 18 } },
+    { target: "exalted", anchor: "chaos", reference: 8, sparkline24h: [10, 8], movement: { h24: -0.2 } },
+  ], "chaos");
+  assert.equal(cards.find((card) => card.id === "chaos").unit, "exalted");
+  assert.equal(cards.find((card) => card.id === "chaos").value, 1 / 8);
+  assert.equal(cards.find((card) => card.id === "divine").value, 190);
+  assert.equal(cards.find((card) => card.id === "exalted").value, 8);
+});

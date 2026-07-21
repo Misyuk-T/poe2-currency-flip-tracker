@@ -84,6 +84,7 @@ function QuotePill({ quote, compact = false }) {
 
 function KeyCurrencyCard({ card }) {
   const points = sparklinePoints(card.values);
+  const hasSinglePoint = card.values.length === 1;
   const direction = (card.movement ?? 0) >= 0 ? "up" : "down";
   return (
     <article className="key-currency-card">
@@ -99,10 +100,10 @@ function KeyCurrencyCard({ card }) {
       </div>
       <div className="key-currency-card-body">
         {card.available ? <PricePill value={card.value} unit={card.unit} /> : <span className="key-currency-empty">Waiting for data</span>}
-        {points ? (
+        {points || hasSinglePoint ? (
           <svg className={`key-currency-spark ${direction}`} viewBox="0 0 180 54" role="img" aria-label={`${card.name} 24 hour chart`}>
             <path className="key-currency-grid-line" d="M3 14 H177 M3 27 H177 M3 40 H177" />
-            <polyline points={points} />
+            {points ? <polyline points={points} /> : <circle cx="90" cy="27" r="3" />}
           </svg>
         ) : (
           <span className="key-currency-spark-empty" aria-hidden="true" />
@@ -116,13 +117,15 @@ function pricePlaceholder(value) {
   return Number.isFinite(value) ? formatNumber(value, { maximumFractionDigits: displayDigits(value) }) : "price";
 }
 
-function unitRates(rows, divineInExalted) {
-  const chaos = rows.find((row) => row.target === "chaos");
-  return {
-    exalted: 1,
-    chaos: Number.isFinite(chaos?.reference) && chaos.reference > 0 ? chaos.reference : null,
-    divine: Number.isFinite(divineInExalted) && divineInExalted > 0 ? divineInExalted : null,
-  };
+function unitRates(rows, fallbackAnchor = "exalted") {
+  const anchor = rows.find((row) => row.anchor)?.anchor ?? fallbackAnchor;
+  const rates = { exalted: null, chaos: null, divine: null, [anchor]: 1 };
+  for (const row of rows) {
+    if (DISPLAY_CURRENCIES.some((currency) => currency.id === row.target) && Number.isFinite(row.reference) && row.reference > 0) {
+      rates[row.target] = row.reference;
+    }
+  }
+  return rates;
 }
 
 function CustomSelect({ id, value, options, onChange }) {
@@ -345,6 +348,8 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   const [manualPrices, setManualPrices] = useState({});
   const [draftPrice, setDraftPrice] = useState("");
   const [draftUnit, setDraftUnit] = useState("exalted");
+  const activeGameConfig = marketConfig?.games?.find((entry) => entry.id === game);
+  const anchorCurrency = activeGameConfig?.anchorCurrency ?? "exalted";
 
   useEffect(() => {
     let cancelled = false;
@@ -386,7 +391,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     setStatus("loading");
     setRadar(null);
     setSelectedPair(null);
-    const params = new URLSearchParams({ anchor: "exalted", game, league });
+    const params = new URLSearchParams({ anchor: anchorCurrency, game, league });
     fetchJsonWithRetry(`${apiBaseUrl}/api/radar?${params}`, { cache: "no-store" })
       .then((data) => {
         if (cancelled) return;
@@ -408,7 +413,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     return () => {
       cancelled = true;
     };
-  }, [game, league, reloadKey]);
+  }, [anchorCurrency, game, league, reloadKey]);
 
   useEffect(() => {
     if (!selectedPair || !league) return;
@@ -417,7 +422,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     // chart/guidance under the new title while the new history is in flight.
     setHistory([]);
     setHistoryLoading(true);
-    const params = new URLSearchParams({ pair: selectedPair, anchor: "exalted", game, league });
+    const params = new URLSearchParams({ pair: selectedPair, anchor: anchorCurrency, game, league });
     fetch(`${apiBaseUrl}/api/radar/history?${params}`, { cache: "no-store" })
       .then((res) => {
         if (!res.ok) throw new Error(`History failed: ${res.status}`);
@@ -435,7 +440,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     return () => {
       cancelled = true;
     };
-  }, [game, selectedPair, league]);
+  }, [anchorCurrency, game, selectedPair, league]);
 
   // Plan modal: Escape closes it and background scroll is locked while it is open.
   useEffect(() => {
@@ -457,8 +462,8 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     () => (radar?.rows ?? []).filter((row) => row.pairId && row.status !== "no-trades-this-hour"),
     [radar],
   );
-  const rates = useMemo(() => unitRates(tradable, radar?.units?.divineInExalted), [radar?.units?.divineInExalted, tradable]);
-  const manualUnit = displayCurrency && rates[displayCurrency] ? displayCurrency : "exalted";
+  const rates = useMemo(() => unitRates(tradable, anchorCurrency), [anchorCurrency, tradable]);
+  const manualUnit = displayCurrency && rates[displayCurrency] ? displayCurrency : anchorCurrency;
 
   // Volume terciles across the tradable universe → qualitative liquidity band.
   const liquidityThresholds = useMemo(() => {
@@ -565,8 +570,8 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   const selectedManual = selected?.pairId ? manualPrices[selected.pairId] : null;
   const currentWorkingPrice = selected
     ? workingPrice(selected, selectedManual, {
-      divineInExalted: radar?.units?.divineInExalted,
-      chaosInExalted: rates.chaos,
+      divineInExalted: rates.divine && rates.exalted ? rates.divine / rates.exalted : null,
+      chaosInExalted: rates.chaos && rates.exalted ? rates.chaos / rates.exalted : null,
       preferredUnit: manualUnit,
     })
     : { status: "missing", value: null, unit: null, anchorValue: null };
@@ -639,7 +644,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
       ?.find((entry) => entry.id === game)
       ?.leagues?.filter((entry) => entry.enabled)
       .map((entry) => ({ value: entry.id, label: entry.label })) ?? [];
-  const keyCurrencies = useMemo(() => keyCurrencyCards(tradable), [tradable]);
+  const keyCurrencies = useMemo(() => keyCurrencyCards(tradable, anchorCurrency), [anchorCurrency, tradable]);
   const sourceMode = radar?.source?.sourceMode;
   // On ready we show no subtitle — the header stays clean. Loading/error states
   // still surface a short status line. (Placeholder-gold honesty lives on the

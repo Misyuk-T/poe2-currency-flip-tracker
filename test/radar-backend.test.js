@@ -28,8 +28,11 @@ test("getConfig returns public config with server-side opportunities disabled", 
   assert.equal(body.features.radar, true);
   assert.equal(body.games.find((g) => g.id === "poe2")?.enabled, true);
   assert.equal(body.games.find((g) => g.id === "poe1")?.enabled, true);
+  assert.equal(body.games.find((g) => g.id === "poe2")?.anchorCurrency, "exalted");
+  assert.equal(body.games.find((g) => g.id === "poe1")?.anchorCurrency, "chaos");
   assert.deepEqual(body.games.find((g) => g.id === "poe2")?.leagues.map((l) => l.id), ["Runes of Aldur"]);
-  assert.deepEqual(body.games.find((g) => g.id === "poe1")?.leagues.map((l) => l.id), ["Ancestors", "Standard", "Hardcore", "Ruthless"]);
+  assert.equal(body.games.find((g) => g.id === "poe1")?.activeLeague, "Standard");
+  assert.deepEqual(body.games.find((g) => g.id === "poe1")?.leagues.map((l) => l.id), ["Standard", "Hardcore", "Ruthless", "Ancestors"]);
 });
 
 test("resolveGame accepts configured game streams and rejects unknown games", () => {
@@ -39,6 +42,8 @@ test("resolveGame accepts configured game streams and rejects unknown games", ()
     leagues: ["Runes of Aldur"],
     poe1League: "Ancestors",
     poe1Leagues: ["Ancestors", "Standard"],
+    anchorCurrency: "exalted",
+    anchors: ["exalted", "divine"],
     cxapiStreams: [{ game: "poe1", realm: "poe1" }, { game: "poe2", realm: "poe2" }],
   };
   assert.equal(resolveGame(new URLSearchParams("game=poe1"), config).game.realm, "poe1");

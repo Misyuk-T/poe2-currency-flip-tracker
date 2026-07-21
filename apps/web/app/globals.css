@@ -1939,6 +1939,8 @@ body:has(.home-page) {
   vector-effect: non-scaling-stroke;
 }
 .key-currency-spark.down polyline { stroke: var(--rl-loss); }
+.key-currency-spark circle { fill: var(--rl-profit); }
+.key-currency-spark.down circle { fill: var(--rl-loss); }
 .key-currency-grid-line { fill: none; stroke: rgba(255, 255, 255, 0.055); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .key-currency-empty { color: var(--rl-muted); font-size: 0.78rem; }
 .key-currency-spark-empty { width: 48%; height: 1px; margin-bottom: 24px; background: rgba(255, 255, 255, 0.09); }

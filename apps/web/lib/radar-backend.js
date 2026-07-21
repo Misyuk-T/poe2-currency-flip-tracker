@@ -80,17 +80,19 @@ export function gameAwareRepository(repo, game) {
 /** Public read scopes. Ingestion streams decide whether a game is actually live. */
 export function gameConfigs(config) {
   const streams = new Map((config.cxapiStreams ?? []).map((stream) => [stream.game, stream]));
-  const definition = (id, label, fallbackRealm, activeLeague, leagues) => ({
+  const definition = (id, label, fallbackRealm, activeLeague, leagues, anchorCurrency, anchors) => ({
     id,
     label,
     realm: streams.get(id)?.realm ?? fallbackRealm,
     enabled: streams.has(id),
     activeLeague,
     leagues: [...new Set(leagues ?? [])],
+    anchorCurrency,
+    anchors: [...new Set(anchors ?? [anchorCurrency])],
   });
   return [
-    definition("poe2", "Path of Exile 2", "poe2", config.league, config.leagues),
-    definition("poe1", "Path of Exile", "poe1", config.poe1League, config.poe1Leagues),
+    definition("poe2", "Path of Exile 2", "poe2", config.league, config.leagues, config.anchorCurrency, config.anchors),
+    definition("poe1", "Path of Exile", "poe1", config.poe1League, config.poe1Leagues, "chaos", ["chaos", "divine", "exalted"]),
   ];
 }
 
@@ -182,7 +184,7 @@ function fixtureRepository(ctx, scope = ctx.scope) {
         await ingestFixtures({
           repo,
           league: scope.league,
-          anchors: ctx.config.anchors,
+          anchors: gameConfigs(ctx.config).find((game) => game.id === scope.game)?.anchors ?? ctx.config.anchors,
           items: ctx.catalogManifest,
           now: Date.now(),
         });
@@ -248,13 +250,13 @@ export async function getRadar(searchParams) {
   if (selected.error) return selected.error;
   const repo = gameAwareRepository(await resolveRepo(ctx, scopeFor(ctx, game, selected.league)), game.id);
   if (!repo) return NO_DB;
-  const anchor = resolveAnchor(searchParams, config);
+  const anchor = resolveAnchor(searchParams, game);
   const isPoe2 = game.id === "poe2";
   const body = await withDbRetry(() =>
     buildRadarPayload({
       repo,
       anchor,
-      anchors: config.anchors,
+      anchors: game.anchors,
       shortlist: config.shortlist,
       names: isPoe2 ? names : CORE_NAMES,
       catalogManifest: isPoe2 ? catalogManifest : [],
@@ -292,7 +294,7 @@ export async function getHistory(searchParams) {
   if (selected.error) return selected.error;
   const repo = gameAwareRepository(await resolveRepo(ctx, scopeFor(ctx, game, selected.league)), game.id);
   if (!repo) return NO_DB;
-  const anchor = resolveAnchor(searchParams, config);
+  const anchor = resolveAnchor(searchParams, game);
   const body = await withDbRetry(() => buildHistoryPayload({ repo, pair, anchor }));
   body.league = selected.league;
   body.game = game.id;
@@ -312,7 +314,7 @@ export async function getHotlist(searchParams = new URLSearchParams()) {
   const body = await withDbRetry(() =>
     buildHotlistPayload({
       repo,
-      anchors: config.anchors,
+      anchors: game.anchors,
       shortlist: config.shortlist,
       names: game.id === "poe2" ? names : CORE_NAMES,
       radarMaxHotTargets: config.radarMaxHotTargets,

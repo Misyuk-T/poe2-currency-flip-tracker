@@ -35,8 +35,8 @@ export function loadConfig(env = process.env) {
   const league = env.LEAGUE ?? "Runes of Aldur";
   const leagues = list(env.LEAGUES, [league]);
   if (!leagues.includes(league)) leagues.unshift(league);
-  const poe1League = env.POE1_LEAGUE ?? "Ancestors";
-  const poe1Leagues = list(env.POE1_LEAGUES, [poe1League, "Standard", "Hardcore", "Ruthless"]);
+  const poe1League = env.POE1_LEAGUE ?? "Standard";
+  const poe1Leagues = list(env.POE1_LEAGUES, [poe1League, "Hardcore", "Ruthless", "Ancestors"]);
   if (!poe1Leagues.includes(poe1League)) poe1Leagues.unshift(poe1League);
 
   // Active anchor + the set of anchors the scheduler maintains books for. The

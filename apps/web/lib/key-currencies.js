@@ -1,6 +1,7 @@
 const CORE = [
   { id: "chaos", name: "Chaos Orb" },
   { id: "divine", name: "Divine Orb" },
+  { id: "exalted", name: "Exalted Orb" },
 ];
 
 const positive = (value) => Number.isFinite(value) && value > 0;
@@ -23,28 +24,28 @@ function directCard(row, currency) {
 }
 
 /**
- * Three dashboard cards from the already-loaded radar payload. Chaos and Divine
- * are quoted in Exalted; Exalted is quoted in Chaos (or Divine as a fallback),
- * so its chart remains meaningful instead of being a flat 1.0 anchor line.
+ * Three dashboard cards from the already-loaded radar payload. Non-anchor
+ * currencies use their direct rates; the active anchor is inverted from a
+ * traded core pair so its chart remains meaningful instead of a flat 1.0 line.
  */
-export function keyCurrencyCards(rows = []) {
+export function keyCurrencyCards(rows = [], fallbackAnchor = "exalted") {
   const byTarget = new Map(rows.map((row) => [row.target, row]));
-  const direct = CORE.map((currency) => directCard(byTarget.get(currency.id), currency));
-  const inverseSource = byTarget.get("chaos") ?? byTarget.get("divine") ?? null;
-  const inverseValues = (inverseSource?.sparkline24h ?? []).filter(positive).map((value) => 1 / value);
-  const inverseValue = positive(inverseSource?.reference) ? 1 / inverseSource.reference : null;
-  return [
-    ...direct,
-    {
-      id: "exalted",
-      name: "Exalted Orb",
+  const anchor = rows.find((row) => row.anchor)?.anchor ?? fallbackAnchor;
+  const inverseOrder = anchor === "chaos" ? ["exalted", "divine"] : ["chaos", "divine"];
+  const inverseSource = inverseOrder.map((id) => byTarget.get(id)).find(Boolean) ?? null;
+  return CORE.map((currency) => {
+    if (currency.id !== anchor) return directCard(byTarget.get(currency.id), currency);
+    const inverseValues = (inverseSource?.sparkline24h ?? []).filter(positive).map((value) => 1 / value);
+    const inverseValue = positive(inverseSource?.reference) ? 1 / inverseSource.reference : null;
+    return {
+      ...currency,
       value: inverseValue,
-      unit: inverseSource?.target ?? "chaos",
+      unit: inverseSource?.target ?? (anchor === "chaos" ? "exalted" : "chaos"),
       values: inverseValues,
       movement: movement(inverseValues),
       available: positive(inverseValue),
-    },
-  ];
+    };
+  });
 }
 
 /** Scale finite values into an SVG polyline without leaking chart concerns. */

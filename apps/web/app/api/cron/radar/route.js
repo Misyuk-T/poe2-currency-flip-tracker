@@ -3,7 +3,10 @@ import { runRadarIngest, isCronAuthorized, cronConfigured } from "../../../../li
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// Hobby projects with Fluid Compute support up to five minutes. Keep the cron
+// below that platform ceiling while the per-phase ingest traces show where the
+// database time is actually spent.
+export const maxDuration = 300;
 
 // Hourly radar ingestion. Triggered by Supabase pg_cron via pg_net (POST with a
 // Bearer CRON_SECRET); GET is accepted too for manual/Vercel-cron invocation.

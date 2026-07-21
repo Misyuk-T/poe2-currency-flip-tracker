@@ -9,7 +9,7 @@ export const metadata = {
 export default function Poe2Page() {
   return (
     <main className="radar-page">
-      <MarketDashboard />
+      <MarketDashboard initialGame="poe2" />
     </main>
   );
 }

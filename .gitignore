@@ -10,3 +10,4 @@ apps/web/public/icons/*
 *.log
 .DS_Store
 .idea/
+.vercel

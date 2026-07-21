@@ -36,6 +36,7 @@ export default async function sitemap() {
     // Root `/` currently 307-redirects to /poe2 (landing temporarily hidden),
     // so the dashboard is the canonical entry point — don't list the redirect.
     { url: `${siteUrl}/poe2`, lastModified: latest, changeFrequency: "hourly", priority: 1 },
+    { url: `${siteUrl}/poe1`, lastModified: latest, changeFrequency: "hourly", priority: 0.9 },
     { url: `${siteUrl}/poe2/currencies`, lastModified: latest, changeFrequency: "hourly", priority: 0.8 },
     { url: `${siteUrl}/guides`, changeFrequency: "monthly", priority: 0.6 },
     ...guides.map((g) => ({ url: `${siteUrl}/guides/${g.slug}`, changeFrequency: "monthly", priority: 0.6 })),

@@ -21,11 +21,22 @@ import { resolveCurrency } from "../domain/cx-identity.js";
  *  (e.g. fixture short ids). */
 export const metadataToCanonicalId = (id) => resolveCurrency(id).shortId ?? id;
 
+// These core currency Metadata ids are shared by PoE 1 and PoE 2. Keeping this
+// intentionally tiny makes the PoE 1 Exalted-anchored read model work without
+// applying the PoE 2-only identity catalog to unrelated PoE 1 items.
+export const CORE_CURRENCY_IDS = Object.freeze({
+  "Metadata/Items/Currency/CurrencyRerollRare": "chaos",
+  "Metadata/Items/Currency/CurrencyModValues": "divine",
+  "Metadata/Items/Currency/CurrencyAddModToRare": "exalted",
+});
+
+export const coreCurrencyToCanonicalId = (id) => CORE_CURRENCY_IDS[id] ?? id;
+
 /** The identity map is PoE2-specific, so only PoE2 gets canonicalized; other
  *  games (PoE1, console) pass through until they get their own identity map —
  *  never risk labelling PoE1 data with PoE2 short ids. */
 export function translatorForGame(game) {
-  return game === "poe2" ? metadataToCanonicalId : (id) => id;
+  return game === "poe2" ? metadataToCanonicalId : game === "poe1" ? coreCurrencyToCanonicalId : (id) => id;
 }
 
 const HOUR = 3600_000;

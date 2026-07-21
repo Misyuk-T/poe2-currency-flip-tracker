@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 // cleanly (never throw, never fabricate). Unset before importing the module.
 delete process.env.DATABASE_URL;
 
-const { getConfig, getStatus, getRadar, getHistory, resolveLeague, tradableRows } = await import("../apps/web/lib/radar-backend.js");
+const { gameAwareRepository, getConfig, getStatus, getRadar, getHistory, resolveGame, resolveLeague, tradableRows } = await import("../apps/web/lib/radar-backend.js");
 
 test("tradableRows drops no-trade catalog placeholders but keeps real markets", () => {
   const rows = [
@@ -27,8 +27,49 @@ test("getConfig returns public config with server-side opportunities disabled", 
   assert.equal(body.features.liveBooks, false);
   assert.equal(body.features.radar, true);
   assert.equal(body.games.find((g) => g.id === "poe2")?.enabled, true);
-  assert.equal(body.games.find((g) => g.id === "poe1")?.enabled, false);
+  assert.equal(body.games.find((g) => g.id === "poe1")?.enabled, true);
   assert.deepEqual(body.games.find((g) => g.id === "poe2")?.leagues.map((l) => l.id), ["Runes of Aldur"]);
+  assert.deepEqual(body.games.find((g) => g.id === "poe1")?.leagues.map((l) => l.id), ["Ancestors", "Standard", "Hardcore", "Ruthless"]);
+});
+
+test("resolveGame accepts configured game streams and rejects unknown games", () => {
+  const config = {
+    poeGame: "poe2",
+    league: "Runes of Aldur",
+    leagues: ["Runes of Aldur"],
+    poe1League: "Ancestors",
+    poe1Leagues: ["Ancestors", "Standard"],
+    cxapiStreams: [{ game: "poe1", realm: "poe1" }, { game: "poe2", realm: "poe2" }],
+  };
+  assert.equal(resolveGame(new URLSearchParams("game=poe1"), config).game.realm, "poe1");
+  assert.equal(resolveGame(new URLSearchParams(), config).game.id, "poe2");
+  assert.equal(resolveGame(new URLSearchParams("game=poe3"), config).error.body.error.code, "invalid-game");
+});
+
+test("PoE1 read compatibility canonicalizes legacy core Metadata ids", async () => {
+  const exalted = "Metadata/Items/Currency/CurrencyAddModToRare";
+  const chaos = "Metadata/Items/Currency/CurrencyRerollRare";
+  const seen = [];
+  const legacy = {
+    completedHour: 1000,
+    pairId: `${exalted}|${chaos}`,
+    base: exalted,
+    quote: chaos,
+    volume: { [exalted]: 4, [chaos]: 9 },
+  };
+  const repo = gameAwareRepository({
+    async readCandleWindow() { return [legacy]; },
+    async readPairCandles(pair) { seen.push(pair); return pair === legacy.pairId ? [legacy] : []; },
+  }, "poe1");
+  assert.deepEqual((await repo.readCandleWindow())[0], {
+    ...legacy,
+    pairId: "exalted|chaos",
+    base: "exalted",
+    quote: "chaos",
+    volume: { exalted: 4, chaos: 9 },
+  });
+  assert.equal((await repo.readPairCandles("exalted|chaos"))[0].pairId, "exalted|chaos");
+  assert.deepEqual(seen, [legacy.pairId, "exalted|chaos"]);
 });
 
 test("resolveLeague accepts configured leagues and rejects arbitrary scopes", () => {

@@ -3,15 +3,15 @@ import "./globals.css";
 export const metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   title: {
-    default: "PoE2 Currency Flip Helper",
-    template: "%s · PoE2 Currency Flip Helper",
+    default: "PoE Currency Market Radar",
+    template: "%s · PoE Currency Market Radar",
   },
   description:
-    "Path of Exile 2 currency market radar using official completed-hour data and user-entered current prices.",
+    "Path of Exile and Path of Exile 2 currency market radar using official completed-hour data.",
   openGraph: {
-    title: "PoE2 Currency Flip Helper",
+    title: "PoE Currency Market Radar",
     description:
-      "Find moving PoE2 currency markets, verify your current price, and plan conservative entry and exit levels.",
+      "Track key currency rates and moving markets across Path of Exile and Path of Exile 2.",
     type: "website",
   },
 };
@@ -33,7 +33,7 @@ export default function RootLayout({ children }) {
                   <path d="M23 12 19.5 19h7L23 12Z" />
                 </svg>
               </span>
-              <span>PoE2 Flip Helper</span>
+              <span>PoE Market Radar</span>
             </a>
           </header>
           {children}

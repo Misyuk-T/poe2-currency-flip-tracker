@@ -10,6 +10,8 @@
  * @property {string} poeRealm
  * @property {string} league
  * @property {string[]} leagues
+ * @property {string} poe1League
+ * @property {string[]} poe1Leagues
  * @property {string} anchorCurrency
  * @property {string[]} shortlist
  * @property {number} pollIntervalMs
@@ -33,6 +35,9 @@ export function loadConfig(env = process.env) {
   const league = env.LEAGUE ?? "Runes of Aldur";
   const leagues = list(env.LEAGUES, [league]);
   if (!leagues.includes(league)) leagues.unshift(league);
+  const poe1League = env.POE1_LEAGUE ?? "Ancestors";
+  const poe1Leagues = list(env.POE1_LEAGUES, [poe1League, "Standard", "Hardcore", "Ruthless"]);
+  if (!poe1Leagues.includes(poe1League)) poe1Leagues.unshift(poe1League);
 
   // Active anchor + the set of anchors the scheduler maintains books for. The
   // active anchor is always included. Each anchor needs a gold cost (exit gold).
@@ -48,6 +53,8 @@ export function loadConfig(env = process.env) {
     poeRealm: env.POE_REALM ?? "poe2",
     league,
     leagues,
+    poe1League,
+    poe1Leagues,
     anchors,
     anchorCurrency,
     shortlist: list(env.SHORTLIST, ["divine", "chaos", "vaal"]),
@@ -102,11 +109,15 @@ export function loadConfig(env = process.env) {
     // a service:cxapi token. Defaults to cdn now that no token is needed.
     cxapiSource: (env.CXAPI_SOURCE ?? "cdn").toLowerCase() === "oauth" ? "oauth" : "cdn",
     cxapiCdnBaseUrl: env.CXAPI_CDN_BASE_URL ?? null,
-    // Live ingest streams: one CDN stream per (game, realm). The public product
-    // currently reads PoE2 only, so PoE2 is the sole default; opt into more once
-    // a corresponding read surface exists. Format:
+    // Live ingest streams: one CDN stream per (game, realm). Format:
     // CXAPI_STREAMS="poe1:poe1,poe2:poe2" (game:realm, comma-separated).
-    cxapiStreams: streams(env.CXAPI_STREAMS, [{ game: "poe2", realm: "poe2" }]),
+    // Both PC games are first-class read surfaces, so keep both official CDN
+    // streams warm by default. The shared ingest budget and hourly rotation
+    // prevent one stream from starving the other.
+    cxapiStreams: streams(env.CXAPI_STREAMS, [
+      { game: "poe1", realm: "poe1" },
+      { game: "poe2", realm: "poe2" },
+    ]),
     cxapiAccessToken: env.CXAPI_ACCESS_TOKEN ?? null,
     cxapiStartId: env.CXAPI_START_ID ? posInt(env.CXAPI_START_ID, 0, 1) : null,
     cxapiTimeoutMs: posInt(env.CXAPI_TIMEOUT_MS, 10_000, 1000),

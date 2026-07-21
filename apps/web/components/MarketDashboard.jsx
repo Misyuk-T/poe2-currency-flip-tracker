@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import SpotChart from "./SpotChart.jsx";
 import { roundTripGold } from "../../../src/domain/gold-costs.js";
+import { keyCurrencyCards, sparklinePoints } from "../lib/key-currencies.js";
 import { currentPriceGuidance, quoteFromAnchor, workingPrice } from "../lib/price-guidance.js";
 import {
   apiBaseUrl,
@@ -79,6 +80,36 @@ function PricePill({ value, unit, compact = false }) {
 function QuotePill({ quote, compact = false }) {
   if (!quote || !Number.isFinite(quote.value)) return <span className="price-pill empty">—</span>;
   return <PricePill value={quote.value} unit={quote.unit} compact={compact} />;
+}
+
+function KeyCurrencyCard({ card }) {
+  const points = sparklinePoints(card.values);
+  const direction = (card.movement ?? 0) >= 0 ? "up" : "down";
+  return (
+    <article className="key-currency-card">
+      <div className="key-currency-card-head">
+        <span className="key-currency-name">
+          <img src={iconUrl(card.id)} onError={onIconError} alt="" />
+          <span>
+            <strong>{card.name}</strong>
+            <small>{card.unit ? `${titleize(card.unit)} per ${titleize(card.id)}` : "Hourly market rate"}</small>
+          </span>
+        </span>
+        <span className={`key-currency-move ${direction}`}>{formatPercent(card.movement)}</span>
+      </div>
+      <div className="key-currency-card-body">
+        {card.available ? <PricePill value={card.value} unit={card.unit} /> : <span className="key-currency-empty">Waiting for data</span>}
+        {points ? (
+          <svg className={`key-currency-spark ${direction}`} viewBox="0 0 180 54" role="img" aria-label={`${card.name} 24 hour chart`}>
+            <path className="key-currency-grid-line" d="M3 14 H177 M3 27 H177 M3 40 H177" />
+            <polyline points={points} />
+          </svg>
+        ) : (
+          <span className="key-currency-spark-empty" aria-hidden="true" />
+        )}
+      </div>
+    </article>
+  );
 }
 
 function pricePlaceholder(value) {
@@ -276,27 +307,28 @@ function categoriesFrom(rows) {
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 
-function manualPriceKey(league) {
-  return `${MANUAL_PRICE_KEY}:${league ?? "default"}`;
+function manualPriceKey(game, league) {
+  return `${MANUAL_PRICE_KEY}:${game ?? "poe2"}:${league ?? "default"}`;
 }
 
-function loadManualPrices(league) {
+function loadManualPrices(game, league) {
   if (typeof window === "undefined") return {};
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(manualPriceKey(league)) ?? "{}");
+    const parsed = JSON.parse(window.localStorage.getItem(manualPriceKey(game, league)) ?? "{}");
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
   }
 }
 
-function saveManualPrices(league, prices) {
+function saveManualPrices(game, league, prices) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(manualPriceKey(league), JSON.stringify(prices));
+  window.localStorage.setItem(manualPriceKey(game, league), JSON.stringify(prices));
 }
 
-export default function MarketDashboard() {
+export default function MarketDashboard({ initialGame = "poe2" }) {
   const [marketConfig, setMarketConfig] = useState(null);
+  const [game, setGame] = useState(initialGame);
   const [league, setLeague] = useState(null);
   const [radar, setRadar] = useState(null);
   const [history, setHistory] = useState([]);
@@ -319,15 +351,20 @@ export default function MarketDashboard() {
     fetchJsonWithRetry(`${apiBaseUrl}/api/config`, { cache: "no-store" })
       .then((data) => {
         if (cancelled) return;
-        const game = data.games?.find((entry) => entry.id === "poe2");
-        const leagues = (game?.leagues ?? []).filter((entry) => entry.enabled);
+        const requestedGame =
+          typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("game") : null;
+        const selectedGame = data.games?.find((entry) => entry.id === (requestedGame ?? initialGame) && entry.enabled)
+          ?? data.games?.find((entry) => entry.enabled);
+        if (!selectedGame) throw new Error("No game is configured");
+        const leagues = (selectedGame.leagues ?? []).filter((entry) => entry.enabled);
         const requested =
           typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("league") : null;
         const initial = leagues.some((entry) => entry.id === requested)
           ? requested
-          : game?.activeLeague ?? data.league ?? leagues[0]?.id;
+          : selectedGame?.activeLeague ?? data.league ?? leagues[0]?.id;
         if (!initial) throw new Error("No league is configured");
         setMarketConfig(data);
+        setGame(selectedGame.id);
         setLeague(initial);
       })
       .catch((error) => {
@@ -336,12 +373,12 @@ export default function MarketDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [initialGame, reloadKey]);
 
   useEffect(() => {
     if (!league) return;
-    setManualPrices(loadManualPrices(league));
-  }, [league]);
+    setManualPrices(loadManualPrices(game, league));
+  }, [game, league]);
 
   useEffect(() => {
     if (!league) return undefined;
@@ -349,7 +386,7 @@ export default function MarketDashboard() {
     setStatus("loading");
     setRadar(null);
     setSelectedPair(null);
-    const params = new URLSearchParams({ anchor: "exalted", league });
+    const params = new URLSearchParams({ anchor: "exalted", game, league });
     fetchJsonWithRetry(`${apiBaseUrl}/api/radar?${params}`, { cache: "no-store" })
       .then((data) => {
         if (cancelled) return;
@@ -371,7 +408,7 @@ export default function MarketDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [league, reloadKey]);
+  }, [game, league, reloadKey]);
 
   useEffect(() => {
     if (!selectedPair || !league) return;
@@ -380,7 +417,7 @@ export default function MarketDashboard() {
     // chart/guidance under the new title while the new history is in flight.
     setHistory([]);
     setHistoryLoading(true);
-    const params = new URLSearchParams({ pair: selectedPair, anchor: "exalted", league });
+    const params = new URLSearchParams({ pair: selectedPair, anchor: "exalted", game, league });
     fetch(`${apiBaseUrl}/api/radar/history?${params}`, { cache: "no-store" })
       .then((res) => {
         if (!res.ok) throw new Error(`History failed: ${res.status}`);
@@ -398,7 +435,7 @@ export default function MarketDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [selectedPair, league]);
+  }, [game, selectedPair, league]);
 
   // Plan modal: Escape closes it and background scroll is locked while it is open.
   useEffect(() => {
@@ -502,6 +539,29 @@ export default function MarketDashboard() {
     }
   }
 
+  function selectGame(nextGame) {
+    if (!nextGame || nextGame === game) return;
+    const selectedGame = marketConfig?.games?.find((entry) => entry.id === nextGame && entry.enabled);
+    const nextLeague = selectedGame?.activeLeague ?? selectedGame?.leagues?.find((entry) => entry.enabled)?.id;
+    if (!selectedGame || !nextLeague) return;
+    setGame(nextGame);
+    setLeague(nextLeague);
+    setSelectedPair(null);
+    setCategory("all");
+    setSearch("");
+    setView("list");
+    setHistory([]);
+    setDisplayCurrency(null);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.pathname = nextGame === "poe1" ? "/poe1" : "/poe2";
+      url.searchParams.set("game", nextGame);
+      url.searchParams.set("league", nextLeague);
+      url.searchParams.delete("currency");
+      window.history.replaceState({}, "", url);
+    }
+  }
+
   const selectedManual = selected?.pairId ? manualPrices[selected.pairId] : null;
   const currentWorkingPrice = selected
     ? workingPrice(selected, selectedManual, {
@@ -562,7 +622,7 @@ export default function MarketDashboard() {
       delete next[selected.pairId];
     }
     setManualPrices(next);
-    saveManualPrices(league, next);
+    saveManualPrices(game, league, next);
   }
 
   function clearManualPrice() {
@@ -570,14 +630,16 @@ export default function MarketDashboard() {
     const next = { ...manualPrices };
     delete next[selected.pairId];
     setManualPrices(next);
-    saveManualPrices(league, next);
+    saveManualPrices(game, league, next);
   }
 
+  const gameOptions = marketConfig?.games?.filter((entry) => entry.enabled) ?? [];
   const leagueOptions =
     marketConfig?.games
-      ?.find((game) => game.id === "poe2")
+      ?.find((entry) => entry.id === game)
       ?.leagues?.filter((entry) => entry.enabled)
       .map((entry) => ({ value: entry.id, label: entry.label })) ?? [];
+  const keyCurrencies = useMemo(() => keyCurrencyCards(tradable), [tradable]);
   const sourceMode = radar?.source?.sourceMode;
   // On ready we show no subtitle — the header stays clean. Loading/error states
   // still surface a short status line. (Placeholder-gold honesty lives on the
@@ -641,6 +703,23 @@ export default function MarketDashboard() {
               {summaryText && <p className="radar-sub">{summaryText}</p>}
             </div>
             <div className="radar-head-actions">
+              {gameOptions.length > 1 && (
+                <div className="game-control">
+                  <span>Game</span>
+                  <div className="game-toggle" role="group" aria-label="Game">
+                    {gameOptions.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        aria-pressed={game === option.id}
+                        onClick={() => selectGame(option.id)}
+                      >
+                        {option.id === "poe1" ? "PoE 1" : "PoE 2"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {league && leagueOptions.length > 1 && (
                 <div className="league-control">
                   <span>League</span>
@@ -685,6 +764,19 @@ export default function MarketDashboard() {
               </div>
             </div>
           </header>
+
+          <section className="key-currencies" aria-labelledby="key-currencies-title">
+            <div className="key-currencies-heading">
+              <div>
+                <p className="eyebrow">Core market</p>
+                <h3 id="key-currencies-title">Key currency rates</h3>
+              </div>
+              <span>Last 24 completed hours</span>
+            </div>
+            <div className="key-currency-grid">
+              {keyCurrencies.map((card) => <KeyCurrencyCard key={card.id} card={card} />)}
+            </div>
+          </section>
 
           <div className="radar-controls">
             <label className="rc-search">

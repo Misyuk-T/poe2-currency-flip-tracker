@@ -77,7 +77,7 @@ test("canonicalization fixes anchor matching: short-id 'exalted' matches live ca
   assert.notEqual(exaltedPair.quote, EXALTED_META);
 });
 
-test("ingestLiveStreams canonicalizes PoE2 to short ids but passes PoE1 through", async () => {
+test("ingestLiveStreams canonicalizes PoE2 fully and PoE1 core currency ids", async () => {
   const rec2 = [];
   const h2 = streamHarness(rec2);
   await ingestLiveStreams({ streams: [{ game: "poe2", realm: "poe2" }], config: streamCfg, now: 1_784_600_000_000, makeRepo: h2.makeRepo, makeProvider: h2.makeProvider });
@@ -88,7 +88,8 @@ test("ingestLiveStreams canonicalizes PoE2 to short ids but passes PoE1 through"
   const h1 = streamHarness(rec1);
   await ingestLiveStreams({ streams: [{ game: "poe1", realm: "poe1" }], config: streamCfg, now: 1_784_600_000_000, makeRepo: h1.makeRepo, makeProvider: h1.makeProvider });
   const c1 = rec1.flatMap((d) => d.candles)[0];
-  assert.ok(c1.base.startsWith("Metadata/") && c1.quote.startsWith("Metadata/"), "poe1 kept Metadata (no PoE2 ids)");
+  assert.ok(c1.base === "exalted" || c1.quote === "exalted", "poe1 core exalted id canonicalized");
+  assert.ok(c1.base === RUNE || c1.quote === RUNE, "unrelated poe1 ids remain untouched");
 });
 
 test("a collapsing translation drops the self-market", () => {

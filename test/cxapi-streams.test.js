@@ -4,9 +4,12 @@ import { loadConfig } from "../src/server/config.js";
 import { createGggCdnCxapiProvider } from "../src/providers/ggg-cdn-cxapi-provider.js";
 import { ingestLive, ingestLiveStreams, rotateStreams } from "../src/server/radar-ingest.js";
 
-test("config: default streams cover only the PoE2 product read scope", () => {
+test("config: default streams cover both PC game read scopes", () => {
   const cfg = loadConfig({});
-  assert.deepEqual(cfg.cxapiStreams, [{ game: "poe2", realm: "poe2" }]);
+  assert.deepEqual(cfg.cxapiStreams, [
+    { game: "poe1", realm: "poe1" },
+    { game: "poe2", realm: "poe2" },
+  ]);
 });
 
 test("config: ingest mode follows read mode by default but can be decoupled", () => {

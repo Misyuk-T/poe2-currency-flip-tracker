@@ -15,7 +15,7 @@ import { createGoldRegistry, createFlatGoldRegistry } from "../../../src/domain/
 import { POE2_GOLD_COSTS } from "../../../src/data/gold-costs-poe2.js";
 import { createRadarRepository } from "../../../src/storage/radar-repository.js";
 import { buildRadarPayload, buildHistoryPayload, buildHotlistPayload } from "../../../src/server/radar-core.js";
-import { ingestFixtures, ingestFixtureIncrement, ingestLiveStreams } from "../../../src/server/radar-ingest.js";
+import { CORE_CURRENCY_IDS, ingestFixtures, ingestFixtureIncrement, ingestLiveStreams } from "../../../src/server/radar-ingest.js";
 import { createCxapiProvider } from "../../../src/providers/create-cxapi-provider.js";
 import { getSql, resetSql, withDbRetry } from "./db.js";
 import { createMemoryRepository } from "./memory-repo.js";
@@ -24,6 +24,89 @@ const NO_DB = {
   status: 503,
   body: { error: { code: "no-database", message: "Market storage is not configured." } },
 };
+
+const CORE_NAMES = { chaos: "Chaos Orb", divine: "Divine Orb", exalted: "Exalted Orb" };
+const CORE_TO_METADATA = Object.fromEntries(Object.entries(CORE_CURRENCY_IDS).map(([metadata, id]) => [id, metadata]));
+
+function remapObjectKeys(value, translate) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [translate(key), item]));
+}
+
+function canonicalizePoe1Candle(candle) {
+  const translate = (id) => CORE_CURRENCY_IDS[id] ?? id;
+  const base = translate(candle.base);
+  const quote = translate(candle.quote);
+  return {
+    ...candle,
+    base,
+    quote,
+    pairId: `${base}|${quote}`,
+    volume: remapObjectKeys(candle.volume, translate),
+    ...(candle.stock
+      ? {
+          stock: {
+            ...candle.stock,
+            lowest: remapObjectKeys(candle.stock.lowest, translate),
+            highest: remapObjectKeys(candle.stock.highest, translate),
+          },
+        }
+      : {}),
+  };
+}
+
+function dedupeCandles(candles) {
+  return [...new Map(candles.map((candle) => [`${candle.pairId}|${candle.completedHour}`, candle])).values()];
+}
+
+/** Read both legacy Metadata-id rows and newly canonicalized PoE 1 rows. */
+export function gameAwareRepository(repo, game) {
+  if (!repo || game !== "poe1") return repo;
+  return {
+    ...repo,
+    async readCandleWindow() {
+      return dedupeCandles((await repo.readCandleWindow()).map(canonicalizePoe1Candle));
+    },
+    async readPairCandles(pairId) {
+      const legacyPair = pairId.split("|").map((id) => CORE_TO_METADATA[id] ?? id).join("|");
+      const variants = legacyPair === pairId ? [pairId] : [legacyPair, pairId];
+      const batches = await Promise.all(variants.map((variant) => repo.readPairCandles(variant)));
+      return dedupeCandles(batches.flat().map(canonicalizePoe1Candle))
+        .sort((a, b) => a.completedHour - b.completedHour);
+    },
+  };
+}
+
+/** Public read scopes. Ingestion streams decide whether a game is actually live. */
+export function gameConfigs(config) {
+  const streams = new Map((config.cxapiStreams ?? []).map((stream) => [stream.game, stream]));
+  const definition = (id, label, fallbackRealm, activeLeague, leagues) => ({
+    id,
+    label,
+    realm: streams.get(id)?.realm ?? fallbackRealm,
+    enabled: streams.has(id),
+    activeLeague,
+    leagues: [...new Set(leagues ?? [])],
+  });
+  return [
+    definition("poe2", "Path of Exile 2", "poe2", config.league, config.leagues),
+    definition("poe1", "Path of Exile", "poe1", config.poe1League, config.poe1Leagues),
+  ];
+}
+
+export function resolveGame(searchParams, config) {
+  const requested = searchParams.get("game") ?? config.poeGame ?? "poe2";
+  const game = gameConfigs(config).find((entry) => entry.id === requested && entry.enabled);
+  if (!game) {
+    return {
+      error: {
+        status: 400,
+        body: { error: { code: "invalid-game", message: "unsupported game" } },
+      },
+    };
+  }
+  return { game };
+}
 
 let contextPromise;
 function context() {
@@ -126,7 +209,7 @@ function resolveAnchor(searchParams, config) {
 /** Resolve a public read league without allowing arbitrary cache/query scopes. */
 export function resolveLeague(searchParams, config) {
   const requested = searchParams.get("league");
-  if (!requested) return { league: config.league };
+  if (!requested) return { league: config.activeLeague ?? config.league };
   if (!config.leagues.includes(requested)) {
     return {
       error: {
@@ -138,8 +221,8 @@ export function resolveLeague(searchParams, config) {
   return { league: requested };
 }
 
-function scopeFor(ctx, league, mode = ctx.config.providerMode) {
-  return { ...ctx.scope, league, mode };
+function scopeFor(ctx, game, league, mode = ctx.config.providerMode) {
+  return { game: game.id, realm: game.realm, league, mode };
 }
 
 const sourceMode = (config) => (config.providerMode === "live" ? "official" : "fixture");
@@ -158,20 +241,24 @@ export function tradableRows(rows) {
 export async function getRadar(searchParams) {
   const ctx = await context();
   const { config, catalogManifest, catalogById, names } = ctx;
-  const selected = resolveLeague(searchParams, config);
+  const selectedGame = resolveGame(searchParams, config);
+  if (selectedGame.error) return selectedGame.error;
+  const { game } = selectedGame;
+  const selected = resolveLeague(searchParams, game);
   if (selected.error) return selected.error;
-  const repo = await resolveRepo(ctx, scopeFor(ctx, selected.league));
+  const repo = gameAwareRepository(await resolveRepo(ctx, scopeFor(ctx, game, selected.league)), game.id);
   if (!repo) return NO_DB;
   const anchor = resolveAnchor(searchParams, config);
+  const isPoe2 = game.id === "poe2";
   const body = await withDbRetry(() =>
     buildRadarPayload({
       repo,
       anchor,
       anchors: config.anchors,
       shortlist: config.shortlist,
-      names,
-      catalogManifest,
-      catalogById,
+      names: isPoe2 ? names : CORE_NAMES,
+      catalogManifest: isPoe2 ? catalogManifest : [],
+      catalogById: isPoe2 ? catalogById : new Map(),
       source: { sourceMode: sourceMode(config), providerMode: config.providerMode },
       radarMaxHotTargets: config.radarMaxHotTargets,
       now: Date.now(),
@@ -181,6 +268,8 @@ export async function getRadar(searchParams) {
   // the bulk of the payload and no browser consumer renders them.
   body.rows = tradableRows(body.rows);
   body.league = selected.league;
+  body.game = game.id;
+  body.realm = game.realm;
   return { status: 200, body };
 }
 
@@ -196,39 +285,52 @@ export async function getHistory(searchParams) {
   if (!/^[\p{L}\p{N}\-/]{1,128}\|[\p{L}\p{N}\-/]{1,128}$/u.test(pair)) {
     return { status: 400, body: { error: { code: "invalid-pair", message: "invalid market pair" } } };
   }
-  const selected = resolveLeague(searchParams, config);
+  const selectedGame = resolveGame(searchParams, config);
+  if (selectedGame.error) return selectedGame.error;
+  const { game } = selectedGame;
+  const selected = resolveLeague(searchParams, game);
   if (selected.error) return selected.error;
-  const repo = await resolveRepo(ctx, scopeFor(ctx, selected.league));
+  const repo = gameAwareRepository(await resolveRepo(ctx, scopeFor(ctx, game, selected.league)), game.id);
   if (!repo) return NO_DB;
   const anchor = resolveAnchor(searchParams, config);
   const body = await withDbRetry(() => buildHistoryPayload({ repo, pair, anchor }));
   body.league = selected.league;
+  body.game = game.id;
   return { status: 200, body };
 }
 
 export async function getHotlist(searchParams = new URLSearchParams()) {
   const ctx = await context();
   const { config, names } = ctx;
-  const selected = resolveLeague(searchParams, config);
+  const selectedGame = resolveGame(searchParams, config);
+  if (selectedGame.error) return selectedGame.error;
+  const { game } = selectedGame;
+  const selected = resolveLeague(searchParams, game);
   if (selected.error) return selected.error;
-  const repo = await resolveRepo(ctx, scopeFor(ctx, selected.league));
+  const repo = gameAwareRepository(await resolveRepo(ctx, scopeFor(ctx, game, selected.league)), game.id);
   if (!repo) return NO_DB;
   const body = await withDbRetry(() =>
     buildHotlistPayload({
       repo,
       anchors: config.anchors,
       shortlist: config.shortlist,
-      names,
+      names: game.id === "poe2" ? names : CORE_NAMES,
       radarMaxHotTargets: config.radarMaxHotTargets,
       now: Date.now(),
     }),
   );
   body.league = selected.league;
+  body.game = game.id;
   return { status: 200, body };
 }
 
 export async function getConfig() {
   const { config } = await context();
+  const games = gameConfigs(config).map((game) => ({
+    ...game,
+    reason: game.enabled ? null : "Market stream is not configured",
+    leagues: game.leagues.map((league) => ({ id: league, label: league, enabled: true })),
+  }));
   return {
     status: 200,
     body: {
@@ -240,19 +342,7 @@ export async function getConfig() {
       shortlist: config.shortlist,
       providerMode: config.providerMode,
       ingestProviderMode: config.ingestProviderMode,
-      games: [
-        {
-          id: "poe2",
-          label: "Path of Exile 2",
-          realm: config.poeRealm,
-          enabled: true,
-          activeLeague: config.league,
-          // Both storage modes are league-scoped. Local fixtures are generated
-          // lazily per configured league; live mode reads the matching DB scope.
-          leagues: config.leagues.map((l) => ({ id: l, label: l, enabled: true })),
-        },
-        { id: "poe1", label: "Path of Exile", enabled: false, reason: "Coming later", leagues: [] },
-      ],
+      games,
       // Server-side opportunities (executable book) is deferred in the serverless
       // build; the radar surface is the product here.
       features: { radar: true, hourlyRadar: true, workingPrice: true, manualPrice: true, liveBooks: false },

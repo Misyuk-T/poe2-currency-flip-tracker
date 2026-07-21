@@ -111,9 +111,10 @@ export function loadConfig(env = process.env) {
     cxapiStartId: env.CXAPI_START_ID ? posInt(env.CXAPI_START_ID, 0, 1) : null,
     cxapiTimeoutMs: posInt(env.CXAPI_TIMEOUT_MS, 10_000, 1000),
     cxapiMaxBackfillHours: posInt(env.CXAPI_MAX_BACKFILL_HOURS, 48, 1),
-    // Keep each diagnostic/serverless run tiny. The cursor persists, so catch-up
-    // continues safely across invocations instead of risking the 60s hard limit.
-    cxapiDigestsPerRun: boundedInt(env.CXAPI_DIGESTS_PER_RUN, 1, 1, 4),
+    // A real all-public-league digest currently completes in about 4.5s. Process
+    // four per run by default so catch-up is useful while retaining a wide margin
+    // below the 60s pg_net ceiling. The cursor persists between invocations.
+    cxapiDigestsPerRun: boundedInt(env.CXAPI_DIGESTS_PER_RUN, 4, 1, 4),
     // Total wall-clock ceiling for one live-ingest invocation, shared across all
     // streams. The ingester reserves the next unit's worst case internally and
     // stops well before this, so a run always returns under the 60s function/

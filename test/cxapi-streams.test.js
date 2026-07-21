@@ -17,8 +17,8 @@ test("config: ingest mode follows read mode by default but can be decoupled", ()
   assert.equal(preseed.ingestProviderMode, "live");
 });
 
-test("config: live digest cap defaults to one and is bounded at four", () => {
-  assert.equal(loadConfig({}).cxapiDigestsPerRun, 1);
+test("config: live digest cap defaults to and is bounded at four", () => {
+  assert.equal(loadConfig({}).cxapiDigestsPerRun, 4);
   assert.equal(loadConfig({ CXAPI_DIGESTS_PER_RUN: "3" }).cxapiDigestsPerRun, 3);
   assert.equal(loadConfig({ CXAPI_DIGESTS_PER_RUN: "99" }).cxapiDigestsPerRun, 4);
 });

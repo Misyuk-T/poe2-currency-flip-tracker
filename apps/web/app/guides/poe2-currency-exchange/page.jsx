@@ -19,7 +19,7 @@ const faqs = [
   },
   {
     q: "Are the prices on this site the price I will pay?",
-    a: "No. They are official completed-hour ranges (currently labelled sample data), useful as context. Always confirm the live price in game before trading — thin markets in particular can move between the last completed hour and now.",
+    a: "No. They are completed-hour ranges, with the active source labelled in the market radar. Use them as context and always confirm the live price in game before trading — thin markets can move between the last completed hour and now.",
   },
 ];
 

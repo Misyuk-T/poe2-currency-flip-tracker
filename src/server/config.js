@@ -9,6 +9,7 @@
  * @property {string} poeGame
  * @property {string} poeRealm
  * @property {string} league
+ * @property {string[]} leagues
  * @property {string} anchorCurrency
  * @property {string[]} shortlist
  * @property {number} pollIntervalMs
@@ -27,8 +28,8 @@ export function loadConfig(env = process.env) {
   // fixture data; the read cutover happens only after live freshness is verified.
   const ingestProviderMode =
     (env.INGEST_PROVIDER_MODE ?? providerMode).toLowerCase() === "live" ? "live" : "fixture";
-  // Configured PoE2 leagues. The active LEAGUE is always included and is the
-  // only one currently polled; others are advertised but not yet pollable.
+  // Public PoE2 leagues exposed by the read API/UI. The active LEAGUE is always
+  // included; live ingest stores every public league carried by the CDN digest.
   const league = env.LEAGUE ?? "Runes of Aldur";
   const leagues = list(env.LEAGUES, [league]);
   if (!leagues.includes(league)) leagues.unshift(league);

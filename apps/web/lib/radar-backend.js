@@ -30,12 +30,15 @@ function context() {
   if (!contextPromise) {
     contextPromise = (async () => {
       const config = loadConfig();
-      // DEMO PLACEHOLDER (pre-live): a uniform flat gold cost for every currency
-      // so the radar/catalog surface is complete (nothing "unrankable") before we
-      // obtain real per-currency gold data. Flat value is honest-by-uniformity and
-      // labelled a placeholder. Set GOLD_PLACEHOLDER_PER_UNIT=0 (or "off") to fall
-      // back to the canonical verified POE2_GOLD_COSTS table.
-      const placeholderRaw = process.env.GOLD_PLACEHOLDER_PER_UNIT ?? "600";
+      // DEMO PLACEHOLDER: fixture mode can use a uniform flat gold cost so the
+      // full synthetic catalog renders. Live mode defaults to the canonical,
+      // verified POE2_GOLD_COSTS table and leaves unknowns unrankable.
+      // Synthetic fixtures may use a uniform demo cost so every catalog row can
+      // render. Official/live reads must never rank markets with invented gold:
+      // fall back to the verified POE2_GOLD_COSTS registry unless explicitly
+      // overridden for a controlled demo.
+      const placeholderRaw =
+        process.env.GOLD_PLACEHOLDER_PER_UNIT ?? (config.providerMode === "fixture" ? "600" : "off");
       const placeholderPerUnit = Number(placeholderRaw);
       const usePlaceholder =
         placeholderRaw !== "off" && Number.isFinite(placeholderPerUnit) && placeholderPerUnit > 0;
@@ -83,37 +86,60 @@ function repository(scope, { trace = noop } = {}) {
 const fixtureFallbackEnabled = () =>
   process.env.NODE_ENV === "development" || process.env.RADAR_FIXTURE_FALLBACK === "1";
 
-let fixtureRepoPromise;
-function fixtureRepository(ctx) {
-  if (!fixtureRepoPromise) {
-    fixtureRepoPromise = (async () => {
-      const repo = createMemoryRepository(ctx.scope);
-      // Seed the whole catalog (not just featured markets) so the offline radar
-      // mirrors the old backend's "all currencies" mock set.
-      await ingestFixtures({
-        repo,
-        league: ctx.config.league,
-        anchors: ctx.config.anchors,
-        items: ctx.catalogManifest,
-        now: Date.now(),
-      });
-      return repo;
-    })();
+const fixtureRepoPromises = new Map();
+function fixtureRepository(ctx, scope = ctx.scope) {
+  const key = `${scope.game}|${scope.realm}|${scope.league}|${scope.mode}`;
+  if (!fixtureRepoPromises.has(key)) {
+    fixtureRepoPromises.set(
+      key,
+      (async () => {
+        const repo = createMemoryRepository(scope);
+        // Seed the whole catalog (not just featured markets) so the offline radar
+        // mirrors the old backend's "all currencies" mock set.
+        await ingestFixtures({
+          repo,
+          league: scope.league,
+          anchors: ctx.config.anchors,
+          items: ctx.catalogManifest,
+          now: Date.now(),
+        });
+        return repo;
+      })(),
+    );
   }
-  return fixtureRepoPromise;
+  return fixtureRepoPromises.get(key);
 }
 
 /** Postgres repo when DATABASE_URL is set; else the offline fixture repo (dev). */
-async function resolveRepo(ctx) {
-  const dbRepo = repository(ctx.scope);
+async function resolveRepo(ctx, scope = ctx.scope) {
+  const dbRepo = repository(scope);
   if (dbRepo) return dbRepo;
-  if (ctx.config.providerMode === "fixture" && fixtureFallbackEnabled()) return fixtureRepository(ctx);
+  if (ctx.config.providerMode === "fixture" && fixtureFallbackEnabled()) return fixtureRepository(ctx, scope);
   return null;
 }
 
 function resolveAnchor(searchParams, config) {
   const requested = searchParams.get("anchor");
   return config.anchors.includes(requested) ? requested : config.anchorCurrency;
+}
+
+/** Resolve a public read league without allowing arbitrary cache/query scopes. */
+export function resolveLeague(searchParams, config) {
+  const requested = searchParams.get("league");
+  if (!requested) return { league: config.league };
+  if (!config.leagues.includes(requested)) {
+    return {
+      error: {
+        status: 400,
+        body: { error: { code: "invalid-league", message: "unsupported league" } },
+      },
+    };
+  }
+  return { league: requested };
+}
+
+function scopeFor(ctx, league, mode = ctx.config.providerMode) {
+  return { ...ctx.scope, league, mode };
 }
 
 const sourceMode = (config) => (config.providerMode === "live" ? "official" : "fixture");
@@ -132,7 +158,9 @@ export function tradableRows(rows) {
 export async function getRadar(searchParams) {
   const ctx = await context();
   const { config, catalogManifest, catalogById, names } = ctx;
-  const repo = await resolveRepo(ctx);
+  const selected = resolveLeague(searchParams, config);
+  if (selected.error) return selected.error;
+  const repo = await resolveRepo(ctx, scopeFor(ctx, selected.league));
   if (!repo) return NO_DB;
   const anchor = resolveAnchor(searchParams, config);
   const body = await withDbRetry(() =>
@@ -152,6 +180,7 @@ export async function getRadar(searchParams) {
   // Send only tradable rows over the wire; the no-trade catalog placeholders are
   // the bulk of the payload and no browser consumer renders them.
   body.rows = tradableRows(body.rows);
+  body.league = selected.league;
   return { status: 200, body };
 }
 
@@ -167,17 +196,22 @@ export async function getHistory(searchParams) {
   if (!/^[\p{L}\p{N}\-/]{1,128}\|[\p{L}\p{N}\-/]{1,128}$/u.test(pair)) {
     return { status: 400, body: { error: { code: "invalid-pair", message: "invalid market pair" } } };
   }
-  const repo = await resolveRepo(ctx);
+  const selected = resolveLeague(searchParams, config);
+  if (selected.error) return selected.error;
+  const repo = await resolveRepo(ctx, scopeFor(ctx, selected.league));
   if (!repo) return NO_DB;
   const anchor = resolveAnchor(searchParams, config);
   const body = await withDbRetry(() => buildHistoryPayload({ repo, pair, anchor }));
+  body.league = selected.league;
   return { status: 200, body };
 }
 
-export async function getHotlist() {
+export async function getHotlist(searchParams = new URLSearchParams()) {
   const ctx = await context();
   const { config, names } = ctx;
-  const repo = await resolveRepo(ctx);
+  const selected = resolveLeague(searchParams, config);
+  if (selected.error) return selected.error;
+  const repo = await resolveRepo(ctx, scopeFor(ctx, selected.league));
   if (!repo) return NO_DB;
   const body = await withDbRetry(() =>
     buildHotlistPayload({
@@ -189,6 +223,7 @@ export async function getHotlist() {
       now: Date.now(),
     }),
   );
+  body.league = selected.league;
   return { status: 200, body };
 }
 
@@ -212,7 +247,9 @@ export async function getConfig() {
           realm: config.poeRealm,
           enabled: true,
           activeLeague: config.league,
-          leagues: config.leagues.map((l) => ({ id: l, label: l, enabled: l === config.league })),
+          // Both storage modes are league-scoped. Local fixtures are generated
+          // lazily per configured league; live mode reads the matching DB scope.
+          leagues: config.leagues.map((l) => ({ id: l, label: l, enabled: true })),
         },
         { id: "poe1", label: "Path of Exile", enabled: false, reason: "Coming later", leagues: [] },
       ],

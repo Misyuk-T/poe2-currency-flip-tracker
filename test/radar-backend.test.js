@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 // cleanly (never throw, never fabricate). Unset before importing the module.
 delete process.env.DATABASE_URL;
 
-const { getConfig, getStatus, getRadar, getHistory, tradableRows } = await import("../apps/web/lib/radar-backend.js");
+const { getConfig, getStatus, getRadar, getHistory, resolveLeague, tradableRows } = await import("../apps/web/lib/radar-backend.js");
 
 test("tradableRows drops no-trade catalog placeholders but keeps real markets", () => {
   const rows = [
@@ -28,6 +28,16 @@ test("getConfig returns public config with server-side opportunities disabled", 
   assert.equal(body.features.radar, true);
   assert.equal(body.games.find((g) => g.id === "poe2")?.enabled, true);
   assert.equal(body.games.find((g) => g.id === "poe1")?.enabled, false);
+  assert.deepEqual(body.games.find((g) => g.id === "poe2")?.leagues.map((l) => l.id), ["Runes of Aldur"]);
+});
+
+test("resolveLeague accepts configured leagues and rejects arbitrary scopes", () => {
+  const config = { league: "Runes of Aldur", leagues: ["Runes of Aldur", "HC Runes of Aldur", "Standard"] };
+  assert.deepEqual(resolveLeague(new URLSearchParams(), config), { league: "Runes of Aldur" });
+  assert.deepEqual(resolveLeague(new URLSearchParams("league=Standard"), config), { league: "Standard" });
+  const rejected = resolveLeague(new URLSearchParams("league=Private%20(PL123)"), config);
+  assert.equal(rejected.error.status, 400);
+  assert.equal(rejected.error.body.error.code, "invalid-league");
 });
 
 test("data routes degrade to 503 when DATABASE_URL is absent", async () => {

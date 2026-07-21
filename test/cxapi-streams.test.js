@@ -131,6 +131,42 @@ test("ingestLiveStreams reuses the stream state instead of reading the cursor tw
   assert.equal(fetches, 1, "one digest per invocation while runtime timing is being proven");
 });
 
+test("ingestLiveStreams stores every public league for the selector", async () => {
+  const config = {
+    league: "Runes of Aldur",
+    cxapiSource: "cdn",
+    cxapiStartId: null,
+    cxapiMaxBackfillHours: 48,
+    cxapiDigestsPerRun: 1,
+    cxapiStreams: [{ game: "poe2", realm: "poe2" }],
+  };
+  let saved = [];
+  const makeRepo = () => ({
+    async readCxapiState() { return { cursor: 1000, lastDigestId: null }; },
+    async recordCxDigest(digest) { saved = digest.candles; return saved.length; },
+  });
+  const market = (league) => ({
+    league,
+    market_id: "a|b",
+    lowest_ratio: { a: 1, b: 2 },
+    highest_ratio: { a: 1, b: 3 },
+  });
+  const makeProvider = () => ({
+    configured: true,
+    async fetchDigest({ id }) {
+      return {
+        digestId: id,
+        payload: {
+          next_change_id: id + 3600,
+          markets: [market("Runes of Aldur"), market("HC Runes of Aldur"), market("Standard"), market("Private (PL123)")],
+        },
+      };
+    },
+  });
+  await ingestLiveStreams({ streams: config.cxapiStreams, config, now: 1_784_600_000_000, makeRepo, makeProvider });
+  assert.deepEqual([...new Set(saved.map((c) => c.league))].sort(), ["HC Runes of Aldur", "Runes of Aldur", "Standard"]);
+});
+
 test("ingestLiveStreams: a null repo (no DB) skips that stream, not the run", async () => {
   const config = { league: "L", cxapiSource: "cdn", cxapiStartId: null, cxapiMaxBackfillHours: 48,
     cxapiStreams: [{ game: "poe1", realm: "poe1" }, { game: "poe2", realm: "poe2" }] };

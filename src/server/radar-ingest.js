@@ -222,11 +222,10 @@ export async function ingestLiveStreams({ streams, config, now, makeRepo, makePr
     const catchingUp = cursor != null || startId != null;
     const summary = await ingestLive({
       repo,
-      // Ingest ONLY the read scope's league for now — reads are single-league, so
-      // all-public (`league: null`) just wrote ~2000 rows/digest that nothing reads
-      // and stressed the write path. Restore all-public once the write is proven
-      // + a league selector surfaces it.
-      league: config.league,
+      // One CDN digest carries every league. Keep every public league now that
+      // the product exposes a league selector; private (PLxxxxx) leagues are
+      // rejected by normalizeCxDigest.
+      league: null,
       provider,
       startId,
       // Small per-invocation cap while write timings are being proven in prod (the

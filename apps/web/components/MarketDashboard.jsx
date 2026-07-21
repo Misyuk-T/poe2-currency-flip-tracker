@@ -17,7 +17,7 @@ import {
   titleize,
 } from "../lib/market.js";
 
-const MANUAL_PRICE_KEY = "poe2flip.next.manualPrices.v1";
+const MANUAL_PRICE_KEY = "poe2flip.next.manualPrices.v2";
 const CATEGORY_ICON_IDS = {
   "Abyssal Bones": "gnawed-jawbone",
   Breach: "breach-splinter",
@@ -304,22 +304,28 @@ function categoriesFrom(rows) {
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 
-function loadManualPrices() {
+function manualPriceKey(league) {
+  return `${MANUAL_PRICE_KEY}:${league ?? "default"}`;
+}
+
+function loadManualPrices(league) {
   if (typeof window === "undefined") return {};
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(MANUAL_PRICE_KEY) ?? "{}");
+    const parsed = JSON.parse(window.localStorage.getItem(manualPriceKey(league)) ?? "{}");
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
   }
 }
 
-function saveManualPrices(prices) {
+function saveManualPrices(league, prices) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(MANUAL_PRICE_KEY, JSON.stringify(prices));
+  window.localStorage.setItem(manualPriceKey(league), JSON.stringify(prices));
 }
 
 export default function MarketDashboard() {
+  const [marketConfig, setMarketConfig] = useState(null);
+  const [league, setLeague] = useState(null);
   const [radar, setRadar] = useState(null);
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -337,13 +343,42 @@ export default function MarketDashboard() {
   const [draftUnit, setDraftUnit] = useState("exalted");
 
   useEffect(() => {
-    setManualPrices(loadManualPrices());
-  }, []);
+    let cancelled = false;
+    fetchJsonWithRetry(`${apiBaseUrl}/api/config`, { cache: "no-store" })
+      .then((data) => {
+        if (cancelled) return;
+        const game = data.games?.find((entry) => entry.id === "poe2");
+        const leagues = (game?.leagues ?? []).filter((entry) => entry.enabled);
+        const requested =
+          typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("league") : null;
+        const initial = leagues.some((entry) => entry.id === requested)
+          ? requested
+          : game?.activeLeague ?? data.league ?? leagues[0]?.id;
+        if (!initial) throw new Error("No league is configured");
+        setMarketConfig(data);
+        setLeague(initial);
+      })
+      .catch((error) => {
+        if (!cancelled) setStatus(error.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
 
   useEffect(() => {
+    if (!league) return;
+    setManualPrices(loadManualPrices(league));
+  }, [league]);
+
+  useEffect(() => {
+    if (!league) return undefined;
     let cancelled = false;
     setStatus("loading");
-    fetchJsonWithRetry(`${apiBaseUrl}/api/radar?anchor=exalted`, { cache: "no-store" })
+    setRadar(null);
+    setSelectedPair(null);
+    const params = new URLSearchParams({ anchor: "exalted", league });
+    fetchJsonWithRetry(`${apiBaseUrl}/api/radar?${params}`, { cache: "no-store" })
       .then((data) => {
         if (cancelled) return;
         setRadar(data);
@@ -364,16 +399,17 @@ export default function MarketDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [league, reloadKey]);
 
   useEffect(() => {
-    if (!selectedPair) return;
+    if (!selectedPair || !league) return;
     let cancelled = false;
     // Clear immediately so a market switch never renders the previous market's
     // chart/guidance under the new title while the new history is in flight.
     setHistory([]);
     setHistoryLoading(true);
-    fetch(`${apiBaseUrl}/api/radar/history?pair=${encodeURIComponent(selectedPair)}&anchor=exalted`, { cache: "no-store" })
+    const params = new URLSearchParams({ pair: selectedPair, anchor: "exalted", league });
+    fetch(`${apiBaseUrl}/api/radar/history?${params}`, { cache: "no-store" })
       .then((res) => {
         if (!res.ok) throw new Error(`History failed: ${res.status}`);
         return res.json();
@@ -390,7 +426,7 @@ export default function MarketDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [selectedPair]);
+  }, [selectedPair, league]);
 
   // Plan modal: Escape closes it and background scroll is locked while it is open.
   useEffect(() => {
@@ -482,6 +518,20 @@ export default function MarketDashboard() {
     });
   }
 
+  function selectLeague(nextLeague) {
+    if (!nextLeague || nextLeague === league) return;
+    setSelectedPair(null);
+    setLeague(nextLeague);
+    setCategory("all");
+    setView("list");
+    setHistory([]);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("league", nextLeague);
+      window.history.replaceState({}, "", url);
+    }
+  }
+
   const selectedManual = selected?.pairId ? manualPrices[selected.pairId] : null;
   const currentWorkingPrice = selected
     ? workingPrice(selected, selectedManual, {
@@ -538,7 +588,7 @@ export default function MarketDashboard() {
       delete next[selected.pairId];
     }
     setManualPrices(next);
-    saveManualPrices(next);
+    saveManualPrices(league, next);
   }
 
   function clearManualPrice() {
@@ -546,9 +596,14 @@ export default function MarketDashboard() {
     const next = { ...manualPrices };
     delete next[selected.pairId];
     setManualPrices(next);
-    saveManualPrices(next);
+    saveManualPrices(league, next);
   }
 
+  const leagueOptions =
+    marketConfig?.games
+      ?.find((game) => game.id === "poe2")
+      ?.leagues?.filter((entry) => entry.enabled)
+      .map((entry) => ({ value: entry.id, label: entry.label })) ?? [];
   const sourceMode = radar?.source?.sourceMode;
   // On ready we show no subtitle — the header stays clean. Loading/error states
   // still surface a short status line. (Placeholder-gold honesty lives on the
@@ -600,11 +655,24 @@ export default function MarketDashboard() {
         <div className="radar-main">
           <header className="radar-head">
             <div>
-              <p className="eyebrow">Hourly market digest · unofficial</p>
+              <div className="radar-title-meta">
+                <p className="eyebrow">{league ? `${league} · ` : ""}hourly market digest · unofficial</p>
+                {sourceMode && (
+                  <span className={`data-source-badge ${sourceMode}`}>
+                    {sourceMode === "official" ? "Official GGG data" : "Sample fixture data"}
+                  </span>
+                )}
+              </div>
               <h2>What is moving today</h2>
               {summaryText && <p className="radar-sub">{summaryText}</p>}
             </div>
             <div className="radar-head-actions">
+              {league && leagueOptions.length > 1 && (
+                <div className="league-control">
+                  <span>League</span>
+                  <CustomSelect id="league" value={league} options={leagueOptions} onChange={selectLeague} />
+                </div>
+              )}
               <div className="currency-toggle" role="group" aria-label="Display currency">
                 <button
                   type="button"

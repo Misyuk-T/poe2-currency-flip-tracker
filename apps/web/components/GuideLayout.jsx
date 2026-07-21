@@ -27,8 +27,8 @@ export default function GuideLayout({ slug, children }) {
           </div>
         ) : null}
         <p className="guide-rail-note">
-          Prices across the site are official completed-hour ranges, clearly labelled as sample data until the live
-          feed is on — context to plan around, not executable quotes.
+          Prices across the site are completed-hour ranges, with the active source labelled in the radar — context to
+          plan around, not live executable quotes.
         </p>
       </aside>
     </div>

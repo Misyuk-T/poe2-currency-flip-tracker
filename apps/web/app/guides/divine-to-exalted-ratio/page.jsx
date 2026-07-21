@@ -19,7 +19,7 @@ const faqs = [
   },
   {
     q: "Is the ratio shown on this site a live price?",
-    a: "No. The figures here are official completed-hour ranges, currently shown as clearly-labelled sample data until the live feed is enabled. Treat them as context and confirm the executable price in game.",
+    a: "No. The figures are completed-hour ranges — context, not live executable quotes. The market radar labels whether the active source is official GGG data or sample fixture data; always confirm the price in game.",
   },
 ];
 
@@ -81,8 +81,8 @@ export default function DivineToExaltedRatioGuide() {
         <p>
           The <a href="/poe2/currencies/divine">Divine Orb page</a> shows the latest completed-hour Divine price measured
           in Exalted — a labelled midpoint of the official low/high range, not a live quote — plus the 24h move. The{" "}
-          <a href="/poe2">market radar</a> shows whether the market is actually moving. Everything is currently
-          sample data, clearly labelled, until the live feed is enabled.
+          <a href="/poe2">market radar</a> shows whether the market is actually moving and labels the active data
+          source directly in its header.
         </p>
 
         <h2>Using it before a trade</h2>

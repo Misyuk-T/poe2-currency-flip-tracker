@@ -94,7 +94,9 @@ Node server, its experimental live-book opportunity engine, and the old static
 |---|---|
 | `DATABASE_URL` | Supabase Transaction pooler string (`:6543`) |
 | `STORAGE` | `supabase` |
-| `PROVIDER_MODE` | `fixture` (until a `service:cxapi` OAuth token exists) |
+| `PROVIDER_MODE` | read source: `fixture` until verified live rows are fresh |
+| `INGEST_PROVIDER_MODE` | write source: set `live` first to preseed without changing public reads |
+| `CXAPI_DIGESTS_PER_RUN` | `1` while serverless timings are being proven |
 | `CRON_SECRET` | long random string; also stored in Supabase Vault as `radar_cron_secret` |
 
 `NEXT_PUBLIC_API_BASE_URL` stays unset in both production and local dev — the app
@@ -337,11 +339,12 @@ table to make it rankable.
 
 ## Live data (official cxapi feed)
 
-The live radar feed comes from GGG's official OAuth-gated `service:cxapi`
-currency-exchange API, isolated in `src/providers/ggg-cxapi-provider.js` and
-driven by the env-gated `POST /api/cron/radar` ingest route. It returns hourly
-digests and omits the incomplete current hour — good for history and candidate
-generation, **not** for five-minute execution quotes.
+The live radar feed comes from GGG's public Currency Exchange CDN, isolated in
+`src/providers/ggg-cdn-cxapi-provider.js` and driven by the env-gated
+`POST /api/cron/radar` ingest route. It returns hourly digests and marks the
+incomplete current hour with a non-advancing cursor — good for history and
+candidate generation, **not** for five-minute execution quotes. The legacy
+OAuth provider remains available behind `CXAPI_SOURCE=oauth`.
 
 > The earlier **experimental** path that called the website-internal, undocumented
 > `trade2/exchange` endpoint (`ggg-exchange-provider.js`, run via the standalone

@@ -21,7 +21,7 @@ export function buildCxapiFixtures({
     { id: "vaal|exalted", base: "vaal", quote: "exalted", price: 3.6522613, drift: -0.009, volume: 900 },
   ];
   const pairs = items.length ? catalogPairs(items, anchors, featured) : featured;
-  const hours = Math.max(30, Math.round(historyHours) || DEFAULT_HISTORY_HOURS);
+  const hours = Math.max(1, Math.round(historyHours) || DEFAULT_HISTORY_HOURS);
   return Array.from({ length: hours }, (_, i) => {
     const hour = endHour - (hours - 1 - i) * 3600;
     // Key the motion on the ABSOLUTE completed-hour index, not the rolling window

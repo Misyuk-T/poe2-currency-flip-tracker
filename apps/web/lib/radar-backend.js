@@ -15,9 +15,9 @@ import { createGoldRegistry, createFlatGoldRegistry } from "../../../src/domain/
 import { POE2_GOLD_COSTS } from "../../../src/data/gold-costs-poe2.js";
 import { createRadarRepository } from "../../../src/storage/radar-repository.js";
 import { buildRadarPayload, buildHistoryPayload, buildHotlistPayload } from "../../../src/server/radar-core.js";
-import { ingestFixtures, ingestLiveStreams } from "../../../src/server/radar-ingest.js";
+import { ingestFixtures, ingestFixtureIncrement, ingestLiveStreams } from "../../../src/server/radar-ingest.js";
 import { createCxapiProvider } from "../../../src/providers/create-cxapi-provider.js";
-import { getSql, withDbRetry } from "./db.js";
+import { getSql, resetSql, withDbRetry } from "./db.js";
 import { createMemoryRepository } from "./memory-repo.js";
 
 const NO_DB = {
@@ -58,9 +58,21 @@ function context() {
   return contextPromise;
 }
 
-function repository(scope) {
+const noop = () => {};
+
+function repository(scope, { trace = noop } = {}) {
   const sql = getSql();
-  return sql ? createRadarRepository({ sql, scope }) : null;
+  return sql
+    ? createRadarRepository({
+        sql,
+        scope,
+        onPhase: trace,
+        onTimeout: ({ label, ms }) => {
+          trace("db.client.reset", { label, timeoutMs: ms });
+          return resetSql({ timeout: 0 });
+        },
+      })
+    : null;
 }
 
 // Offline fixture fallback: when there's no database AND we're in fixture mode,
@@ -192,6 +204,7 @@ export async function getConfig() {
       anchors: config.anchors,
       shortlist: config.shortlist,
       providerMode: config.providerMode,
+      ingestProviderMode: config.ingestProviderMode,
       games: [
         {
           id: "poe2",
@@ -227,13 +240,20 @@ export function isCronAuthorized(authHeader) {
 export const cronConfigured = () => Boolean(process.env.CRON_SECRET);
 
 /** Ingest the latest hourly market data (fixture synth or live cxapi catch-up). */
-export async function runRadarIngest({ now = Date.now() } = {}) {
+export async function runRadarIngest({ now = Date.now(), trace = noop } = {}) {
+  trace("context.start");
   const { config, scope, catalogManifest } = await context();
-  const repo = repository(scope);
+  trace("context.end", {
+    readMode: config.providerMode,
+    ingestMode: config.ingestProviderMode,
+    catalogItems: catalogManifest.length,
+  });
+  const ingestScope = { ...scope, mode: config.ingestProviderMode };
+  const repo = repository(ingestScope, { trace });
   if (!repo) return NO_DB;
-  if (config.providerMode === "live") {
-    // One CDN stream per (game, realm) — PoE1 + PoE2 — each carrying every public
-    // league with its own per-(game,realm) cursor. Streams run serially under a
+  if (config.ingestProviderMode === "live") {
+    // One CDN stream per configured (game, realm), carrying the active league and
+    // its own per-(game,realm) cursor. Streams run serially under a
     // shared wall-clock budget (cxapiIngestBudgetMs) so one invocation always
     // returns under the 60s function/pg_net limit; cursors persist, so catch-up
     // spills into the next cron run.
@@ -241,21 +261,22 @@ export async function runRadarIngest({ now = Date.now() } = {}) {
       streams: config.cxapiStreams,
       config,
       now,
-      makeRepo: repository,
+      makeRepo: (streamScope) => repository(streamScope, { trace }),
       makeProvider: createCxapiProvider,
       budgetMs: config.cxapiIngestBudgetMs,
+      trace,
     });
     return { status: 200, body: { mode: "live", streams } };
   }
-  // Seed the whole catalog (not just featured markets) so the deployed radar
-  // mirrors the offline/local fixture's "all currencies" set. Idempotent, so the
-  // first run backfills every pair and later hourly runs just add the new hour.
-  const summary = await ingestFixtures({
+  // Production cron is incremental. The offline in-memory fallback above still
+  // seeds full history once, but a deployed invocation writes only one digest.
+  const summary = await ingestFixtureIncrement({
     repo,
     league: config.league,
     anchors: config.anchors,
     items: catalogManifest,
     now,
+    trace,
   });
   return { status: 200, body: summary };
 }
@@ -264,7 +285,12 @@ export async function getStatus() {
   const ctx = await context();
   const { config } = ctx;
   const repo = await resolveRepo(ctx);
-  const base = { providerMode: config.providerMode, league: config.league, sourceMode: sourceMode(config) };
+  const base = {
+    providerMode: config.providerMode,
+    ingestProviderMode: config.ingestProviderMode,
+    league: config.league,
+    sourceMode: sourceMode(config),
+  };
   if (!repo) return { status: 200, body: { ...base, radar: { configured: false, reason: "no-database" } } };
   const [state, candles] = await withDbRetry(() =>
     Promise.all([repo.readCxapiState(), repo.readCandleWindow()]),

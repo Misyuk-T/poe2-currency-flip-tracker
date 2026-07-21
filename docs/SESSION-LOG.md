@@ -2,6 +2,24 @@
 
 Newest first. One block per working session: what changed + commit refs.
 
+## 2026-07-21 — Ingest timeout diagnosis and safe preseed path
+
+Live evidence corrected the prior diagnosis: pg_net request 635 timed out in
+fixture mode exactly like live requests 632/634, Vercel showed 11 historical
+`/api/cron/radar` 60s timeouts, and fixture data was ~73h stale. Therefore CDN
+blocking is not the supported explanation; the shared DB transaction path needs
+phase-level runtime evidence.
+
+Prepared `codex/ingest-diagnostics`: structured run-id/elapsed logs across route,
+cursor, provider headers/body, normalization, transaction acquisition, timeout
+setup, insert batches and cursor upsert; timeout destroys the cached postgres.js
+client; duplicate live cursor read removed. `INGEST_PROVIDER_MODE` now decouples
+preseed writes from `PROVIDER_MODE` reads. Live defaults to PoE2 and one digest
+per run. Fixture cron writes only the latest completed hour instead of rebuilding
+168 x the catalog, while local offline fallback retains full history. 126 tests
+and the Next.js production build pass. Production behavior remains unchanged
+until the branch is deployed and environment modes are deliberately configured.
+
 ## 2026-07-21 — CX go-live Phase 1: public CDN provider (behind a gate)
 
 **Unblocked.** GGG replied — CX history is public via CDN, no OAuth needed

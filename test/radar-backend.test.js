@@ -41,6 +41,7 @@ test("getStatus reports radar unconfigured without a database", async () => {
   assert.equal(status, 200);
   assert.equal(body.radar.configured, false);
   assert.equal(body.providerMode, "fixture");
+  assert.equal(body.ingestProviderMode, "fixture");
 });
 
 test("getHistory validates the pair id before infrastructure (400 even with no DB)", async () => {

@@ -82,3 +82,24 @@ test("cdn provider: wraps network failures", async () => {
   });
   await assert.rejects(() => p.fetchDigest({ id: 1 }), (e) => e.code === "network");
 });
+
+test("cdn provider traces request headers and body boundaries without credentials", async () => {
+  const phases = [];
+  const p = createGggCdnCxapiProvider({
+    ...base,
+    cxapiTrace: (phase, details) => phases.push({ phase, details }),
+    _cxFetch: async () => ({
+      ok: true,
+      status: 200,
+      async json() { return { next_change_id: 4600, markets: [] }; },
+    }),
+  });
+  await p.fetchDigest({ id: 1000 });
+  assert.deepEqual(phases.map((x) => x.phase), [
+    "provider.fetch.request.start",
+    "provider.fetch.headers.end",
+    "provider.fetch.body.start",
+    "provider.fetch.body.end",
+  ]);
+  assert.ok(phases.every((x) => !JSON.stringify(x).includes("Authorization")));
+});

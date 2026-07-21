@@ -29,6 +29,8 @@ export function translatorForGame(game) {
 }
 
 const HOUR = 3600_000;
+const HOUR_SECONDS = 3600;
+const noop = () => {};
 
 /**
  * Synthesize and persist the offline fixture history. Defaults to the featured
@@ -36,17 +38,69 @@ const HOUR = 3600_000;
  * than the whole catalog.
  * @param {{ repo: any, league: string, anchors: string[], items?: any[], now?: number }} input
  */
-export async function ingestFixtures({ repo, league, anchors, items = [], now = Date.now() }) {
-  const endHour = Math.floor(now / HOUR) * 3600 - 3600; // last completed hour, in unix seconds
+export async function ingestFixtures({ repo, league, anchors, items = [], now = Date.now(), endHour = null, historyHours = null, trace = noop }) {
+  const resolvedEndHour = endHour ?? Math.floor(now / HOUR) * HOUR_SECONDS - HOUR_SECONDS;
   let inserted = 0;
   let digests = 0;
-  for (const d of buildCxapiFixtures({ league, endHour, items, anchors })) {
+  for (const d of buildCxapiFixtures({ league, endHour: resolvedEndHour, items, anchors, ...(historyHours == null ? {} : { historyHours }) })) {
+    trace("fixture.normalize.start", { digestId: d.digestId });
     const normalized = normalizeCxDigest(d.payload, { digestId: d.digestId, league });
     normalized.candles = normalized.candles.map((c) => ({ ...c, source: "fixture-cxapi", synthetic: true }));
-    inserted += await repo.recordCxDigest(normalized);
+    trace("fixture.normalize.end", { digestId: d.digestId, candles: normalized.candles.length });
+    trace("fixture.write.start", { digestId: d.digestId, candles: normalized.candles.length });
+    const count = await repo.recordCxDigest(normalized);
+    trace("fixture.write.end", { digestId: d.digestId, inserted: count });
+    inserted += count;
     digests += 1;
   }
   return { mode: "fixture", configured: true, digests, inserted };
+}
+
+/**
+ * Persist only the newest fixture digest. Production cron used to rebuild all
+ * 168 x catalog pairs every hour and never reached the newest digest before the
+ * 60s kill. Fixture data is synthetic, so gaps need no backfill: append the latest
+ * completed hour and become fresh in one bounded invocation.
+ */
+export async function ingestFixtureIncrement({
+  repo,
+  league,
+  anchors,
+  items = [],
+  now = Date.now(),
+  trace = noop,
+}) {
+  trace("fixture.state.read.start");
+  const state = await repo.readCxapiState();
+  trace("fixture.state.read.end", { cursor: state.cursor ?? null, lastDigestId: state.lastDigestId ?? null });
+  const latestCompletedHour = Math.floor(now / HOUR) * HOUR_SECONDS - HOUR_SECONDS;
+  if (state.lastDigestId != null && state.lastDigestId >= latestCompletedHour) {
+    return {
+      mode: "fixture",
+      configured: true,
+      digests: 0,
+      inserted: 0,
+      cursorStart: state.cursor ?? null,
+      latestCompletedHour,
+      remainingDigests: 0,
+    };
+  }
+  const summary = await ingestFixtures({
+    repo,
+    league,
+    anchors,
+    items,
+    now,
+    endHour: latestCompletedHour,
+    historyHours: 1,
+    trace,
+  });
+  return {
+    ...summary,
+    cursorStart: state.cursor ?? null,
+    latestCompletedHour,
+    remainingDigests: 0,
+  };
 }
 
 /**
@@ -54,10 +108,12 @@ export async function ingestFixtures({ repo, league, anchors, items = [], now = 
  * latest completed digest (never requests into the future).
  * @param {{ repo: any, provider: any, league: string, startId?: number|null, maxDigests?: number }} input
  */
-export async function ingestLive({ repo, provider, league = null, leagues = null, startId = null, maxDigests = 1, translate = (id) => id, deadline = () => false }) {
+export async function ingestLive({ repo, provider, league = null, leagues = null, startId = null, maxDigests = 1, translate = (id) => id, deadline = () => false, state = null, trace = noop }) {
   if (!provider?.configured) return { mode: "live", configured: false, digests: 0, inserted: 0 };
-  const state = await repo.readCxapiState();
-  let id = state.cursor ?? startId;
+  if (!state) trace("live.state.read.start");
+  const resolvedState = state ?? await repo.readCxapiState();
+  if (!state) trace("live.state.read.end", { cursor: resolvedState.cursor ?? null, lastDigestId: resolvedState.lastDigestId ?? null });
+  let id = resolvedState.cursor ?? startId;
   const limit = Math.max(1, Number(maxDigests) || 1);
   let inserted = 0;
   let digests = 0;
@@ -68,22 +124,31 @@ export async function ingestLive({ repo, provider, league = null, leagues = null
     if (deadline()) break;
     const requestedId = id;
     const t0 = Date.now();
+    trace("live.fetch.start", { digestId: requestedId });
     const raw = await provider.fetchDigest({ id });
+    trace("live.fetch.end", { requestedId, digestId: raw.digestId, fetchMs: Date.now() - t0 });
     // league/leagues null => keep ALL public leagues (multi-league live ingest).
     // translate => canonicalize Metadata ids to short ids where known.
+    trace("live.normalize.start", { digestId: raw.digestId });
     const normalized = normalizeCxDigest(raw.payload, { digestId: raw.digestId, league, leagues, translate });
+    trace("live.normalize.end", { digestId: normalized.digestId, candles: normalized.candles.length });
     const nextId = normalized.nextChangeId;
     // In-progress / terminal hour: an explicit request whose cursor does not
     // advance past this digest (next <= id) is the incomplete live edge. Do NOT
     // persist it — the hour may fill in later, and once null-price candles are
     // written for it, on-conflict-do-nothing would block the real values. Leave
     // the cursor where it is so the next run re-fetches this hour once complete.
-    if (requestedId != null && (nextId == null || nextId <= normalized.digestId)) break;
+    if (requestedId != null && (nextId == null || nextId <= normalized.digestId)) {
+      trace("live.terminal", { digestId: normalized.digestId, nextChangeId: nextId ?? null });
+      break;
+    }
     const t1 = Date.now();
+    trace("live.write.start", { digestId: normalized.digestId, candles: normalized.candles.length });
     const n = await repo.recordCxDigest(normalized);
     // Per-digest timing in the runtime logs — the fastest way to see whether a
     // write stalls at the pooler boundary again.
     console.log(`[cxapi] digest=${normalized.digestId} candles=${normalized.candles.length} inserted=${n} fetch=${t1 - t0}ms write=${Date.now() - t1}ms`);
+    trace("live.write.end", { digestId: normalized.digestId, inserted: n, writeMs: Date.now() - t1 });
     inserted += n;
     digests += 1;
     lastDigestId = normalized.digestId;
@@ -119,7 +184,7 @@ export function rotateStreams(streams, now) {
  * time. A fresh stream with no cursor/start id defaults to a recent window so the
  * CDN's no-id "first hour of history" crawl is never triggered.
  */
-export async function ingestLiveStreams({ streams, config, now, makeRepo, makeProvider, budgetMs = 55_000, reserveMs = null, clock = () => Date.now() }) {
+export async function ingestLiveStreams({ streams, config, now, makeRepo, makeProvider, budgetMs = 55_000, reserveMs = null, clock = () => Date.now(), trace = noop }) {
   const started = clock();
   // A single wall-clock budget shared across ALL streams. Because the check gates
   // STARTING work — not interrupting it — reserve the worst-case time between two
@@ -134,15 +199,23 @@ export async function ingestLiveStreams({ streams, config, now, makeRepo, makePr
   // Rotate the starting stream each hour so no single stream is perpetually first
   // (and thus never starved of the shared budget). Cursors persist regardless.
   for (const stream of rotateStreams(streams, now)) {
-    if (deadline()) { results.push({ game: stream.game, realm: stream.realm, skipped: "budget" }); continue; }
+    trace("stream.start", { game: stream.game, realm: stream.realm });
+    if (deadline()) {
+      trace("stream.skipped", { game: stream.game, realm: stream.realm, reason: "budget" });
+      results.push({ game: stream.game, realm: stream.realm, skipped: "budget" });
+      continue;
+    }
     const key = `${stream.game}|${stream.realm}`;
     if (seen.has(key)) continue; // defense in depth; config already dedupes
     seen.add(key);
     const scope = { game: stream.game, realm: stream.realm, league: config.league, mode: "live" };
     const repo = makeRepo(scope);
     if (!repo) continue;
-    const provider = makeProvider({ ...config, poeGame: stream.game, poeRealm: stream.realm });
-    const cursor = (await repo.readCxapiState()).cursor;
+    const provider = makeProvider({ ...config, poeGame: stream.game, poeRealm: stream.realm, cxapiTrace: trace });
+    trace("stream.state.read.start", { game: stream.game, realm: stream.realm });
+    const state = await repo.readCxapiState();
+    const cursor = state.cursor;
+    trace("stream.state.read.end", { game: stream.game, realm: stream.realm, cursor: cursor ?? null, lastDigestId: state.lastDigestId ?? null });
     const startId =
       config.cxapiStartId ??
       (config.cxapiSource === "cdn" && cursor == null ? recentStartHour(now, config.cxapiMaxBackfillHours) : null);
@@ -158,12 +231,17 @@ export async function ingestLiveStreams({ streams, config, now, makeRepo, makePr
       startId,
       // Small per-invocation cap while write timings are being proven in prod (the
       // shared budget also bounds it); the cursor persists so catch-up continues.
-      maxDigests: catchingUp ? Math.min(config.cxapiMaxBackfillHours, 4) : 1,
+      maxDigests: catchingUp
+        ? Math.min(config.cxapiMaxBackfillHours, config.cxapiDigestsPerRun ?? 1)
+        : 1,
       // Game-scoped: only PoE2 has an identity map, so PoE1 streams pass through.
       translate: translatorForGame(stream.game),
       deadline, // shared budget: stop mid-stream once the invocation time is spent
+      state, // avoid a duplicate DB cursor read inside ingestLive
+      trace,
     });
     results.push({ game: stream.game, realm: stream.realm, ...summary });
+    trace("stream.end", { game: stream.game, realm: stream.realm, digests: summary.digests, inserted: summary.inserted });
   }
   return results;
 }

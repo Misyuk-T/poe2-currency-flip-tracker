@@ -5,6 +5,7 @@
  * @typedef {Object} AppConfig
  * @property {number} port
  * @property {"fixture"|"live"} providerMode
+ * @property {"fixture"|"live"} ingestProviderMode
  * @property {string} poeGame
  * @property {string} poeRealm
  * @property {string} league
@@ -21,6 +22,11 @@
 /** @returns {AppConfig} */
 export function loadConfig(env = process.env) {
   const providerMode = (env.PROVIDER_MODE ?? "fixture").toLowerCase() === "live" ? "live" : "fixture";
+  // Reads and writes deliberately have separate switches. This lets a preview or
+  // controlled cron seed provider=live rows while production continues serving
+  // fixture data; the read cutover happens only after live freshness is verified.
+  const ingestProviderMode =
+    (env.INGEST_PROVIDER_MODE ?? providerMode).toLowerCase() === "live" ? "live" : "fixture";
   // Configured PoE2 leagues. The active LEAGUE is always included and is the
   // only one currently polled; others are advertised but not yet pollable.
   const league = env.LEAGUE ?? "Runes of Aldur";
@@ -36,6 +42,7 @@ export function loadConfig(env = process.env) {
   return {
     port: int(env.PORT, 8080),
     providerMode,
+    ingestProviderMode,
     poeGame: env.POE_GAME ?? "poe2",
     poeRealm: env.POE_REALM ?? "poe2",
     league,
@@ -94,17 +101,18 @@ export function loadConfig(env = process.env) {
     // a service:cxapi token. Defaults to cdn now that no token is needed.
     cxapiSource: (env.CXAPI_SOURCE ?? "cdn").toLowerCase() === "oauth" ? "oauth" : "cdn",
     cxapiCdnBaseUrl: env.CXAPI_CDN_BASE_URL ?? null,
-    // Live ingest streams: one CDN stream per (game, realm). PoE1 + PoE2 by
-    // default; each stream carries every league in its hourly digest. Format:
+    // Live ingest streams: one CDN stream per (game, realm). The public product
+    // currently reads PoE2 only, so PoE2 is the sole default; opt into more once
+    // a corresponding read surface exists. Format:
     // CXAPI_STREAMS="poe1:poe1,poe2:poe2" (game:realm, comma-separated).
-    cxapiStreams: streams(env.CXAPI_STREAMS, [
-      { game: "poe1", realm: "poe1" },
-      { game: "poe2", realm: "poe2" },
-    ]),
+    cxapiStreams: streams(env.CXAPI_STREAMS, [{ game: "poe2", realm: "poe2" }]),
     cxapiAccessToken: env.CXAPI_ACCESS_TOKEN ?? null,
     cxapiStartId: env.CXAPI_START_ID ? posInt(env.CXAPI_START_ID, 0, 1) : null,
     cxapiTimeoutMs: posInt(env.CXAPI_TIMEOUT_MS, 10_000, 1000),
     cxapiMaxBackfillHours: posInt(env.CXAPI_MAX_BACKFILL_HOURS, 48, 1),
+    // Keep each diagnostic/serverless run tiny. The cursor persists, so catch-up
+    // continues safely across invocations instead of risking the 60s hard limit.
+    cxapiDigestsPerRun: boundedInt(env.CXAPI_DIGESTS_PER_RUN, 1, 1, 4),
     // Total wall-clock ceiling for one live-ingest invocation, shared across all
     // streams. The ingester reserves the next unit's worst case internally and
     // stops well before this, so a run always returns under the 60s function/
@@ -131,6 +139,10 @@ function posInt(value, fallback, min) {
   const n = Number.parseInt(value, 10);
   if (!Number.isFinite(n) || n < min) return fallback < min ? min : fallback;
   return n;
+}
+
+function boundedInt(value, fallback, min, max) {
+  return Math.min(max, posInt(value, fallback, min));
 }
 
 /**

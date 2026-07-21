@@ -17,12 +17,28 @@ const MAX_HOURS_PER_PAIR = 48;
 const OP_TIMEOUT_MS = 10_000;
 
 /** Wall-clock guard so a stalled connection can't hang a serverless invocation. */
-function withTimeout(promise, ms, label) {
+function withTimeout(promise, ms, label, onTimeout = null) {
   let timer;
   const guard = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    timer = setTimeout(() => {
+      try {
+        Promise.resolve(onTimeout?.({ label, ms })).catch(() => {});
+      } finally {
+        reject(new Error(`${label} timed out after ${ms}ms`));
+      }
+    }, ms);
   });
   return Promise.race([promise, guard]).finally(() => clearTimeout(timer));
+}
+
+const noop = () => {};
+
+function errorDetails(error) {
+  return {
+    errorName: error?.name ?? "Error",
+    errorCode: error?.code ?? null,
+    errorMessage: error?.message ?? String(error),
+  };
 }
 
 /** DB row -> candle object (mirrors createSupabaseStorage's hydration mapping). */
@@ -68,6 +84,8 @@ export function createRadarRepository({
   windowDays = WINDOW_DAYS,
   maxHoursPerPair = MAX_HOURS_PER_PAIR,
   opTimeoutMs = OP_TIMEOUT_MS,
+  onPhase = noop,
+  onTimeout = null,
 }) {
   if (!sql) throw new Error("radar repository requires a postgres.js sql client");
   if (!scope) throw new Error("radar repository requires a scope { game, realm, league, mode }");
@@ -111,6 +129,7 @@ export function createRadarRepository({
         ) c`,
       opTimeoutMs,
       "radar candle window",
+      onTimeout,
     );
     return rows.map((r) => candleFromRow(r, { league: scope.league }));
   }
@@ -129,6 +148,7 @@ export function createRadarRepository({
         order by completed_hour asc`,
       opTimeoutMs,
       "radar pair candles",
+      onTimeout,
     );
     return rows.map((r) => candleFromRow(r, { league: scope.league }));
   }
@@ -141,6 +161,7 @@ export function createRadarRepository({
         where game = ${scope.game} and realm = ${scope.realm} and provider = ${scope.mode}`,
       opTimeoutMs,
       "cxapi state",
+      onTimeout,
     );
     const row = rows[0];
     return {
@@ -156,69 +177,88 @@ export function createRadarRepository({
    * newly-inserted candles.
    */
   async function recordCxDigest(digest) {
-    return withTimeout(
-      sql.begin(async (tx) => {
-        // Bound each statement server-side and don't wait forever on a lock —
-        // belt-and-suspenders in case the Supavisor pooler doesn't preserve the
-        // startup statement_timeout on a fresh transaction connection.
-        await tx`set local statement_timeout = '8000ms'`;
-        await tx`set local lock_timeout = '3000ms'`;
-        let inserted = 0;
-        if (digest.candles?.length) {
-          const rows = digest.candles.map((c) => ({
-            game: scope.game,
-            realm: scope.realm,
-            // One stream carries every league, so each candle stores its OWN
-            // league (falling back to the scope league for legacy callers).
-            league: c.league ?? scope.league,
-            provider: scope.mode,
-            completed_hour: new Date(c.completedHour),
-            digest_id: String(c.digestId),
-            pair_id: c.pairId,
-            base_currency: c.base,
-            quote_currency: c.quote,
-            low_ratio: c.low,
-            high_ratio: c.high,
-            reference_ratio: c.reference,
-            reference_kind: c.referenceKind,
-            volume: JSON.stringify(c.volume),
-            stock: JSON.stringify(c.stock),
-            source: c.source,
-          }));
-          // Batch the insert. One ~2000-row unnamed (prepare:false) insert is a
-          // huge extended-protocol message that can stall at the pooler boundary
-          // (statement_timeout doesn't cover that wait) and hang the sole max:1
-          // connection. Small chunks keep each statement light and quick.
-          const CHUNK = 250;
-          for (let i = 0; i < rows.length; i += CHUNK) {
-            const result = await tx`insert into hourly_market_candles ${tx(rows.slice(i, i + CHUNK))} on conflict do nothing`;
-            inserted += result.count ?? 0;
+    const candles = digest.candles?.length ?? 0;
+    onPhase("db.transaction.start", { digestId: digest.digestId ?? null, candles });
+    try {
+      const inserted = await withTimeout(
+        sql.begin(async (tx) => {
+          onPhase("db.transaction.acquired", { digestId: digest.digestId ?? null });
+          // Bound each statement server-side and don't wait forever on a lock —
+          // belt-and-suspenders in case the Supavisor pooler doesn't preserve the
+          // startup statement_timeout on a fresh transaction connection.
+          onPhase("db.transaction.timeouts.start", { digestId: digest.digestId ?? null });
+          await tx`set local statement_timeout = '8000ms'`;
+          await tx`set local lock_timeout = '3000ms'`;
+          onPhase("db.transaction.timeouts.end", { digestId: digest.digestId ?? null });
+          let inserted = 0;
+          if (digest.candles?.length) {
+            const rows = digest.candles.map((c) => ({
+              game: scope.game,
+              realm: scope.realm,
+              // One stream carries every league, so each candle stores its OWN
+              // league (falling back to the scope league for legacy callers).
+              league: c.league ?? scope.league,
+              provider: scope.mode,
+              completed_hour: new Date(c.completedHour),
+              digest_id: String(c.digestId),
+              pair_id: c.pairId,
+              base_currency: c.base,
+              quote_currency: c.quote,
+              low_ratio: c.low,
+              high_ratio: c.high,
+              reference_ratio: c.reference,
+              reference_kind: c.referenceKind,
+              volume: JSON.stringify(c.volume),
+              stock: JSON.stringify(c.stock),
+              source: c.source,
+            }));
+            // Batch the insert. One ~2000-row unnamed (prepare:false) insert is a
+            // huge extended-protocol message that can stall at the pooler boundary
+            // (statement_timeout doesn't cover that wait) and hang the sole max:1
+            // connection. Small chunks keep each statement light and quick.
+            const CHUNK = 250;
+            for (let i = 0; i < rows.length; i += CHUNK) {
+              const batch = Math.floor(i / CHUNK) + 1;
+              const batchRows = rows.slice(i, i + CHUNK);
+              onPhase("db.candles.batch.start", { digestId: digest.digestId ?? null, batch, rows: batchRows.length });
+              const result = await tx`insert into hourly_market_candles ${tx(batchRows)} on conflict do nothing`;
+              inserted += result.count ?? 0;
+              onPhase("db.candles.batch.end", { digestId: digest.digestId ?? null, batch, inserted: result.count ?? 0 });
+            }
           }
-        }
-        // Monotonic cursor: never let a late/overlapping invocation move the
-        // cursor backward (e.g. an older digest committing after a newer one).
-        // Only advance when the incoming digest id is non-null and not older
-        // than what's stored. This — together with on-conflict-do-nothing on the
-        // candles — makes concurrent ingest runs safe WITHOUT a distributed lock
-        // (which also avoids unreliable session advisory locks under the pooler).
-        // Keyed per (game, realm, provider): one CDN stream feeds every league,
-        // so the cursor is league-independent (see migration 006).
-        await tx`
-          insert into cxapi_state (game, realm, provider, next_change_id, last_digest_id, updated_at)
-          values (${scope.game}, ${scope.realm}, ${scope.mode},
-                  ${digest.nextChangeId ?? null}, ${digest.digestId ?? null}, now())
-          on conflict (game, realm, provider) do update set
-            next_change_id = excluded.next_change_id,
-            last_digest_id = excluded.last_digest_id,
-            updated_at = excluded.updated_at
-          where excluded.last_digest_id is not null
-            and (cxapi_state.last_digest_id is null
-                 or excluded.last_digest_id >= cxapi_state.last_digest_id)`;
-        return inserted;
-      }),
-      opTimeoutMs,
-      "recordCxDigest",
-    );
+          // Monotonic cursor: never let a late/overlapping invocation move the
+          // cursor backward (e.g. an older digest committing after a newer one).
+          // Only advance when the incoming digest id is non-null and not older
+          // than what's stored. This — together with on-conflict-do-nothing on the
+          // candles — makes concurrent ingest runs safe WITHOUT a distributed lock
+          // (which also avoids unreliable session advisory locks under the pooler).
+          // Keyed per (game, realm, provider): one CDN stream feeds every league,
+          // so the cursor is league-independent (see migration 006).
+          onPhase("db.cursor.upsert.start", { digestId: digest.digestId ?? null });
+          await tx`
+            insert into cxapi_state (game, realm, provider, next_change_id, last_digest_id, updated_at)
+            values (${scope.game}, ${scope.realm}, ${scope.mode},
+                    ${digest.nextChangeId ?? null}, ${digest.digestId ?? null}, now())
+            on conflict (game, realm, provider) do update set
+              next_change_id = excluded.next_change_id,
+              last_digest_id = excluded.last_digest_id,
+              updated_at = excluded.updated_at
+            where excluded.last_digest_id is not null
+              and (cxapi_state.last_digest_id is null
+                   or excluded.last_digest_id >= cxapi_state.last_digest_id)`;
+          onPhase("db.cursor.upsert.end", { digestId: digest.digestId ?? null });
+          return inserted;
+        }),
+        opTimeoutMs,
+        "recordCxDigest",
+        onTimeout,
+      );
+      onPhase("db.transaction.end", { digestId: digest.digestId ?? null, inserted });
+      return inserted;
+    } catch (error) {
+      onPhase("db.transaction.error", { digestId: digest.digestId ?? null, ...errorDetails(error) });
+      throw error;
+    }
   }
 
   return { readCandleWindow, readPairCandles, readCxapiState, recordCxDigest };

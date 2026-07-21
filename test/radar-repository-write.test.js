@@ -75,3 +75,40 @@ test("recordCxDigest falls back to scope league when a candle omits its own", as
     .values.find((v) => v.__fragmentRows).__fragmentRows;
   assert.equal(rows[0].league, scope.league);
 });
+
+test("recordCxDigest emits transaction/batch phases", async () => {
+  const { sql } = fakeTxSql();
+  const phases = [];
+  const repo = createRadarRepository({ sql, scope, onPhase: (phase) => phases.push(phase) });
+  await repo.recordCxDigest({ digestId: 472222, nextChangeId: 475822, candles: [candle("Standard")] });
+  assert.deepEqual(phases, [
+    "db.transaction.start",
+    "db.transaction.acquired",
+    "db.transaction.timeouts.start",
+    "db.transaction.timeouts.end",
+    "db.candles.batch.start",
+    "db.candles.batch.end",
+    "db.cursor.upsert.start",
+    "db.cursor.upsert.end",
+    "db.transaction.end",
+  ]);
+});
+
+test("recordCxDigest timeout invokes client reset hook and reports the failed phase", async () => {
+  let timeout;
+  const phases = [];
+  const sql = { begin: () => new Promise(() => {}) };
+  const repo = createRadarRepository({
+    sql,
+    scope,
+    opTimeoutMs: 5,
+    onPhase: (phase) => phases.push(phase),
+    onTimeout: (details) => { timeout = details; },
+  });
+  await assert.rejects(
+    () => repo.recordCxDigest({ digestId: 472222, nextChangeId: 475822, candles: [] }),
+    /recordCxDigest timed out after 5ms/,
+  );
+  assert.deepEqual(timeout, { label: "recordCxDigest", ms: 5 });
+  assert.deepEqual(phases, ["db.transaction.start", "db.transaction.error"]);
+});

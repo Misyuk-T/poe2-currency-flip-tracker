@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { ingestFixtures, ingestLive } from "../src/server/radar-ingest.js";
+import { ingestFixtureIncrement, ingestFixtures, ingestLive } from "../src/server/radar-ingest.js";
 
 function mockRepo({ state = { cursor: null, lastDigestId: null } } = {}) {
   const recorded = [];
@@ -29,6 +29,43 @@ test("ingestFixtures synthesizes labelled-synthetic hourly history", async () =>
     assert.ok(digest.candles.length > 0);
     assert.ok(digest.candles.every((c) => c.synthetic === true && c.source === "fixture-cxapi"));
   }
+});
+
+test("ingestFixtureIncrement jumps a stale cursor to the latest completed fixture digest", async () => {
+  const now = 1_750_000_000_000;
+  const latestCompletedHour = Math.floor(now / 3600_000) * 3600 - 3600;
+  const cursor = latestCompletedHour - 2 * 3600;
+  const repo = mockRepo({ state: { cursor, lastDigestId: cursor - 3600 } });
+  const phases = [];
+  const out = await ingestFixtureIncrement({
+    repo,
+    league: "Runes of Aldur",
+    anchors: ["exalted"],
+    now,
+    maxDigests: 1,
+    trace: (phase) => phases.push(phase),
+  });
+  assert.equal(out.digests, 1);
+  assert.equal(repo.recorded.length, 1);
+  assert.equal(repo.recorded[0].digestId, latestCompletedHour);
+  assert.equal(repo.recorded[0].nextChangeId, latestCompletedHour + 3600);
+  assert.equal(out.remainingDigests, 0);
+  assert.ok(phases.includes("fixture.state.read.start"));
+  assert.ok(phases.includes("fixture.write.end"));
+});
+
+test("ingestFixtureIncrement is a no-op when the latest completed hour is already persisted", async () => {
+  const latestCompletedHour = Math.floor(1_750_000_000_000 / 3600_000) * 3600 - 3600;
+  const repo = mockRepo({ state: { cursor: latestCompletedHour + 3600, lastDigestId: latestCompletedHour } });
+  const out = await ingestFixtureIncrement({
+    repo,
+    league: "Runes of Aldur",
+    anchors: ["exalted"],
+    now: 1_750_000_000_000,
+  });
+  assert.equal(out.digests, 0);
+  assert.equal(repo.recorded.length, 0);
+  assert.equal(out.remainingDigests, 0);
 });
 
 test("ingestLive fetches the latest digest when there is no cursor, then stops", async () => {

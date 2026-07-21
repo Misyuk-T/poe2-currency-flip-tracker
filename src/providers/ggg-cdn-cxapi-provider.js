@@ -33,6 +33,7 @@ function realmSegment(realm) {
 export function createGggCdnCxapiProvider(config) {
   const fetchImpl = config._cxFetch ?? globalThis.fetch;
   const base = config.cxapiCdnBaseUrl ?? CDN_BASE;
+  const trace = typeof config.cxapiTrace === "function" ? config.cxapiTrace : () => {};
   return {
     mode: "live",
     label: "Public GGG Currency Exchange CDN",
@@ -40,6 +41,7 @@ export function createGggCdnCxapiProvider(config) {
     configured: true,
     async fetchDigest({ id = null } = {}) {
       const suffix = id == null ? "" : `/${encodeURIComponent(String(id))}`;
+      trace("provider.fetch.request.start", { source: "cdn", realm: config.poeRealm, digestId: id });
       let response;
       try {
         response = await fetchImpl(`${base}${realmSegment(config.poeRealm)}${suffix}`, {
@@ -54,9 +56,12 @@ export function createGggCdnCxapiProvider(config) {
       } catch (err) {
         throw new CxapiError("network", `cxapi cdn request failed: ${err.message}`, { cause: err });
       }
+      trace("provider.fetch.headers.end", { source: "cdn", realm: config.poeRealm, digestId: id, status: response.status });
       if (response.status === 429) throw new CxapiError("rate-limited", "cxapi cdn returned 429");
       if (!response.ok) throw new CxapiError("http", `cxapi cdn returned ${response.status}`);
+      trace("provider.fetch.body.start", { source: "cdn", realm: config.poeRealm, digestId: id });
       const payload = await response.json();
+      trace("provider.fetch.body.end", { source: "cdn", realm: config.poeRealm, digestId: id, markets: Array.isArray(payload?.markets) ? payload.markets.length : null });
       if (!payload || !Array.isArray(payload.markets)) throw new CxapiError("malformed", "cxapi cdn response missing markets");
       const next = Number(payload.next_change_id);
       if (!Number.isInteger(next) || next <= 0) throw new CxapiError("malformed", "cxapi cdn response missing next_change_id");

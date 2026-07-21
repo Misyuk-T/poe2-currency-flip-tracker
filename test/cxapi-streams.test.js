@@ -4,12 +4,23 @@ import { loadConfig } from "../src/server/config.js";
 import { createGggCdnCxapiProvider } from "../src/providers/ggg-cdn-cxapi-provider.js";
 import { ingestLive, ingestLiveStreams, rotateStreams } from "../src/server/radar-ingest.js";
 
-test("config: default streams cover PoE1 + PoE2", () => {
+test("config: default streams cover only the PoE2 product read scope", () => {
   const cfg = loadConfig({});
-  assert.deepEqual(cfg.cxapiStreams, [
-    { game: "poe1", realm: "poe1" },
-    { game: "poe2", realm: "poe2" },
-  ]);
+  assert.deepEqual(cfg.cxapiStreams, [{ game: "poe2", realm: "poe2" }]);
+});
+
+test("config: ingest mode follows read mode by default but can be decoupled", () => {
+  assert.equal(loadConfig({}).ingestProviderMode, "fixture");
+  assert.equal(loadConfig({ PROVIDER_MODE: "live" }).ingestProviderMode, "live");
+  const preseed = loadConfig({ PROVIDER_MODE: "fixture", INGEST_PROVIDER_MODE: "live" });
+  assert.equal(preseed.providerMode, "fixture");
+  assert.equal(preseed.ingestProviderMode, "live");
+});
+
+test("config: live digest cap defaults to one and is bounded at four", () => {
+  assert.equal(loadConfig({}).cxapiDigestsPerRun, 1);
+  assert.equal(loadConfig({ CXAPI_DIGESTS_PER_RUN: "3" }).cxapiDigestsPerRun, 3);
+  assert.equal(loadConfig({ CXAPI_DIGESTS_PER_RUN: "99" }).cxapiDigestsPerRun, 4);
 });
 
 test("config: CXAPI_STREAMS overrides, ignoring malformed entries", () => {
@@ -91,6 +102,33 @@ test("ingestLiveStreams: each stream gets its own scope, provider realm, cursor"
   assert.deepEqual(scopes.map((s) => `${s.game}/${s.realm}/${s.mode}`), ["poe1/poe1/live", "poe2/poe2/live"]);
   assert.deepEqual(realms, ["poe1", "poe2"]); // provider built per-stream with the stream realm
   assert.ok(out.every((s) => s.mode === "live"));
+});
+
+test("ingestLiveStreams reuses the stream state instead of reading the cursor twice", async () => {
+  const config = {
+    league: "L",
+    cxapiSource: "cdn",
+    cxapiStartId: null,
+    cxapiMaxBackfillHours: 48,
+    cxapiDigestsPerRun: 1,
+    cxapiStreams: [{ game: "poe2", realm: "poe2" }],
+  };
+  let stateReads = 0;
+  let fetches = 0;
+  const makeRepo = () => ({
+    async readCxapiState() { stateReads += 1; return { cursor: 1000, lastDigestId: null }; },
+    async recordCxDigest(d) { return d.candles.length; },
+  });
+  const makeProvider = () => ({
+    configured: true,
+    async fetchDigest({ id }) {
+      fetches += 1;
+      return { digestId: id, payload: { next_change_id: id + 3600, markets: [] } };
+    },
+  });
+  await ingestLiveStreams({ streams: config.cxapiStreams, config, now: 1_784_600_000_000, makeRepo, makeProvider });
+  assert.equal(stateReads, 1);
+  assert.equal(fetches, 1, "one digest per invocation while runtime timing is being proven");
 });
 
 test("ingestLiveStreams: a null repo (no DB) skips that stream, not the run", async () => {

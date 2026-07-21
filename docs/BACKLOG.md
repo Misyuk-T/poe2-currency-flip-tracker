@@ -3,26 +3,21 @@
 Ideas parked for later. Not committed work — candidates to pull into a phase.
 Newest first.
 
-## ⚠️ Ingest exceeds the 60s budget (found 2026-07-21, must fix before go-live)
-Every hourly `radar-ingest-hourly` run times out at the 60s pg_net limit
-(observed on requests 625–629; the Vercel function `maxDuration=60` too). In
-FIXTURE mode it still limps because `ingestFixtures` re-seeds the whole 676k-row
-catalog each run and idempotent backfill accumulates across runs — but the run
-never cleanly finishes. Live mode (real ~2MB/hr digests × all public leagues × 2
-games) will be far heavier and 60s will not be enough.
-Fix directions: make ingest incremental/bounded per run (don't re-seed the full
-fixture catalog hourly; cap digests + rows per invocation), stream/paginate the
-write, or split ingest into a queue/multiple smaller invocations. Blocker for
-Phase 5 (go-live activation).
-**2c compounds this:** the live path loops N streams (PoE1 + PoE2) serially,
-each up to `min(maxBackfillHours,12)` digests — ~24 fetches/txns per invocation.
-**RESOLVED for LIVE (Phase 5a):** `ingestLiveStreams` now enforces a shared
-wall-clock budget (`cxapiIngestBudgetMs`, default 45s) across all streams +
-mid-stream, so a run always returns under 60s; cursors persist for catch-up.
-**Still open — FIXTURE:** `ingestFixtures` re-seeds the whole 676k catalog every
-run and still times out (harmless: idempotent accumulation, data stays fresh).
-Low priority; bound it (synthesize only the newest hour after initial backfill)
-when convenient. Not a go-live blocker (fixture is dev/demo only).
+## ⚠️ Ingest 60s timeout — code fix ready, runtime preview proof pending
+Production evidence showed the problem predates live activation: Vercel reports
+11 `/api/cron/radar` timeouts since July 6, and pg_net requests 632/634 (live)
+and 635 (fixture after rollback) all died at exactly 60s. Fixture candles were
+also stale since July 18, disproving the earlier claim that fixture cron worked
+and the CDN was the likely blocker.
+
+Branch `codex/ingest-diagnostics` addresses the shared path: structured phase
+logs at every async boundary, error logging with a run id, poisoned postgres.js
+client destruction on operation timeout, one live digest/run, PoE2-only default,
+and fixture cron appending only the newest completed hour instead of rebuilding
+168 x the full catalog. `INGEST_PROVIDER_MODE` is separate from `PROVIDER_MODE`,
+so live rows can be preseeded while public reads remain fixture. Unit/build proof
+is complete; one preview/runtime canary still must identify/confirm the exact DB
+phase before any production read cutover.
 
 ## Pre-activation checklist (before flipping PROVIDER_MODE=live)
 The local live-data canary PASSED (`scripts/canary-live.mjs`): 28 real poe2 hours,
@@ -40,9 +35,10 @@ Price-normalization correctness is activation-quality. Status:
    Metadata `/` pair_id round-trip, jsonb/numeric/timestamptz serialization, and
    CONFIRMED the null-then-valid poisoning at the DB level (on-conflict-do-nothing
    keeps the null → validates fix #1). Prod untouched.
-3. ⬜ **Flip `PROVIDER_MODE=live`** + cron `:05`→`:10`, with monitoring: cursor age,
-   latest-candle age, inserted-row counts, null-price rate, ingest errors. NEEDS the
-   owner's explicit go (real live data to users; reversible via the flag).
+3. ⬜ Set **`INGEST_PROVIDER_MODE=live` while `PROVIDER_MODE=fixture`**, run one
+   instrumented digest, and verify cursor/candles/timings. Flip the read mode only
+   after recent live rows exist and `/api/status` succeeds. Never combine preseed
+   and public read cutover in one deployment again.
 
 ## Phase 3 mapping — Metadata → {id, name, icon, category} data source (DECIDE)
 Live CX candles are keyed by Metadata paths (`Metadata/Items/<Class>/<Leaf>`).

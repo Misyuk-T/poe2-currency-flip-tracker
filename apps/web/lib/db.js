@@ -27,6 +27,17 @@ export function getSql() {
   return client;
 }
 
+/**
+ * Destroy the cached client after an operation timeout. Promise.race by itself
+ * only rejects the caller; postgres.js may otherwise keep the underlying query,
+ * transaction, and sole max:1 connection alive until Vercel kills the function.
+ */
+export async function resetSql({ timeout = 0 } = {}) {
+  const stale = client;
+  client = undefined;
+  if (stale) await stale.end({ timeout });
+}
+
 // Transient CONNECTION failures we retry: a warm instance's cached client can
 // hold a connection the Supavisor pooler has already dropped (idle_timeout), so
 // the first query throws before postgres.js transparently reconnects. Retrying

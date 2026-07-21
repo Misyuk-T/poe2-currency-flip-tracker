@@ -20,6 +20,24 @@ and if stream 1 eats the budget or throws, stream 2 never runs. Live activation
 needs a TOTAL invocation deadline/budget across streams (or per-stream scheduled
 cron jobs), not just a per-stream cap.
 
+## Phase 3 mapping — Metadata → {id, name, icon, category} data source (DECIDE)
+Live CX candles are keyed by Metadata paths (`Metadata/Items/<Class>/<Leaf>`).
+The radar needs a reliable map to real ids/names/icons. Findings (2026-07-21):
+- The curated `catalog-poe2.json` (754 items) is keyed by trade short-ids and only
+  covers currency-like categories — the CX universe also trades gems, runes,
+  omens, soul cores, idols (627 distinct in ONE poe2 league-hour).
+- RULED OUT — deriving Metadata ids from the catalog's image URL (`f` art path).
+  It's the 2D ART asset, not the item id: it COLLIDES (e.g. `CurrencyAddModToRare`
+  resolved to "Perfect Exalted Orb" while live data trades it as the base Exalted
+  anchor) — only ~2% by count / 35% by volume, and WRONG for the anchor. Not usable.
+Options: (i) find/scrape a real Metadata→name/icon source (poe2db, RePoE-style
+data, or a GGG endpoint that exposes metadata ids) — needs permission + validation;
+(ii) MVP: canonical id = the Metadata path, humanize the leaf for display, hand-map
+only the anchors (exalted/divine/chaos) — honest but ugly names for the long tail;
+(iii) hybrid: real map for the tradeable core, humanized fallback for the rest.
+Also required in Phase 3 regardless: fix `candleForAnchor`/market-radar anchor
+matching for the canonical namespace, and the history route rejecting `/` in pairs.
+
 ## Inventory valuation ("оцінка всього інвентарю")
 Value a player's entire inventory/stash against current CX market data: paste or
 import a set of items → total worth in exalted/divine, per-item breakdown,

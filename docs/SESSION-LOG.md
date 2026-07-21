@@ -73,10 +73,26 @@ out at the 60s pg_net/function limit (requests 625–629). Fixture ingest re-see
 the full 676k catalog each run. Logged in docs/BACKLOG.md as a Phase-5 blocker —
 live/multi-league/multi-game ingest needs to be incremental/bounded.
 
-**Next (2c):** multi-game ingest loop (iterate poe1+poe2, feed normalize with the
-all-public default) + single-ingester-per-stream invariant; then 3 mapping per
-game, 4 frontend game/league selector, 5 canary + activate (with the ingest
-performance fix).
+**Phase 2c shipped (multi-game/stream ingest):** live path loops one CDN stream
+per (game,realm) — PoE1 + PoE2 — each all-public with its own cursor. Realm→CDN
+segment map (poe1 = no segment). `cxapiStreams` config (deduped). Extracted
+injectable `ingestLiveStreams`/`recentStartHour` (DB-free tested). Not activated
+(prod fixture unchanged). Codex (gpt-5.6-sol): no P0/P1; fixed P2 dedup +
+orchestration test. **100 green.** Committed 73d4137. BACKLOG: multi-stream
+compounds the 60s ingest-timeout blocker.
+
+**Phase 3 (mapping) — BLOCKED ON A DATA-SOURCE DECISION.** Live candles store
+Metadata paths (`Metadata/Items/<Class>/<Leaf>`); the radar needs a
+Metadata→{id,name,icon,category} map to (a) fix anchor matching (`candleForAnchor`
+compares short-id `exalted` vs stored Metadata path), (b) fix the history route
+(rejects `/` in pair ids), (c) show names/icons. The curated 754-item catalog is
+keyed by trade short-ids and only ~6% by count (~42% by volume) coincide — so
+there is NO reliable public Metadata→name/icon source in-repo. Options to decide:
+(i) derive/scrape a fuller map from a GGG static endpoint or community source
+(poe2db/RePoE) — needs permission + validation; (ii) MVP: canonical id = Metadata
+path, humanize the leaf for display, hand-verify only the anchors — honest but
+ugly names for most; (iii) defer until a source is confirmed. Not started to
+avoid fabricating a mapping or destabilizing the working fixture radar.
 
 ## 2026-07-10 — Trading-terminal dashboard: gold columns (the wedge, made visible)
 

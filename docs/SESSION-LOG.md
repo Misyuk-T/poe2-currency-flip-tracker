@@ -121,9 +121,24 @@ the starting stream hourly so neither stream is starved. Codex (gpt-5.6-sol):
 raised P1 (45s didn't guarantee <60s) — fixed with the reserve; confirmed P1+P2
 clear. 117 green. FIXTURE ingest timeout left as-is (idempotent/harmless, backlog).
 
-**Next: 4** frontend game/league selector, then **5** canary + PROVIDER_MODE=live.
-Residual (backlog): finiteNonNegative(null)===0; duplicate cursor read in the live
-loop (minor); truly-unknown-to-RePoE ids render raw (rare).
+**Phase 5 pre-activation gates DONE (branch feat/cxapi-live-canary).**
+- Live-data canary (scripts/canary-live.mjs, 2604d00): 28 real poe2 hours, 511
+  price-orientation checks vs an INDEPENDENT raw oracle (121 inverse + 390 direct),
+  cross-anchor reciprocal (divine@ex × ex@div = 1.00000, divine ≈ 407.5 ex),
+  volume-side provenance, league isolation, identity, structural invariants. PASSED.
+  Codex before (caught league:null mixing) + after (activation-quality).
+- Terminal-hour poisoning fix (db5f00a): ingestLive won't persist the in-progress
+  terminal digest; regression test + updated mocks. Codex: no blocking findings.
+- Staging Postgres round-trip: disposable `canary_staging` schema — validated
+  multi-league read isolation, tail Metadata `/` pair_id, jsonb/numeric/timestamptz
+  serialization, and CONFIRMED null-then-valid poisoning at the DB level (validates
+  the fix). Schema dropped; prod untouched. 118 green.
+
+**Only Phase 5 step-3 remains: flip PROVIDER_MODE=live** (owner's explicit go —
+real live data to users, reversible via the flag) + cron `:05`→`:10` + monitoring.
+Then Phase 4 (frontend game/league selector) to surface PoE1/all-leagues.
+Residual (backlog): finiteNonNegative(null)===0; duplicate cursor read (minor);
+truly-unknown-to-RePoE ids render raw (rare).
 
 --- superseded note (Phase 3 was blocked, now resolved in 3a) ---
 Live candles store

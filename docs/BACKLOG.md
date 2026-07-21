@@ -29,23 +29,20 @@ The local live-data canary PASSED (`scripts/canary-live.mjs`): 28 real poe2 hour
 511 price-orientation checks independently verified vs raw ratios (121 inverse +
 390 direct), volume-side provenance, cross-anchor reciprocal (divine@ex × ex@div =
 1.00000, divine ≈ 407.5 ex), league isolation, identity, structural invariants.
-Price-normalization correctness is activation-quality. Remaining MUSTs (codex):
-1. **Terminal-hour poisoning fix.** `ingestLive` currently normalizes + records the
-   terminal/in-progress digest (next_change_id <= digestId) then breaks. Today the
-   terminal is empty (harmless), but a nonempty all-zero terminal would persist NULL
-   candles for hour T; `ON CONFLICT DO NOTHING` then blocks the real T candles from
-   replacing them. Fix: do NOT persist a terminal digest (break before recordCxDigest)
-   — or make conflict handling let valid data replace a null-price candle. Ripples
-   the ingest test mocks (they use next==id as a data-bearing "stop"); update them.
-2. **Disposable/staging Postgres round-trip** through the REAL provider → ingestLive
-   → recordCxDigest → readCandleWindow → buildRadarPayload, with all public leagues
-   and an overlapping repeat ingest. Validates what the in-memory canary can't:
-   serialization/hydration, PK conflict (null-then-valid), migration/index/plans,
-   10s op limits, cursor transactionality, provider="live" read isolation. Use a
-   throwaway DB/schema — NOT the prod `live` scope (cursor is keyed (game,realm,
-   provider); a stray write could touch prod cursor state).
-3. Flip `PROVIDER_MODE=live` + cron `:05`→`:10`, with monitoring: cursor age,
-   latest-candle age, inserted-row counts, null-price rate, ingest errors.
+Price-normalization correctness is activation-quality. Status:
+1. ✅ **Terminal-hour poisoning fix DONE** (db5f00a): `ingestLive` no longer persists
+   a terminal/in-progress digest (breaks before recordCxDigest); cursor left at T so
+   the next run re-fetches once complete. Regression test proves a nonempty zero-ratio
+   terminal isn't persisted and the same hour lands once complete.
+2. ✅ **Staging Postgres round-trip DONE** — disposable `canary_staging` schema
+   (isolated from public/prod, dropped after). Validated the new-to-live persistence
+   concerns: multi-league read isolation (HC didn't leak into a Runes read), tail
+   Metadata `/` pair_id round-trip, jsonb/numeric/timestamptz serialization, and
+   CONFIRMED the null-then-valid poisoning at the DB level (on-conflict-do-nothing
+   keeps the null → validates fix #1). Prod untouched.
+3. ⬜ **Flip `PROVIDER_MODE=live`** + cron `:05`→`:10`, with monitoring: cursor age,
+   latest-candle age, inserted-row counts, null-price rate, ingest errors. NEEDS the
+   owner's explicit go (real live data to users; reversible via the flag).
 
 ## Phase 3 mapping — Metadata → {id, name, icon, category} data source (DECIDE)
 Live CX candles are keyed by Metadata paths (`Metadata/Items/<Class>/<Leaf>`).

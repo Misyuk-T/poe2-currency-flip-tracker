@@ -6,6 +6,24 @@ export function convertMarketPrice(value, from, to, ratesOrDivineInExalted) {
 }
 
 /**
+ * Express an anchor-denominated market price in one consistent quote currency.
+ * Keep the quote direction stable: the returned value is always currency per
+ * item, never an automatic reciprocal such as items per exalted.
+ */
+export function quoteFromAnchor(value, { anchor = "exalted", displayCurrency = null, rates } = {}) {
+  if (!positive(value) || !positive(rates?.[anchor]) || !positive(rates?.exalted)) {
+    return { value: null, unit: null };
+  }
+
+  const exaltedValue = (value * rates[anchor]) / rates.exalted;
+  const unit = displayCurrency && positive(rates[displayCurrency]) ? displayCurrency : "exalted";
+  const quotedValue = exaltedValue / rates[unit];
+  return positive(quotedValue)
+    ? { value: quotedValue, unit }
+    : { value: null, unit: null };
+}
+
+/**
  * Manual observations override the delayed hourly midpoint. Otherwise the
  * latest official completed-hour reference is used, with source/age attached.
  */

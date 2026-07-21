@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import SpotChart from "./SpotChart.jsx";
 import { roundTripGold } from "../../../src/domain/gold-costs.js";
-import { currentPriceGuidance, workingPrice } from "../lib/price-guidance.js";
+import { currentPriceGuidance, quoteFromAnchor, workingPrice } from "../lib/price-guidance.js";
 import {
   apiBaseUrl,
   displayDigits,
@@ -78,19 +78,6 @@ function PricePill({ value, unit, compact = false }) {
 
 function QuotePill({ quote, compact = false }) {
   if (!quote || !Number.isFinite(quote.value)) return <span className="price-pill empty">—</span>;
-  if (quote.inverse) {
-    const value = formatNumber(quote.value, { maximumFractionDigits: displayDigits(quote.value) });
-    return (
-      <span
-        className={compact ? "price-pill inverse compact" : "price-pill inverse"}
-        title={`${value} ${titleize(quote.unit)} per ${titleize(quote.perUnit)}`}
-      >
-        <span>{value}</span>
-        <small>/</small>
-        <img src={iconUrl(quote.perUnit)} onError={onIconError} alt="" title={titleize(quote.perUnit)} />
-      </span>
-    );
-  }
   return <PricePill value={quote.value} unit={quote.unit} compact={compact} />;
 }
 
@@ -105,21 +92,6 @@ function unitRates(rows, divineInExalted) {
     chaos: Number.isFinite(chaos?.reference) && chaos.reference > 0 ? chaos.reference : null,
     divine: Number.isFinite(divineInExalted) && divineInExalted > 0 ? divineInExalted : null,
   };
-}
-
-function quoteFromAnchor(value, { anchor = "exalted", displayCurrency = null, rates, target }) {
-  if (!Number.isFinite(value) || value <= 0 || !rates?.[anchor]) return { value: null, unit: null };
-  const exaltedValue = (value * rates[anchor]) / rates.exalted;
-  if (!Number.isFinite(exaltedValue) || exaltedValue <= 0) return { value: null, unit: null };
-
-  if (displayCurrency && rates[displayCurrency]) {
-    return { value: exaltedValue / rates[displayCurrency], unit: displayCurrency, inverse: false };
-  }
-
-  if (exaltedValue < 1 && target) {
-    return { value: 1 / exaltedValue, unit: target, perUnit: "exalted", inverse: true };
-  }
-  return { value: exaltedValue, unit: "exalted", inverse: false };
 }
 
 function CustomSelect({ id, value, options, onChange }) {
@@ -493,9 +465,7 @@ export default function MarketDashboard() {
     : null;
   const [sortKey, sortDirection = "desc"] = sort.split(":");
 
-  // Gold-wedge + freshness context for the trade modal header/plan.
-  const selectedMetrics = selected ? goldMetrics(selected, goldPerAnchor) : null;
-  const selectedSpread = selected ? rowSpread(selected) : null;
+  // Freshness context for the trade modal header/plan.
   const freshnessAgeMs = radar?.generatedAt ? Date.now() - Date.parse(radar.generatedAt) : null;
   const freshness = Number.isFinite(freshnessAgeMs)
     ? freshnessAgeMs < 60_000 ? "just now" : formatAge(freshnessAgeMs)
@@ -544,6 +514,10 @@ export default function MarketDashboard() {
     () => currentPriceGuidance(history, currentWorkingPrice.anchorValue, { horizonHours: horizon }),
     [currentWorkingPrice.anchorValue, history, horizon],
   );
+  const planSpread = guidance.status === "ok" ? guidance.rangePotential : null;
+  const planMetrics = selected && guidance.status === "ok"
+    ? goldMetrics({ ...selected, low: guidance.entry, high: guidance.exit }, goldPerAnchor)
+    : null;
   const chartUnit = displayCurrency && rates[displayCurrency] ? displayCurrency : selected?.anchor ?? "exalted";
   const chartHistory = useMemo(() => {
     if (!rates[selected?.anchor] || !rates[chartUnit]) return history;
@@ -951,11 +925,11 @@ export default function MarketDashboard() {
                         <small>{currentWorkingPrice.sourceLabel}{currentWorkingPrice.ageMs == null ? "" : ` · ${formatAge(currentWorkingPrice.ageMs)}`}</small>
                       </div>
 
-                      {Number.isFinite(selectedSpread) && (
+                      {Number.isFinite(planSpread) && (
                         <p className="rt-gold-caption">
-                          <strong>{formatPercent(selectedSpread, { signed: false })} margin</strong>
-                          {Number.isFinite(selectedMetrics?.profitPer100k)
-                            ? ` · ≈ ${formatNumber(selectedMetrics.profitPer100k, { maximumFractionDigits: 1 })} ex / 100k gold`
+                          <strong>{formatPercent(planSpread, { signed: false })} margin</strong>
+                          {Number.isFinite(planMetrics?.profitPer100k)
+                            ? ` · ≈ ${formatNumber(planMetrics.profitPer100k, { maximumFractionDigits: 1 })} ex / 100k gold`
                             : ""}
                         </p>
                       )}

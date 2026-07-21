@@ -44,6 +44,29 @@ a `PROVIDER_MODE=live` deploy no longer no-ops on a missing token. CDN live with
 no cursor/`CXAPI_START_ID` now defaults to a recent backfill window (now −
 `CXAPI_MAX_BACKFILL_HOURS`), never the Dec-2024 no-id crawl.
 
+**Correction (same-day) — scope: PoE1 + PoE2 + ALL public leagues.** Original
+plan tracked one game (poe2) + one league. Corrected: ingest **both games**
+(PoE1 = no realm, PoE2 = `/poe2`) and **every public league**, since one CDN
+stream per game/realm already carries all leagues in each hourly digest — the
+data is there for free; filtering to one league threw most of it away.
+- **Private leagues excluded.** The stream mixes in transient private leagues
+  tagged `... (PLxxxxx)` (tiny, throwaway); `isPublicLeague` drops those, keeps
+  permanent + challenge + HC/SSF variants.
+- **Cursor is per (game, realm), NOT per league.** One stream feeds all leagues,
+  so `cxapi_state` must key on game/realm (a coming migration), not league.
+- **Impact on phases:** ingest becomes a per-(game,realm) loop; candles carry
+  their own league (done in domain); storage writes per-candle league + a
+  game/realm cursor; mapping is **per game** (PoE1 vs PoE2 item sets differ);
+  the frontend needs a **game + league selector** (radar scope was single).
+  Row volume grows (all public leagues × 2 games) — revisit retention/index
+  budget in the canary.
+
+Revised phase order: **1** CDN provider (done) → **2a** domain multi-league
+(done, all public leagues, per-candle league) → **2b** storage/ingest rescope
+(per game/realm cursor, per-candle league, migration) → **2c** multi-game ingest
+loop → **3** identity/mapping per game (names/icons; the anchor-namespace
+blocker) → **4** frontend game/league selector → **5** canary + activate.
+
 ## 2026-07-09 — Strategic pivot accepted (BMAD BA review): free tool, gold-wedge hero, apply for cxapi
 Ran a BMAD-style business-analyst review of product-market fit. **User agreed with
 all of it.** Fixed decisions:

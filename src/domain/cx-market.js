@@ -4,14 +4,39 @@ export function canonicalPairId(a, b) {
   return [String(a), String(b)].sort().join("|");
 }
 
-export function normalizeCxDigest(payload, { digestId, league } = {}) {
+/**
+ * Public leagues only. GGG's CX stream mixes permanent + challenge leagues with
+ * transient PRIVATE leagues, tagged `... (PLxxxxx)`. Private leagues are tiny,
+ * throwaway, and pure noise for a market tracker — exclude them.
+ */
+export function isPublicLeague(name) {
+  return typeof name === "string" && name.length > 0 && !/\(PL\d+\)/.test(name);
+}
+
+/**
+ * Normalize one hourly digest into per-market candles.
+ *
+ * One CDN stream (per game/realm) carries EVERY league in each hour, so league
+ * selection happens here, and each candle carries its OWN league:
+ *  - `league` given  -> keep only that exact league (legacy single-league path).
+ *  - `leagues` given -> keep leagues in that allow-list (exact match).
+ *  - neither         -> keep ALL public leagues (multi-game/all-league ingest).
+ */
+export function normalizeCxDigest(payload, { digestId, league = null, leagues = null } = {}) {
   if (!payload || !Array.isArray(payload.markets)) throw new Error("cxapi digest missing markets array");
   const hour = finiteInt(digestId);
   if (hour == null) throw new Error("cxapi digest id must be a unix-hour timestamp");
+  const allow = leagues ? new Set(leagues) : null;
+  const keepLeague = (name) => {
+    if (league != null) return name === league;
+    if (allow) return allow.has(name);
+    return isPublicLeague(name);
+  };
   const completedHour = hour * 1000;
   const candles = [];
   for (const market of payload.markets) {
-    if (!market || market.league !== league || typeof market.market_id !== "string") continue;
+    if (!market || typeof market.market_id !== "string" || !keepLeague(market.league)) continue;
+    const marketLeague = market.league;
     const parts = market.market_id.split("|");
     if (parts.length !== 2 || !parts[0] || !parts[1] || parts[0] === parts[1]) continue;
     const [base, quote] = parts;
@@ -22,7 +47,7 @@ export function normalizeCxDigest(payload, { digestId, league } = {}) {
     const high = valid ? Math.max(lowRaw, highRaw) : null;
     candles.push({
       source: "ggg-cxapi",
-      league,
+      league: marketLeague,
       completedHour,
       digestId: hour,
       pairId: canonicalPairId(base, quote),

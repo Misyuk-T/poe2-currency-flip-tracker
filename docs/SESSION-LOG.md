@@ -31,8 +31,21 @@ is silently empty. Also flagged the history route rejecting `/` in pair ids and 
 **Codex reviewed Phase 1**: cursor arithmetic/guard correct, terminal handled.
 Fixed its P1 (CDN live activation/crawl safety) + P2s (env docs, selector +
 ingest-loop tests). **Tests: 83 green.** PROVIDER_MODE stays `fixture` in prod.
+Committed `feat(cxapi): public CDN provider ... (Phase 1)` (7552698).
 
-**Next (Phase 2):** identity/mapping layer + migration policy — the real work.
+**Course correction (user): PoE1 + PoE2 + ALL public leagues** (see DECISIONS
+2026-07-21 correction). One CDN stream per game/realm already carries every
+league per hour, so filtering to one league wasted the data. Decided to ingest
+both games and all public leagues, excluding transient private `(PLxxxx)` ones.
+
+**Phase 2a shipped (domain):** `normalizeCxDigest` now selects leagues (single /
+allow-list / all-public default) and each candle carries its OWN league;
+`isPublicLeague` drops private leagues. Legacy single-league callers unchanged.
+Tests: `cx-multileague` (+4). **87 green.**
+
+**Next (2b):** storage/ingest rescope — cursor per (game,realm) not per league,
+write per-candle league, migration; then 2c multi-game loop, 3 mapping per game,
+4 frontend game/league selector, 5 canary + activate.
 
 ## 2026-07-10 — Trading-terminal dashboard: gold columns (the wedge, made visible)
 

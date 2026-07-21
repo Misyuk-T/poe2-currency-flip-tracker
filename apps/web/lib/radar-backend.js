@@ -10,6 +10,7 @@
 
 import { loadConfig } from "../../../src/server/config.js";
 import { loadCatalog, buildManifest, nameMapFromCatalog } from "../../../src/domain/catalog.js";
+import { identityNames } from "../../../src/domain/cx-identity.js";
 import { createGoldRegistry, createFlatGoldRegistry } from "../../../src/domain/gold-costs.js";
 import { POE2_GOLD_COSTS } from "../../../src/data/gold-costs-poe2.js";
 import { createRadarRepository } from "../../../src/storage/radar-repository.js";
@@ -47,7 +48,9 @@ function context() {
         config,
         catalogManifest: manifest,
         catalogById: new Map(manifest.map((item) => [item.id, item])),
-        names: nameMapFromCatalog(catalog),
+        // Catalog names (short-id keys) + identity names (Metadata keys) so both
+        // canonical namespaces render a real name; keys don't overlap.
+        names: { ...identityNames(), ...nameMapFromCatalog(catalog) },
         scope: { game: config.poeGame, realm: config.poeRealm, league: config.league, mode: config.providerMode },
       };
     })();
@@ -146,7 +149,10 @@ export async function getHistory(searchParams) {
   // Validate input before touching infrastructure so a malformed pair is a clean
   // 400 regardless of database availability.
   const pair = searchParams.get("pair") ?? "";
-  if (!/^[\p{L}\p{N}-]+\|[\p{L}\p{N}-]+$/u.test(pair)) {
+  // Two canonical ids joined by "|". An id is a catalog short id (letters/digits/
+  // hyphen) OR — for the unmapped long tail — a Metadata path (adds "/"). Bounded
+  // length; the value is only ever used as a parameterized SQL literal downstream.
+  if (!/^[\p{L}\p{N}\-/]{1,128}\|[\p{L}\p{N}\-/]{1,128}$/u.test(pair)) {
     return { status: 400, body: { error: { code: "invalid-pair", message: "invalid market pair" } } };
   }
   const repo = await resolveRepo(ctx);

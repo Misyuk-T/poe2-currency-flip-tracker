@@ -61,6 +61,17 @@ data is there for free; filtering to one league threw most of it away.
   Row volume grows (all public leagues × 2 games) — revisit retention/index
   budget in the canary.
 
+**Correction (2026-07-21, Phase 3b) — canonical id = catalog SHORT ID at ingest.**
+The earlier "canonical id = Metadata path" note is superseded now that a validated
+map exists (RePoE, Phase 3a). Live CX Metadata ids are translated to the catalog
+short id AT INGEST (`normalizeCxDigest({translate})`) where known, else the
+Metadata path is kept. This makes the entire short-id-keyed downstream (anchor
+matching, catalog/gold/display, history, SEO pages) work UNCHANGED for the
+currency core, and keeps prod fixture identical (translator is a no-op for short
+ids). Ratio/volume/stock are read from the ORIGINAL ids, then base/quote/pairId +
+JSON keys use the canonical id. Translation is game-scoped (PoE2 only; PoE1 passes
+through until it gets its own identity map).
+
 Revised phase order: **1** CDN provider (done) → **2a** domain multi-league
 (done, all public leagues, per-candle league) → **2b** storage/ingest rescope
 (per game/realm cursor, per-candle league, migration) → **2c** multi-game ingest

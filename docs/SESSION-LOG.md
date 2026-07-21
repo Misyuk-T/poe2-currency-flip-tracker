@@ -92,13 +92,22 @@ humanize). next.config traces the JSON. Codex (gpt-5.6-sol): fixed P1 art-collis
 (-> name join) + reverse-map order + P2 tracing/tests. 108 green. Committed 1e996ac.
 Not wired into routes yet (prod unaffected).
 
-**Next (3b) — wire identity into the radar (the anchor unblock):** resolve the
-requested anchor to the stored namespace (fixture=short-id, live=Metadata via
-metadataForShortId) so `candleForAnchor`/market-radar match live candles; attach
-resolveCurrency names/icons in radar-payload; fix the history route rejecting `/`
-in Metadata pair ids. Gated/namespace-agnostic so the working fixture radar is
-unchanged; unit-tested (can't live-verify until activation). Then 4 selector, 5
-canary + activate (+ the 60s ingest fix).
+**Phase 3b SHIPPED — canonicalize at ingest (the anchor unblock).** Chose to
+translate live Metadata ids -> catalog SHORT ID at ingest (not carry Metadata
+downstream): `normalizeCxDigest({translate})` reads ratio/volume/stock from the
+ORIGINAL ids, stores base/quote/pairId + JSON keys as the canonical id.
+`metadataToCanonicalId` + game-scoped `translatorForGame` (PoE2 only; PoE1 passes
+through). So the short-id-keyed downstream (anchor, catalog/gold, history, SEO)
+works UNCHANGED for the core, and fixture is a no-op. Also: names merge
+`identityNames()` for tail targets; history route allows `/` in Metadata pairs.
+PROVEN by test on the real captured CDN sample: short-id "exalted" now MATCHES
+live candles (the documented blocker). Codex (gpt-5.6-sol): fixed P1 (PoE2
+translator was applied to PoE1 -> game-scoped) + P2 tests. 113 green. Can't
+live-verify until activation; unit-covered. NOT deployed (branch).
+
+**Next: 4** frontend game/league selector, **5** canary + activate (with the 60s
+ingest bounded-budget fix). Known residual (backlog): finiteNonNegative(null)===0;
+truly-unknown-to-RePoE ids render raw (rare — rebuild map).
 
 --- superseded note (Phase 3 was blocked, now resolved in 3a) ---
 Live candles store

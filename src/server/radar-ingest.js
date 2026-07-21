@@ -14,6 +14,19 @@
 
 import { normalizeCxDigest } from "../domain/cx-market.js";
 import { buildCxapiFixtures } from "../data/fixtures/cxapi-fixtures.js";
+import { resolveCurrency } from "../domain/cx-identity.js";
+
+/** Map a live PoE2 CX Metadata id to its canonical id (catalog short id where
+ *  known, else the Metadata path). A no-op for ids outside the identity map
+ *  (e.g. fixture short ids). */
+export const metadataToCanonicalId = (id) => resolveCurrency(id).shortId ?? id;
+
+/** The identity map is PoE2-specific, so only PoE2 gets canonicalized; other
+ *  games (PoE1, console) pass through until they get their own identity map —
+ *  never risk labelling PoE1 data with PoE2 short ids. */
+export function translatorForGame(game) {
+  return game === "poe2" ? metadataToCanonicalId : (id) => id;
+}
 
 const HOUR = 3600_000;
 
@@ -41,7 +54,7 @@ export async function ingestFixtures({ repo, league, anchors, items = [], now = 
  * latest completed digest (never requests into the future).
  * @param {{ repo: any, provider: any, league: string, startId?: number|null, maxDigests?: number }} input
  */
-export async function ingestLive({ repo, provider, league = null, leagues = null, startId = null, maxDigests = 1 }) {
+export async function ingestLive({ repo, provider, league = null, leagues = null, startId = null, maxDigests = 1, translate = (id) => id }) {
   if (!provider?.configured) return { mode: "live", configured: false, digests: 0, inserted: 0 };
   const state = await repo.readCxapiState();
   let id = state.cursor ?? startId;
@@ -53,7 +66,8 @@ export async function ingestLive({ repo, provider, league = null, leagues = null
     const requestedId = id;
     const raw = await provider.fetchDigest({ id });
     // league/leagues null => keep ALL public leagues (multi-league live ingest).
-    const normalized = normalizeCxDigest(raw.payload, { digestId: raw.digestId, league, leagues });
+    // translate => canonicalize Metadata ids to short ids where known.
+    const normalized = normalizeCxDigest(raw.payload, { digestId: raw.digestId, league, leagues, translate });
     inserted += await repo.recordCxDigest(normalized);
     digests += 1;
     lastDigestId = normalized.digestId;
@@ -101,6 +115,8 @@ export async function ingestLiveStreams({ streams, config, now, makeRepo, makePr
       league: null, // all public leagues
       startId,
       maxDigests: catchingUp ? Math.min(config.cxapiMaxBackfillHours, 12) : 1,
+      // Game-scoped: only PoE2 has an identity map, so PoE1 streams pass through.
+      translate: translatorForGame(stream.game),
     });
     results.push({ game: stream.game, realm: stream.realm, ...summary });
   }

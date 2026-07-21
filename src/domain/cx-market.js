@@ -22,7 +22,7 @@ export function isPublicLeague(name) {
  *  - `leagues` given -> keep leagues in that allow-list (exact match).
  *  - neither         -> keep ALL public leagues (multi-game/all-league ingest).
  */
-export function normalizeCxDigest(payload, { digestId, league = null, leagues = null } = {}) {
+export function normalizeCxDigest(payload, { digestId, league = null, leagues = null, translate = (id) => id } = {}) {
   if (!payload || !Array.isArray(payload.markets)) throw new Error("cxapi digest missing markets array");
   const hour = finiteInt(digestId);
   if (hour == null) throw new Error("cxapi digest id must be a unix-hour timestamp");
@@ -39,12 +39,18 @@ export function normalizeCxDigest(payload, { digestId, league = null, leagues = 
     const marketLeague = market.league;
     const parts = market.market_id.split("|");
     if (parts.length !== 2 || !parts[0] || !parts[1] || parts[0] === parts[1]) continue;
-    const [base, quote] = parts;
-    const lowRaw = ratioPrice(market.lowest_ratio, base, quote);
-    const highRaw = ratioPrice(market.highest_ratio, base, quote);
+    // Ratio/volume/stock are keyed by the ORIGINAL market ids, so read them with
+    // rawBase/rawQuote; `translate` maps those to the canonical id (short id where
+    // known, else passthrough) used for base/quote/pairId and the JSON keys.
+    const [rawBase, rawQuote] = parts;
+    const lowRaw = ratioPrice(market.lowest_ratio, rawBase, rawQuote);
+    const highRaw = ratioPrice(market.highest_ratio, rawBase, rawQuote);
     const valid = Number.isFinite(lowRaw) && Number.isFinite(highRaw) && lowRaw > 0 && highRaw > 0;
     const low = valid ? Math.min(lowRaw, highRaw) : null;
     const high = valid ? Math.max(lowRaw, highRaw) : null;
+    const base = translate(rawBase);
+    const quote = translate(rawQuote);
+    if (!base || !quote || base === quote) continue; // guard against a collapsing translation
     candles.push({
       source: "ggg-cxapi",
       league: marketLeague,
@@ -58,17 +64,17 @@ export function normalizeCxDigest(payload, { digestId, league = null, leagues = 
       reference: valid ? (low + high) / 2 : null, // range midpoint proxy, NOT a close
       referenceKind: "range-midpoint-proxy",
       volume: {
-        [base]: finiteNonNegative(market.volume_traded?.[base]),
-        [quote]: finiteNonNegative(market.volume_traded?.[quote]),
+        [base]: finiteNonNegative(market.volume_traded?.[rawBase]),
+        [quote]: finiteNonNegative(market.volume_traded?.[rawQuote]),
       },
       stock: {
         lowest: {
-          [base]: finiteNonNegative(market.lowest_stock?.[base]),
-          [quote]: finiteNonNegative(market.lowest_stock?.[quote]),
+          [base]: finiteNonNegative(market.lowest_stock?.[rawBase]),
+          [quote]: finiteNonNegative(market.lowest_stock?.[rawQuote]),
         },
         highest: {
-          [base]: finiteNonNegative(market.highest_stock?.[base]),
-          [quote]: finiteNonNegative(market.highest_stock?.[quote]),
+          [base]: finiteNonNegative(market.highest_stock?.[rawBase]),
+          [quote]: finiteNonNegative(market.highest_stock?.[rawQuote]),
         },
       },
     });

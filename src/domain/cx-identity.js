@@ -62,6 +62,16 @@ export function isKnownCurrency(metadataId) {
   return Object.prototype.hasOwnProperty.call(items, metadataId);
 }
 
+/** { metadataId: name } for every mapped item — merge into the radar `names` map
+ *  so tail targets (Metadata ids without a catalog short id) still render a real
+ *  name instead of a raw path. */
+export function identityNames() {
+  load();
+  const out = {};
+  for (const [meta, e] of Object.entries(items)) out[meta] = e.name;
+  return out;
+}
+
 /** "Metadata/Items/Currency/CurrencyRerollRare" -> "Currency Reroll Rare". */
 export function humanize(metadataId) {
   const leaf = String(metadataId).split("/").pop() ?? "";

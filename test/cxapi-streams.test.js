@@ -4,9 +4,12 @@ import { loadConfig } from "../src/server/config.js";
 import { createGggCdnCxapiProvider } from "../src/providers/ggg-cdn-cxapi-provider.js";
 import { ingestLive, ingestLiveStreams, rotateStreams } from "../src/server/radar-ingest.js";
 
-test("config: default stream is PoE2 only (reads are PoE2-scoped; PoE1 opt-in)", () => {
+test("config: default streams cover PoE1 + PoE2", () => {
   const cfg = loadConfig({});
-  assert.deepEqual(cfg.cxapiStreams, [{ game: "poe2", realm: "poe2" }]);
+  assert.deepEqual(cfg.cxapiStreams, [
+    { game: "poe1", realm: "poe1" },
+    { game: "poe2", realm: "poe2" },
+  ]);
 });
 
 test("config: CXAPI_STREAMS overrides, ignoring malformed entries", () => {

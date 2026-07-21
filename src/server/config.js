@@ -20,9 +20,7 @@
 
 /** @returns {AppConfig} */
 export function loadConfig(env = process.env) {
-  // The app is LIVE by default now (public CDN needs no token). Only an explicit
-  // PROVIDER_MODE=fixture opts into synthetic data (local dev / offline demo).
-  const providerMode = (env.PROVIDER_MODE ?? "live").toLowerCase() === "fixture" ? "fixture" : "live";
+  const providerMode = (env.PROVIDER_MODE ?? "fixture").toLowerCase() === "live" ? "live" : "fixture";
   // Configured PoE2 leagues. The active LEAGUE is always included and is the
   // only one currently polled; others are advertised but not yet pollable.
   const league = env.LEAGUE ?? "Runes of Aldur";
@@ -96,12 +94,13 @@ export function loadConfig(env = process.env) {
     // a service:cxapi token. Defaults to cdn now that no token is needed.
     cxapiSource: (env.CXAPI_SOURCE ?? "cdn").toLowerCase() === "oauth" ? "oauth" : "cdn",
     cxapiCdnBaseUrl: env.CXAPI_CDN_BASE_URL ?? null,
-    // Live ingest streams: one CDN stream per (game, realm), each carrying every
-    // league in its hourly digest. Default is PoE2 only — reads are PoE2-scoped
-    // today, so ingesting PoE1 would just waste CDN/DB/cron budget on data nothing
-    // reads. Add it back (CXAPI_STREAMS="poe2:poe2,poe1:poe1") once a PoE1 identity
-    // map + a game selector surface it. Format: "game:realm,..." comma-separated.
-    cxapiStreams: streams(env.CXAPI_STREAMS, [{ game: "poe2", realm: "poe2" }]),
+    // Live ingest streams: one CDN stream per (game, realm). PoE1 + PoE2 by
+    // default; each stream carries every league in its hourly digest. Format:
+    // CXAPI_STREAMS="poe1:poe1,poe2:poe2" (game:realm, comma-separated).
+    cxapiStreams: streams(env.CXAPI_STREAMS, [
+      { game: "poe1", realm: "poe1" },
+      { game: "poe2", realm: "poe2" },
+    ]),
     cxapiAccessToken: env.CXAPI_ACCESS_TOKEN ?? null,
     cxapiStartId: env.CXAPI_START_ID ? posInt(env.CXAPI_START_ID, 0, 1) : null,
     cxapiTimeoutMs: posInt(env.CXAPI_TIMEOUT_MS, 10_000, 1000),

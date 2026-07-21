@@ -85,7 +85,6 @@ function fixtureRepository(ctx) {
         items: ctx.catalogManifest,
         now: Date.now(),
       });
-      repo.synthetic = true; // honest label: this data is synthetic, never "official"
       return repo;
     })();
   }
@@ -96,10 +95,7 @@ function fixtureRepository(ctx) {
 async function resolveRepo(ctx) {
   const dbRepo = repository(ctx.scope);
   if (dbRepo) return dbRepo;
-  // No database: only local dev / an explicit opt-in falls back to synthetic
-  // fixtures (any mode — the app defaults to live now). Production without a DB
-  // still degrades to an honest NO_DB, never fake data.
-  if (fixtureFallbackEnabled()) return fixtureRepository(ctx);
+  if (ctx.config.providerMode === "fixture" && fixtureFallbackEnabled()) return fixtureRepository(ctx);
   return null;
 }
 
@@ -136,8 +132,7 @@ export async function getRadar(searchParams) {
       names,
       catalogManifest,
       catalogById,
-      // Synthetic fallback data is always labelled "fixture", never "official".
-      source: { sourceMode: repo.synthetic ? "fixture" : sourceMode(config), providerMode: config.providerMode },
+      source: { sourceMode: sourceMode(config), providerMode: config.providerMode },
       radarMaxHotTargets: config.radarMaxHotTargets,
       now: Date.now(),
     }),
@@ -269,9 +264,7 @@ export async function getStatus() {
   const ctx = await context();
   const { config } = ctx;
   const repo = await resolveRepo(ctx);
-  // Honest label: the synthetic offline fallback is "fixture" even under live mode.
-  const mode = repo?.synthetic ? "fixture" : sourceMode(config);
-  const base = { providerMode: config.providerMode, league: config.league, sourceMode: mode };
+  const base = { providerMode: config.providerMode, league: config.league, sourceMode: sourceMode(config) };
   if (!repo) return { status: 200, body: { ...base, radar: { configured: false, reason: "no-database" } } };
   const [state, candles] = await withDbRetry(() =>
     Promise.all([repo.readCxapiState(), repo.readCandleWindow()]),

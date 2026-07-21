@@ -1,0 +1,61 @@
+{
+ "next_change_id": 1784617200,
+ "markets": [
+  {
+   "league": "Runes of Aldur",
+   "market_id": "Metadata/Items/SoulCores/RuneWardSpecial3|Metadata/Items/Currency/CurrencyAddModToRare",
+   "market_pair": [
+    "Metadata/Items/SoulCores/RuneWardSpecial3",
+    "Metadata/Items/Currency/CurrencyAddModToRare"
+   ],
+   "volume_traded": {
+    "Metadata/Items/SoulCores/RuneWardSpecial3": 1,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 5
+   },
+   "lowest_stock": {
+    "Metadata/Items/SoulCores/RuneWardSpecial3": 32,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 0
+   },
+   "highest_stock": {
+    "Metadata/Items/SoulCores/RuneWardSpecial3": 36,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 0
+   },
+   "lowest_ratio": {
+    "Metadata/Items/SoulCores/RuneWardSpecial3": 1,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 5
+   },
+   "highest_ratio": {
+    "Metadata/Items/SoulCores/RuneWardSpecial3": 1,
+    "Metadata/Items/Currency/CurrencyAddModToRare": 5
+   }
+  },
+  {
+   "league": "Runes of Aldur",
+   "market_id": "Metadata/Items/SoulCores/ThesisOfExperiments|Metadata/Items/Currency/CurrencyRerollRare",
+   "market_pair": [
+    "Metadata/Items/SoulCores/ThesisOfExperiments",
+    "Metadata/Items/Currency/CurrencyRerollRare"
+   ],
+   "volume_traded": {
+    "Metadata/Items/SoulCores/ThesisOfExperiments": 1,
+    "Metadata/Items/Currency/CurrencyRerollRare": 17
+   },
+   "lowest_stock": {
+    "Metadata/Items/SoulCores/ThesisOfExperiments": 42,
+    "Metadata/Items/Currency/CurrencyRerollRare": 373
+   },
+   "highest_stock": {
+    "Metadata/Items/SoulCores/ThesisOfExperiments": 43,
+    "Metadata/Items/Currency/CurrencyRerollRare": 390
+   },
+   "lowest_ratio": {
+    "Metadata/Items/SoulCores/ThesisOfExperiments": 1,
+    "Metadata/Items/Currency/CurrencyRerollRare": 17
+   },
+   "highest_ratio": {
+    "Metadata/Items/SoulCores/ThesisOfExperiments": 1,
+    "Metadata/Items/Currency/CurrencyRerollRare": 17
+   }
+  }
+ ]
+}

@@ -2,6 +2,48 @@
 
 Newest first. Each entry: **what** was decided, **why**, and the date.
 
+## 2026-07-21 — Currency Exchange goes live via the PUBLIC CDN (no OAuth)
+GGG's OAuth team replied: CX history is now public through their CDN, so the
+`service:cxapi` token we were waiting on is **no longer required**. Verified live
+(probed 2026-07-21):
+- Endpoint `GET https://web.poecdn.com/api/currency-exchange/<realm>[/<id>]`,
+  unauthenticated, `realm=poe2` (also covers PoE1/xbox/sony). Response
+  `{ next_change_id, markets[] }`; ~5-min delay.
+- **`id` is a per-hour cursor; markets belong to the requested hour; `next =
+  id+3600`.** Live edge: the in-progress hour returns `next === id` with empty
+  markets (terminal). No-id returns the FIRST hour of ALL history (Dec 2024),
+  NOT the latest — so `digestId = requested id`, and the OAuth `next-3600`
+  derivation is WRONG for the CDN (mislabels the terminal hour).
+- Real `market_id` = full **Metadata paths** (`Metadata/Items/<Class>/<Leaf>`,
+  and the class varies: Currency, SoulCores, …). Ratios are **integer pairs**
+  (`{A:2,B:1}` = 2A:1B); domain `ratioPrice = quote/base` already handles this.
+
+**Decision: default `CXAPI_SOURCE=cdn`** (legacy OAuth kept behind
+`CXAPI_SOURCE=oauth`). Go-live is a **3-phase BMAD cycle**, codex-reviewed each
+phase:
+1. **CDN provider + config gate (done, not activated).** New CDN provider,
+   selector, contract + real-fixture tests. Live mode NOT enabled in prod.
+2. **Identity/mapping layer (blocker).** Ingested candles store Metadata paths as
+   base/quote, but the anchor config uses short ids (`exalted`) →
+   `candleForAnchor`/`market-radar` match nothing → empty radar. Also the history
+   route rejects `/` in pair ids. Must canonicalize Metadata → stable id at
+   INGEST (anchors, shortlist, volume/stock JSON keys, names/icons), with an
+   explicit migration/versioning policy since `pair_id` is in the candle PK. Live
+   universe is ~627 currencies/league-hour; curated catalog resolves only ~6% by
+   count (~42% by volume) — need a fuller Metadata→{name,icon,category} source.
+3. **Canary + activation.** Isolated live-scope backfill, verify known ratios,
+   exact league filtering (exclude Standard/HC/`PLxxxx`), row counts (~1.16M/30d),
+   names/icons; then cron `:05`→`:10` and flip `PROVIDER_MODE=live`.
+
+**Why phased, not a flag flip:** the CDN is live and correct, but the id-namespace
+mismatch makes an unmapped activation produce a silently-empty radar. Provider
+ships first (safe), activation waits on the mapping layer.
+
+**Safety guard (Phase 1):** the CDN provider is always `configured` (public), so
+a `PROVIDER_MODE=live` deploy no longer no-ops on a missing token. CDN live with
+no cursor/`CXAPI_START_ID` now defaults to a recent backfill window (now −
+`CXAPI_MAX_BACKFILL_HOURS`), never the Dec-2024 no-id crawl.
+
 ## 2026-07-09 — Strategic pivot accepted (BMAD BA review): free tool, gold-wedge hero, apply for cxapi
 Ran a BMAD-style business-analyst review of product-market fit. **User agreed with
 all of it.** Fixed decisions:

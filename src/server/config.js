@@ -89,6 +89,11 @@ export function loadConfig(env = process.env) {
     maxTrackedTargets: posInt(env.MAX_TRACKED_TARGETS, 250, 10),
 
     // --- C2b: official hourly Currency Exchange API / Market Radar ---
+    // Feed selection: "cdn" = public unauthenticated web.poecdn.com endpoint
+    // (GGG made CX history public), "oauth" = legacy api.pathofexile.com behind
+    // a service:cxapi token. Defaults to cdn now that no token is needed.
+    cxapiSource: (env.CXAPI_SOURCE ?? "cdn").toLowerCase() === "oauth" ? "oauth" : "cdn",
+    cxapiCdnBaseUrl: env.CXAPI_CDN_BASE_URL ?? null,
     cxapiAccessToken: env.CXAPI_ACCESS_TOKEN ?? null,
     cxapiStartId: env.CXAPI_START_ID ? posInt(env.CXAPI_START_ID, 0, 1) : null,
     cxapiTimeoutMs: posInt(env.CXAPI_TIMEOUT_MS, 10_000, 1000),

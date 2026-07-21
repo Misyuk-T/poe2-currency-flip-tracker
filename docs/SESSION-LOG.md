@@ -2,6 +2,38 @@
 
 Newest first. One block per working session: what changed + commit refs.
 
+## 2026-07-21 — CX go-live Phase 1: public CDN provider (behind a gate)
+
+**Unblocked.** GGG replied — CX history is public via CDN, no OAuth needed
+(see DECISIONS 2026-07-21). Probed the live endpoint to nail the real contract
+before writing code: per-hour cursor, `digestId = requested id`, terminal
+`next===id`, Metadata-path `market_id`, integer-pair ratios.
+
+**Codex reviewed the plan first**, confirming the core blocker: ingested candles
+store Metadata paths as base/quote while anchors are short ids (`exalted`), so
+`candleForAnchor`/`market-radar` match nothing → an activated-but-unmapped radar
+is silently empty. Also flagged the history route rejecting `/` in pair ids and a
+`finiteNonNegative(null)→0` bug (deferred to Phase 2).
+
+**Phase 1 shipped (not activated):**
+- `src/providers/ggg-cdn-cxapi-provider.js` — public CDN provider, no auth,
+  `digestId = requested id` (never `next-3600`), backward-cursor guard.
+- `src/providers/create-cxapi-provider.js` — `cdn|oauth` selector.
+- `src/server/config.js` — `CXAPI_SOURCE` (default `cdn`) + `CXAPI_CDN_BASE_URL`.
+- `apps/web/lib/radar-backend.js` — uses the selector; CDN live defaults to a
+  recent backfill window when no cursor/start id (no Dec-2024 no-id crawl).
+- `.env.example` — documents the new vars.
+- Tests: `cdn-cxapi-provider` (contract), `cdn-cx-normalize` (real captured
+  payload + **documents the anchor-namespace bug**), `create-cxapi-provider`
+  (selector), `cdn-ingest-loop` (real provider walked through `ingestLive` to the
+  terminal), `test/fixtures/cdn-cx-sample.json` (2 real trimmed markets).
+
+**Codex reviewed Phase 1**: cursor arithmetic/guard correct, terminal handled.
+Fixed its P1 (CDN live activation/crawl safety) + P2s (env docs, selector +
+ingest-loop tests). **Tests: 83 green.** PROVIDER_MODE stays `fixture` in prod.
+
+**Next (Phase 2):** identity/mapping layer + migration policy — the real work.
+
 ## 2026-07-10 — Trading-terminal dashboard: gold columns (the wedge, made visible)
 
 **Backup first** — committed the pre-redesign state as restore point

@@ -138,8 +138,7 @@ export function createRadarRepository({
     const rows = await withTimeout(
       sql`
         select next_change_id, last_digest_id from cxapi_state
-        where game = ${scope.game} and realm = ${scope.realm} and league = ${scope.league}
-          and provider = ${scope.mode}`,
+        where game = ${scope.game} and realm = ${scope.realm} and provider = ${scope.mode}`,
       opTimeoutMs,
       "cxapi state",
     );
@@ -164,7 +163,9 @@ export function createRadarRepository({
           const rows = digest.candles.map((c) => ({
             game: scope.game,
             realm: scope.realm,
-            league: scope.league,
+            // One stream carries every league, so each candle stores its OWN
+            // league (falling back to the scope league for legacy callers).
+            league: c.league ?? scope.league,
             provider: scope.mode,
             completed_hour: new Date(c.completedHour),
             digest_id: String(c.digestId),
@@ -188,11 +189,13 @@ export function createRadarRepository({
         // than what's stored. This — together with on-conflict-do-nothing on the
         // candles — makes concurrent ingest runs safe WITHOUT a distributed lock
         // (which also avoids unreliable session advisory locks under the pooler).
+        // Keyed per (game, realm, provider): one CDN stream feeds every league,
+        // so the cursor is league-independent (see migration 006).
         await tx`
-          insert into cxapi_state (game, realm, league, provider, next_change_id, last_digest_id, updated_at)
-          values (${scope.game}, ${scope.realm}, ${scope.league}, ${scope.mode},
+          insert into cxapi_state (game, realm, provider, next_change_id, last_digest_id, updated_at)
+          values (${scope.game}, ${scope.realm}, ${scope.mode},
                   ${digest.nextChangeId ?? null}, ${digest.digestId ?? null}, now())
-          on conflict (game, realm, league, provider) do update set
+          on conflict (game, realm, provider) do update set
             next_change_id = excluded.next_change_id,
             last_digest_id = excluded.last_digest_id,
             updated_at = excluded.updated_at

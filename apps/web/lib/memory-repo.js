@@ -27,9 +27,12 @@ export function createMemoryRepository(scope, { windowDays = WINDOW_DAYS, maxHou
   async function recordCxDigest(digest) {
     let inserted = 0;
     for (const c of digest.candles ?? []) {
-      const key = `${c.completedHour}|${c.pairId}`;
+      const league = c.league ?? scope.league;
+      // Key includes league, mirroring the SQL primary key: one stream carries
+      // many leagues, so the same pair/hour recurs per league without colliding.
+      const key = `${league}|${c.completedHour}|${c.pairId}`;
       if (byKey.has(key)) continue;
-      byKey.set(key, { ...c, league: scope.league });
+      byKey.set(key, { ...c, league });
       inserted += 1;
     }
     // Monotonic cursor, matching createRadarRepository.recordCxDigest.

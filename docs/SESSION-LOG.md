@@ -43,9 +43,26 @@ allow-list / all-public default) and each candle carries its OWN league;
 `isPublicLeague` drops private leagues. Legacy single-league callers unchanged.
 Tests: `cx-multileague` (+4). **87 green.**
 
-**Next (2b):** storage/ingest rescope — cursor per (game,realm) not per league,
-write per-candle league, migration; then 2c multi-game loop, 3 mapping per game,
-4 frontend game/league selector, 5 canary + activate.
+**Phase 2b shipped (storage rescope):** cursor is now per (game,realm,provider),
+not per league — one CDN stream feeds every league. `recordCxDigest` writes
+per-candle league (`c.league ?? scope.league`) in both Postgres + memory repos;
+memory dedupe key now includes league. Migration `006_cxapi_state_per_stream_
+cursor.sql` drops the league column + re-keys the PK. **Verified against the real
+prod schema** (PK name `cxapi_state_pkey`, 1 fixture row, 676k candles untouched)
+via read-only queries — DDL is safe. Codex-reviewed: fixed P1 (memory dedupe key)
++ P2s (migration tiebreaker, fake-tx contract test). **94 green.**
+
+**DEPLOY ORDERING (important):** migration 006 is incompatible with the currently
+deployed code (old cursor upsert targets `on conflict (game,realm,league,
+provider)`). Apply to prod ONLY together with deploying this branch — sequence:
+pause the ingest cron, apply 006, deploy, observe one fixture ingest. Reads
+(candles table) stay compatible throughout; only the cursor write is affected,
+and prod is fixture-only. Migration file is committed; **prod apply deferred to
+the coordinated deploy window.**
+
+**Next (2c):** multi-game ingest loop (iterate poe1+poe2, feed normalize with the
+all-public default) + single-ingester-per-stream invariant; then 3 mapping per
+game, 4 frontend game/league selector, 5 canary + activate.
 
 ## 2026-07-10 — Trading-terminal dashboard: gold columns (the wedge, made visible)
 

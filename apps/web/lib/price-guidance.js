@@ -11,13 +11,16 @@ export function convertMarketPrice(value, from, to, ratesOrDivineInExalted) {
  * item, never an automatic reciprocal such as items per exalted.
  */
 export function quoteFromAnchor(value, { anchor = "exalted", displayCurrency = null, rates } = {}) {
-  if (!positive(value) || !positive(rates?.[anchor]) || !positive(rates?.exalted)) {
+  if (!positive(value) || !positive(rates?.[anchor])) {
     return { value: null, unit: null };
   }
 
-  const exaltedValue = (value * rates[anchor]) / rates.exalted;
-  const unit = displayCurrency && positive(rates[displayCurrency]) ? displayCurrency : "exalted";
-  const quotedValue = exaltedValue / rates[unit];
+  const unit = displayCurrency && positive(rates[displayCurrency])
+    ? displayCurrency
+    : positive(rates.exalted)
+      ? "exalted"
+      : anchor;
+  const quotedValue = (value * rates[anchor]) / rates[unit];
   return positive(quotedValue)
     ? { value: quotedValue, unit }
     : { value: null, unit: null };
@@ -27,10 +30,16 @@ export function quoteFromAnchor(value, { anchor = "exalted", displayCurrency = n
  * Manual observations override the delayed hourly midpoint. Otherwise the
  * latest official completed-hour reference is used, with source/age attached.
  */
-export function workingPrice(row, savedManual, { divineInExalted, chaosInExalted, preferredUnit: wantedUnit, now = Date.now() } = {}) {
-  const rates = normalizeRates({ divineInExalted, chaosInExalted });
-  const preferredUnit = rates[wantedUnit] ? wantedUnit : null;
+export function workingPrice(
+  row,
+  savedManual,
+  { rates: providedRates, divineInExalted, chaosInExalted, preferredUnit: wantedUnit, now = Date.now() } = {},
+) {
   const anchor = row?.anchor;
+  const rates = providedRates
+    ? { ...providedRates, [anchor]: positive(providedRates[anchor]) ? providedRates[anchor] : 1 }
+    : normalizeRates({ divineInExalted, chaosInExalted });
+  const preferredUnit = rates[wantedUnit] ? wantedUnit : null;
   const manualUnit = rates[savedManual?.unit] ? savedManual.unit : null;
   const manualValue = Number(savedManual?.value);
   if (manualUnit && positive(manualValue)) {
@@ -79,6 +88,16 @@ function normalizeRates(ratesOrDivineInExalted) {
       exalted: 1,
       divine: positive(ratesOrDivineInExalted) ? ratesOrDivineInExalted : null,
       chaos: null,
+    };
+  }
+  if (
+    ratesOrDivineInExalted
+    && ["exalted", "chaos", "divine"].some((unit) => Object.hasOwn(ratesOrDivineInExalted, unit))
+  ) {
+    return {
+      exalted: positive(ratesOrDivineInExalted.exalted) ? ratesOrDivineInExalted.exalted : null,
+      chaos: positive(ratesOrDivineInExalted.chaos) ? ratesOrDivineInExalted.chaos : null,
+      divine: positive(ratesOrDivineInExalted.divine) ? ratesOrDivineInExalted.divine : null,
     };
   }
   return {

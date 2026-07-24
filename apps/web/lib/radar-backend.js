@@ -341,13 +341,53 @@ export async function getHotlist(searchParams = new URLSearchParams()) {
   return { status: 200, body };
 }
 
+async function leagueAvailability(ctx, games) {
+  // Local fixture mode has no database; keep its configured league list intact.
+  // In production each EXISTS probe uses the scope/recent index and avoids the
+  // expensive full radar computation.
+  if (!getSql()) return null;
+  const available = new Map();
+  for (const game of games) {
+    if (!game.enabled) continue;
+    for (const league of game.leagues) {
+      const key = `${game.id}|${league}`;
+      try {
+        const repo = repository(scopeFor(ctx, game, league));
+        const hasData = repo
+          ? await withDbRetry(() => repo.hasPricedCandles())
+          : true;
+        available.set(key, hasData);
+      } catch {
+        // A config probe must never hide a valid league because the database had
+        // a transient read failure. The radar route will surface a real error.
+        available.set(key, true);
+      }
+    }
+  }
+  return available;
+}
+
 export async function getConfig() {
-  const { config } = await context();
-  const games = gameConfigs(config).map((game) => ({
-    ...game,
-    reason: game.enabled ? null : "Market stream is not configured",
-    leagues: game.leagues.map((league) => ({ id: league, label: league, enabled: true })),
-  }));
+  const ctx = await context();
+  const { config } = ctx;
+  const definitions = gameConfigs(config);
+  const availability = await leagueAvailability(ctx, definitions);
+  const games = definitions.map((game) => {
+    const leagues = game.leagues.map((league) => ({
+      id: league,
+      label: league,
+      enabled: availability?.get(`${game.id}|${league}`) !== false,
+    }));
+    const enabledLeagueIds = leagues.filter((entry) => entry.enabled).map((entry) => entry.id);
+    return {
+      ...game,
+      activeLeague: enabledLeagueIds.includes(game.activeLeague)
+        ? game.activeLeague
+        : enabledLeagueIds[0] ?? game.activeLeague,
+      reason: game.enabled ? null : "Market stream is not configured",
+      leagues,
+    };
+  });
   return {
     status: 200,
     body: {

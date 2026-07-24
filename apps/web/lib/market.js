@@ -33,6 +33,41 @@ export async function fetchJsonWithRetry(url, { attempts = 3, delayMs = 400, ...
   throw lastError;
 }
 
+const jsonCache = new Map();
+const inflightJson = new Map();
+
+export function peekCachedJson(url, { ttlMs = 5 * 60_000, now = Date.now() } = {}) {
+  const cached = jsonCache.get(url);
+  return cached && now - cached.storedAt < ttlMs ? cached.data : null;
+}
+
+/**
+ * Small session cache for shared, hourly market reads. It deduplicates
+ * background prefetches with user-triggered requests and keeps switching
+ * instant for data already visited or warmed in this browser tab.
+ */
+export function fetchJsonCached(
+  url,
+  { ttlMs = 5 * 60_000, force = false, ...init } = {},
+) {
+  if (!force) {
+    const cached = peekCachedJson(url, { ttlMs });
+    if (cached) return Promise.resolve(cached);
+    if (inflightJson.has(url)) return inflightJson.get(url);
+  }
+
+  const request = fetchJsonWithRetry(url, { cache: "default", ...init })
+    .then((data) => {
+      jsonCache.set(url, { data, storedAt: Date.now() });
+      return data;
+    })
+    .finally(() => {
+      if (inflightJson.get(url) === request) inflightJson.delete(url);
+    });
+  inflightJson.set(url, request);
+  return request;
+}
+
 export const popularCurrencies = [
   { id: "divine", name: "Divine Orb", summary: "High-value anchor market for larger flips and overnight price checks." },
   { id: "exalted", name: "Exalted Orb", summary: "Primary liquid trading currency for small and mid-sized market moves." },

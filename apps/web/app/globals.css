@@ -1568,7 +1568,32 @@ body:has(.home-page) {
   box-shadow: var(--rl-shadow);
 }
 
-.radar-shell { display: grid; grid-template-columns: 258px minmax(0, 1fr); min-height: 680px; }
+.radar-shell { position: relative; display: grid; grid-template-columns: 258px minmax(0, 1fr); min-height: 680px; }
+.radar-progress {
+  position: absolute;
+  z-index: 20;
+  top: 0;
+  left: 258px;
+  right: 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.radar-progress::after {
+  content: "";
+  display: block;
+  width: 35%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, var(--rl-gold-bright), transparent);
+  transform: translateX(-100%);
+}
+.radar-progress.active { opacity: 1; }
+.radar-progress.active::after { animation: radar-progress-slide 0.9s ease-in-out infinite; }
+@keyframes radar-progress-slide {
+  to { transform: translateX(385%); }
+}
 
 /* ----- sidebar ----- */
 .radar-sidebar {
@@ -2542,6 +2567,7 @@ body:has(.home-page) {
 
 @media (max-width: 920px) {
   .radar-shell { grid-template-columns: minmax(0, 1fr); }
+  .radar-progress { left: 0; }
   .radar-main { min-width: 0; }
   .radar-sidebar { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--rl-border); }
   .radar-sidebar .rs-group { flex: 1 1 220px; }

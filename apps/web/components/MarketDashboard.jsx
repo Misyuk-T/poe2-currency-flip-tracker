@@ -9,12 +9,13 @@ import {
   apiBaseUrl,
   displayDigits,
   fallbackIconUrl,
-  fetchJsonWithRetry,
+  fetchJsonCached,
   formatAge,
   formatDurationHours,
   formatNumber,
   formatPercent,
   iconUrl,
+  peekCachedJson,
   titleize,
 } from "../lib/market.js";
 
@@ -58,6 +59,19 @@ const DISPLAY_CURRENCIES = [
   { id: "chaos", label: "Chaos Orb" },
   { id: "divine", label: "Divine Orb" },
 ];
+const CONFIG_CACHE_MS = 5 * 60_000;
+const RADAR_CACHE_MS = 5 * 60_000;
+const HISTORY_CACHE_MS = 10 * 60_000;
+
+function radarUrl(game, league, anchor) {
+  const params = new URLSearchParams({ anchor, game, league });
+  return `${apiBaseUrl}/api/radar?${params}`;
+}
+
+function historyUrl(game, league, anchor, pair) {
+  const params = new URLSearchParams({ pair, anchor, game, league });
+  return `${apiBaseUrl}/api/radar/history?${params}`;
+}
 
 /** Swap a missing/not-yet-downloaded GGG icon for the neutral committed glyph. */
 function onIconError(event) {
@@ -348,12 +362,17 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   const [manualPrices, setManualPrices] = useState({});
   const [draftPrice, setDraftPrice] = useState("");
   const [draftUnit, setDraftUnit] = useState("exalted");
+  const [loadingMinHeight, setLoadingMinHeight] = useState(null);
+  const radarMainRef = useRef(null);
+  const appliedReloadKeyRef = useRef(0);
   const activeGameConfig = marketConfig?.games?.find((entry) => entry.id === game);
   const anchorCurrency = activeGameConfig?.anchorCurrency ?? "exalted";
 
   useEffect(() => {
     let cancelled = false;
-    fetchJsonWithRetry(`${apiBaseUrl}/api/config`, { cache: "no-store" })
+    fetchJsonCached(`${apiBaseUrl}/api/config`, {
+      ttlMs: CONFIG_CACHE_MS,
+    })
       .then((data) => {
         if (cancelled) return;
         const requestedGame =
@@ -388,26 +407,41 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   useEffect(() => {
     if (!league) return undefined;
     let cancelled = false;
+    const currentHeight = radarMainRef.current?.getBoundingClientRect().height;
+    if (Number.isFinite(currentHeight) && currentHeight > 0) setLoadingMinHeight(currentHeight);
+    const url = radarUrl(game, league, anchorCurrency);
+    const force = reloadKey !== appliedReloadKeyRef.current;
+    appliedReloadKeyRef.current = reloadKey;
+    const cached = force ? null : peekCachedJson(url, { ttlMs: RADAR_CACHE_MS });
+    function applyRadar(data) {
+      if (cancelled) return;
+      setRadar(data);
+      const tradable = (data.rows ?? []).filter((row) => row.pairId && row.status !== "no-trades-this-hour");
+      // Deep-link from the SEO currency pages: /poe2?currency=divine preselects
+      // that market if it's tradable this hour, else fall back to the first row.
+      const wanted = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("currency") : null;
+      const preferred = wanted ? tradable.find((row) => row.target === wanted) : null;
+      setSelectedPair((preferred ?? tradable[0])?.pairId ?? null);
+      setStatus("ready");
+      setLoadingMinHeight(null);
+    }
+    if (cached) {
+      applyRadar(cached);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     setStatus("loading");
     setRadar(null);
     setSelectedPair(null);
-    const params = new URLSearchParams({ anchor: anchorCurrency, game, league });
-    fetchJsonWithRetry(`${apiBaseUrl}/api/radar?${params}`, { cache: "no-store" })
-      .then((data) => {
-        if (cancelled) return;
-        setRadar(data);
-        const tradable = (data.rows ?? []).filter((row) => row.pairId && row.status !== "no-trades-this-hour");
-        // Deep-link from the SEO currency pages: /poe2?currency=divine preselects
-        // that market if it's tradable this hour, else fall back to the first row.
-        const wanted = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("currency") : null;
-        const preferred = wanted ? tradable.find((row) => row.target === wanted) : null;
-        setSelectedPair((preferred ?? tradable[0])?.pairId ?? null);
-        setStatus("ready");
-      })
+    fetchJsonCached(url, { ttlMs: RADAR_CACHE_MS, force })
+      .then(applyRadar)
       .catch((error) => {
         if (!cancelled) {
           setStatus(error.message);
           setRadar(null);
+          setLoadingMinHeight(null);
         }
       });
     return () => {
@@ -416,18 +450,61 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   }, [anchorCurrency, game, league, reloadKey]);
 
   useEffect(() => {
+    if (!marketConfig || !league || status !== "ready") return undefined;
+    let cancelled = false;
+    const currentGame = marketConfig.games?.find((entry) => entry.id === game);
+    const targets = [
+      // First warm the other game's active league — this is the expensive
+      // game-toggle path the user is most likely to take.
+      ...(marketConfig.games ?? [])
+        .filter((entry) => entry.enabled && entry.id !== game)
+        .map((entry) => ({
+          game: entry.id,
+          league: entry.activeLeague,
+          anchor: entry.anchorCurrency,
+        })),
+      // Then warm the remaining leagues for the current game.
+      ...(currentGame?.leagues ?? [])
+        .filter((entry) => entry.enabled && entry.id !== league)
+        .map((entry) => ({
+          game,
+          league: entry.id,
+          anchor: currentGame.anchorCurrency,
+        })),
+    ].filter((entry) => entry.league);
+    const timer = window.setTimeout(async () => {
+      if (cancelled) return;
+      await Promise.allSettled(
+        targets.map((target) =>
+          fetchJsonCached(radarUrl(target.game, target.league, target.anchor), {
+            ttlMs: RADAR_CACHE_MS,
+          }),
+        ),
+      );
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [game, league, marketConfig, status]);
+
+  useEffect(() => {
     if (!selectedPair || !league) return;
     let cancelled = false;
+    const url = historyUrl(game, league, anchorCurrency, selectedPair);
+    const cached = peekCachedJson(url, { ttlMs: HISTORY_CACHE_MS });
+    if (cached) {
+      setHistory(cached.series ?? []);
+      setHistoryLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
     // Clear immediately so a market switch never renders the previous market's
     // chart/guidance under the new title while the new history is in flight.
     setHistory([]);
     setHistoryLoading(true);
-    const params = new URLSearchParams({ pair: selectedPair, anchor: anchorCurrency, game, league });
-    fetch(`${apiBaseUrl}/api/radar/history?${params}`, { cache: "no-store" })
-      .then((res) => {
-        if (!res.ok) throw new Error(`History failed: ${res.status}`);
-        return res.json();
-      })
+    fetchJsonCached(url, { ttlMs: HISTORY_CACHE_MS })
       .then((data) => {
         if (!cancelled) setHistory(data.series ?? []);
       })
@@ -570,6 +647,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   const selectedManual = selected?.pairId ? manualPrices[selected.pairId] : null;
   const currentWorkingPrice = selected
     ? workingPrice(selected, selectedManual, {
+      rates,
       divineInExalted: rates.divine && rates.exalted ? rates.divine / rates.exalted : null,
       chaosInExalted: rates.chaos && rates.exalted ? rates.chaos / rates.exalted : null,
       preferredUnit: manualUnit,
@@ -655,16 +733,10 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
         : radar?.marketData?.status === "no-anchor-markets"
           ? `No markets priced in ${titleize(anchorCurrency)} are available for ${league}.`
           : "No markets match this filter.";
-  // On ready we show no subtitle — the header stays clean. Loading/error states
-  // still surface a short status line. (Placeholder-gold honesty lives on the
-  // "unofficial" eyebrow and the Profit tooltip, so nothing is misrepresented.)
-  // Error text is surfaced in the table's error card (with a retry), so the
-  // header subtitle only carries the loading hint — never a raw error string.
-  const summaryText = status === "loading" ? "Loading completed-hour history…" : "";
-
   return (
     <div className="radar-light">
       <section className="radar-shell">
+        <span className={status === "loading" ? "radar-progress active" : "radar-progress"} aria-hidden="true" />
         <aside className="radar-sidebar" aria-label="Market navigation">
           <div className="rs-group">
             <p className="rs-heading">Workspace</p>
@@ -702,7 +774,12 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
           <p className="rs-foot">Categories come from the current GGG trade catalog.</p>
         </aside>
 
-        <div className="radar-main">
+        <div
+          className="radar-main"
+          ref={radarMainRef}
+          aria-busy={status === "loading"}
+          style={loadingMinHeight ? { minHeight: `${loadingMinHeight}px` } : undefined}
+        >
           <header className="radar-head">
             <div>
               <div className="radar-title-meta">
@@ -714,7 +791,6 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                 )}
               </div>
               <h2>What is moving today</h2>
-              {summaryText && <p className="radar-sub">{summaryText}</p>}
             </div>
             <div className="radar-head-actions">
               {gameOptions.length > 1 && (
@@ -1000,7 +1076,9 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                   </div>
                 </div>
                 <SpotChart points={chartHistory} bucketHours={horizon} loading={historyLoading} />
-                <p className="rt-note">Range-derived from official hourly low/high — context, not a tick-level feed.</p>
+                <p className="rt-note">
+                  Indicative trend: median of official hourly range midpoints per selected window. Range extremes are omitted because this is not an OHLC or tick feed.
+                </p>
               </div>
 
               {selected && (

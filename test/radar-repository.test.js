@@ -68,6 +68,14 @@ test("readCandleWindow returns mapped candles for the scope", async () => {
   assert.equal(candles[0].reference, 210);
 });
 
+test("hasPricedCandles returns the lightweight league availability flag", async () => {
+  const available = createRadarRepository({ sql: fakeSql([[{ available: true }]]), scope });
+  assert.equal(await available.hasPricedCandles(), true);
+
+  const empty = createRadarRepository({ sql: fakeSql([[{ available: false }]]), scope });
+  assert.equal(await empty.hasPricedCandles(), false);
+});
+
 test("readCxapiState parses the cursor, or reports null when absent", async () => {
   const present = createRadarRepository({ sql: fakeSql([[{ next_change_id: "100", last_digest_id: "99" }]]), scope });
   assert.deepEqual(await present.readCxapiState(), { cursor: 100, lastDigestId: 99 });

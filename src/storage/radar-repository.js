@@ -153,6 +153,29 @@ export function createRadarRepository({
     return rows.map((r) => candleFromRow(r, { league: scope.league }));
   }
 
+  /**
+   * Lightweight league-availability probe for /api/config. It deliberately
+   * stops at the first priced candle instead of building the full radar.
+   */
+  async function hasPricedCandles() {
+    const rows = await withTimeout(
+      sql`
+        select exists (
+          select 1
+          from hourly_market_candles
+          where game = ${scope.game} and realm = ${scope.realm} and league = ${scope.league}
+            and provider = ${scope.mode}
+            and completed_hour >= now() - make_interval(days => ${windowDays})
+            and reference_ratio is not null and reference_ratio > 0
+          limit 1
+        ) as available`,
+      opTimeoutMs,
+      "league availability",
+      onTimeout,
+    );
+    return rows[0]?.available === true;
+  }
+
   /** The cxapi ingestion cursor for this scope. */
   async function readCxapiState() {
     const rows = await withTimeout(
@@ -261,5 +284,5 @@ export function createRadarRepository({
     }
   }
 
-  return { readCandleWindow, readPairCandles, readCxapiState, recordCxDigest };
+  return { readCandleWindow, readPairCandles, hasPricedCandles, readCxapiState, recordCxDigest };
 }

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { currentPriceGuidance, quoteFromAnchor } from "../apps/web/lib/price-guidance.js";
+import { currentPriceGuidance, quoteFromAnchor, workingPrice } from "../apps/web/lib/price-guidance.js";
 
 const HOUR = 3600_000;
 
@@ -53,4 +53,39 @@ test("quoteFromAnchor converts both sides into an explicitly selected currency",
   });
 
   assert.deepEqual(quote, { value: 0.5, unit: "chaos" });
+});
+
+test("quoteFromAnchor falls back to the market anchor when exalted has no rate", () => {
+  const buy = quoteFromAnchor(0.2, {
+    anchor: "chaos",
+    rates: { exalted: null, chaos: 1, divine: null },
+  });
+  const sell = quoteFromAnchor(0.25, {
+    anchor: "chaos",
+    rates: { exalted: null, chaos: 1, divine: null },
+  });
+
+  assert.deepEqual(buy, { value: 0.2, unit: "chaos" });
+  assert.deepEqual(sell, { value: 0.25, unit: "chaos" });
+});
+
+test("workingPrice uses direct market rates when the anchor is not exalted", () => {
+  const result = workingPrice(
+    {
+      anchor: "chaos",
+      reference: 0.2222222222222222,
+      displayPrice: { value: 0.2222222222222222, unit: "chaos" },
+    },
+    null,
+    {
+      rates: { exalted: null, chaos: 1, divine: null },
+      preferredUnit: "chaos",
+      now: 0,
+    },
+  );
+
+  assert.equal(result.status, "ok");
+  assert.equal(result.value, 0.2222222222222222);
+  assert.equal(result.unit, "chaos");
+  assert.equal(result.anchorValue, 0.2222222222222222);
 });

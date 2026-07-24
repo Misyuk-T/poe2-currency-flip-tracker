@@ -1,80 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { CandlestickSeries, HistogramSeries, LineSeries, createChart } from "lightweight-charts";
-
-// Keep the chart readable: once the horizon holds more hourly points than
-// this, consecutive hours are merged into wider candles (2h/4h/…).
-const TARGET_BARS = 60;
-const BUCKET_HOURS = [1, 2, 4, 6, 12, 24];
-
-function pickBucketHours(count) {
-  return BUCKET_HOURS.find((step) => count / step <= TARGET_BARS) ?? BUCKET_HOURS.at(-1);
-}
-
-function pointVolume(point) {
-  const volume = Number(point.volume?.[point.target] ?? point.volume?.[point.base] ?? 0);
-  return Number.isFinite(volume) ? volume : 0;
-}
-
-function aggregatePoints(points, bucketHours) {
-  if (bucketHours <= 1) return points.map((point) => ({ ...point, bucketVolume: pointVolume(point) }));
-  const spanMs = bucketHours * 3_600_000;
-  const out = [];
-  for (const point of points) {
-    const bucketEnd = Math.ceil((point.completedHour ?? 0) / spanMs) * spanMs;
-    const prev = out.at(-1);
-    if (prev && prev.completedHour === bucketEnd) {
-      prev.low = Math.min(prev.low, point.low);
-      prev.high = Math.max(prev.high, point.high);
-      prev.reference = point.reference;
-      prev.bucketVolume += pointVolume(point);
-    } else {
-      out.push({ ...point, completedHour: bucketEnd, bucketVolume: pointVolume(point) });
-    }
-  }
-  return out;
-}
-
-function toChartRows(points, explicitBucketHours) {
-  const usable = (points ?? [])
-    .filter((point) => Number.isFinite(point?.reference) && Number.isFinite(point?.low) && Number.isFinite(point?.high))
-    .sort((a, b) => (a.completedHour ?? 0) - (b.completedHour ?? 0));
-
-  // Caller can pin the candle interval (the timeframe pills); otherwise auto-pick
-  // a readable bucket size from the number of hourly points.
-  const bucketHours = Number.isFinite(explicitBucketHours) && explicitBucketHours >= 1
-    ? explicitBucketHours
-    : pickBucketHours(usable.length);
-  const aggregated = aggregatePoints(usable, bucketHours);
-
-  const rows = aggregated.map((point, index) => {
-    const prior = aggregated[index - 1]?.reference ?? point.reference;
-    const time = Math.floor((point.completedHour ?? Date.now()) / 1000);
-    const volume = point.bucketVolume;
-    const up = point.reference >= prior;
-    return {
-      candle: {
-        time,
-        open: prior,
-        high: Math.max(point.high, point.reference, prior),
-        low: Math.min(point.low, point.reference, prior),
-        close: point.reference,
-      },
-      line: { time, value: point.reference },
-      volume: {
-        time,
-        value: Number.isFinite(volume) ? volume : 0,
-        color: up ? "rgba(14, 203, 129, 0.36)" : "rgba(246, 70, 93, 0.36)",
-      },
-    };
-  });
-
-  return { rows, bucketHours };
-}
+import { HistogramSeries, LineSeries, createChart } from "lightweight-charts";
+import { buildTrendRows } from "../lib/chart-series.js";
 
 function precisionFor(rows) {
-  const values = rows.flatMap((row) => [row.candle.low, row.candle.high]).filter(Number.isFinite);
+  const values = rows.map((row) => row.line.value).filter(Number.isFinite);
   const magnitude = Math.max(...values.map(Math.abs), 0);
   if (magnitude < 0.01) return 6;
   if (magnitude < 1) return 4;
@@ -99,7 +30,7 @@ function timeLabel(timestamp) {
 
 export default function SpotChart({ points, height = 420, bucketHours: bucketHoursProp, loading = false }) {
   const hostRef = useRef(null);
-  const { rows } = useMemo(() => toChartRows(points, bucketHoursProp), [points, bucketHoursProp]);
+  const { rows } = useMemo(() => buildTrendRows(points, bucketHoursProp), [points, bucketHoursProp]);
   const precision = useMemo(() => precisionFor(rows), [rows]);
 
   useEffect(() => {
@@ -132,22 +63,12 @@ export default function SpotChart({ points, height = 420, bucketHours: bucketHou
       },
     });
 
-    const candles = chart.addSeries(CandlestickSeries, {
-      upColor: "#0ecb81",
-      downColor: "#f6465d",
-      borderUpColor: "#0ecb81",
-      borderDownColor: "#f6465d",
-      wickUpColor: "#0ecb81",
-      wickDownColor: "#f6465d",
-      priceFormat: { type: "price", precision, minMove },
-    });
-    candles.setData(rows.map((row) => row.candle));
-
     const midpoint = chart.addSeries(LineSeries, {
       color: "#f0b90b",
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: false,
+      priceFormat: { type: "price", precision, minMove },
     });
     midpoint.setData(rows.map((row) => row.line));
 
@@ -181,10 +102,10 @@ export default function SpotChart({ points, height = 420, bucketHours: bucketHou
     );
   }
 
-  const low = Math.min(...rows.map((row) => row.candle.low));
-  const high = Math.max(...rows.map((row) => row.candle.high));
-  const first = rows[0]?.candle.time;
-  const last = rows.at(-1)?.candle.time;
+  const low = Math.min(...rows.map((row) => row.line.value));
+  const high = Math.max(...rows.map((row) => row.line.value));
+  const first = rows[0]?.line.time;
+  const last = rows.at(-1)?.line.time;
 
   return (
     <div className="spot-chart-wrap">

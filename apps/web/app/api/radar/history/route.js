@@ -8,7 +8,7 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const { status, body } = await getHistory(searchParams);
-    return Response.json(body, { status, headers: cacheHeader(status, { sMaxAge: 120, swr: 600 }) });
+    return Response.json(body, { status, headers: cacheHeader(status, { sMaxAge: 300, swr: 3600 }) });
   } catch {
     return Response.json(
       { error: { code: "history-failed", message: "history unavailable" } },

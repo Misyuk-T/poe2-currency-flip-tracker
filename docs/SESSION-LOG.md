@@ -2,6 +2,37 @@
 
 Newest first. One block per working session: what changed + commit refs.
 
+## 2026-07-24 — Honest trend chart, session cache, GGG CDN confirmation, preview deploy
+
+GGG's OAuth team email confirmed (again, in-chat) the Currency Exchange API is
+public via CDN, no `service:cxapi` grant needed — matches the 2026-07-21
+DECISIONS entry; added a superseded-by note on the old 2026-06-27 "stay on
+sample data" entry so the doc doesn't read as still-blocked.
+
+**Shipped (`adb6280`, pushed, preview deployed):**
+- Dropped fabricated OHLC candlesticks — GGG only exposes an hourly low/high
+  range, not real open/close. `SpotChart` now renders a median-bucketed line
+  trend (`apps/web/lib/chart-series.js`, unit-tested).
+- Session-scoped JSON cache (`fetchJsonCached`/`peekCachedJson` in
+  `apps/web/lib/market.js`) that dedupes in-flight reads and prefetches the
+  other game/league in the background, so market switching feels instant.
+- `getConfig()` now probes `hasPricedCandles()` per league instead of assuming
+  every configured league has data.
+- `price-guidance.js` generalized to accept an arbitrary `rates` map (not just
+  divine/chaos) — groundwork for the Phase 3 Metadata→id mapping.
+- `/api/radar*` edge cache lengthened (source only advances hourly) + a slim
+  top-of-panel progress indicator instead of a full loading wipe.
+
+**BMAD pass on the open CDN** — reviewed `docs/BACKLOG.md`'s "API
+opportunities" list; prioritized surfacing stored `volume_traded`/stock depth
+as a liquidity signal (data already ingested, not yet on UI) as the cheapest
+next win, then a cross-league comparison panel.
+
+**Deploy:** pushed `codex/ingest-diagnostics` (2 commits) to origin — Vercel's
+GitHub integration auto-built a **preview** deployment (not production; the
+branch's runtime canary step in BACKLOG.md is still unverified, so no merge to
+`main` yet).
+
 ## 2026-07-21 — Ingest timeout diagnosis and safe preseed path
 
 Live evidence corrected the prior diagnosis: pg_net request 635 timed out in

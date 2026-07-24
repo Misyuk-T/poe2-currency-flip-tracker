@@ -187,6 +187,10 @@ readability) so card edges align. `.currency-grid` uses `auto-fit`; icon grids
 Browser-verified + codex-reviewed.
 
 ## 2026-06-27 — Stay on sample/fixture data until cxapi OAuth
+**Superseded by the 2026-07-21 entry above** — GGG made the CDN public, so the
+OAuth grant this decision was blocked on is no longer required; live-data
+go-live is in progress.
+
 Live GGG `service:cxapi` data is **not** pursued yet (user choice). The app runs
 on labelled fixture data; C2b (cxapi activity ordering), D5 (serverless
 opportunities) and SEO P3 (drop "sample data" labels) stay blocked on the OAuth

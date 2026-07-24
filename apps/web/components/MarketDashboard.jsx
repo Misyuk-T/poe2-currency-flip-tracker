@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import SpotChart from "./SpotChart.jsx";
+import LeagueMetaChip from "./LeagueMetaChip.jsx";
+import LeaguePulsePanel from "./LeaguePulsePanel.jsx";
+import PocketValuator from "./PocketValuator.jsx";
 import { roundTripGold } from "../../../src/domain/gold-costs.js";
 import { keyCurrencyCards, sparklinePoints } from "../lib/key-currencies.js";
 import { currentPriceGuidance, quoteFromAnchor, workingPrice } from "../lib/price-guidance.js";
@@ -789,6 +792,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     {sourceMode === "official" ? "Official GGG data" : "Sample fixture data"}
                   </span>
                 )}
+                <LeagueMetaChip league={league} />
               </div>
               <h2>What is moving today</h2>
             </div>
@@ -873,6 +877,11 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
               ))}
             </div>
           </section>
+
+          <div className="demo-feature-grid">
+            <LeaguePulsePanel league={league} />
+            <PocketValuator league={league} rates={rates} />
+          </div>
 
           <div className="radar-controls">
             <label className="rc-search">

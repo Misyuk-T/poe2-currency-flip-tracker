@@ -10,7 +10,11 @@
 
 import { loadConfig } from "../../../src/server/config.js";
 import { loadCatalog, buildManifest, nameMapFromCatalog } from "../../../src/domain/catalog.js";
-import { identityNames } from "../../../src/domain/cx-identity.js";
+import {
+  identityCategories,
+  identityIcons,
+  identityNames,
+} from "../../../src/domain/cx-identity.js";
 import { createGoldRegistry, createFlatGoldRegistry } from "../../../src/domain/gold-costs.js";
 import { POE2_GOLD_COSTS } from "../../../src/data/gold-costs-poe2.js";
 import { createRadarRepository } from "../../../src/storage/radar-repository.js";
@@ -132,13 +136,21 @@ function context() {
         : createGoldRegistry(POE2_GOLD_COSTS, { game: config.poeGame });
       const catalog = await loadCatalog();
       const manifest = buildManifest(catalog, goldRegistry);
+      const poe1Identity = {
+        names: { ...identityNames("poe1"), ...CORE_NAMES },
+        icons: identityIcons("poe1"),
+        categories: identityCategories("poe1"),
+      };
+      const poe2Identity = {
+        names: { ...identityNames("poe2"), ...nameMapFromCatalog(catalog) },
+        icons: identityIcons("poe2"),
+        categories: identityCategories("poe2"),
+      };
       return {
         config,
         catalogManifest: manifest,
         catalogById: new Map(manifest.map((item) => [item.id, item])),
-        // Catalog names (short-id keys) + identity names (Metadata keys) so both
-        // canonical namespaces render a real name; keys don't overlap.
-        names: { ...identityNames(), ...nameMapFromCatalog(catalog) },
+        identityByGame: { poe1: poe1Identity, poe2: poe2Identity },
         scope: { game: config.poeGame, realm: config.poeRealm, league: config.league, mode: config.providerMode },
       };
     })();
@@ -242,7 +254,7 @@ export function tradableRows(rows) {
 
 export async function getRadar(searchParams) {
   const ctx = await context();
-  const { config, catalogManifest, catalogById, names } = ctx;
+  const { config, catalogManifest, catalogById, identityByGame } = ctx;
   const selectedGame = resolveGame(searchParams, config);
   if (selectedGame.error) return selectedGame.error;
   const { game } = selectedGame;
@@ -252,13 +264,16 @@ export async function getRadar(searchParams) {
   if (!repo) return NO_DB;
   const anchor = resolveAnchor(searchParams, game);
   const isPoe2 = game.id === "poe2";
+  const identity = identityByGame[game.id] ?? { names: CORE_NAMES, icons: {}, categories: {} };
   const body = await withDbRetry(() =>
     buildRadarPayload({
       repo,
       anchor,
       anchors: game.anchors,
       shortlist: config.shortlist,
-      names: isPoe2 ? names : CORE_NAMES,
+      names: identity.names,
+      icons: identity.icons,
+      categories: identity.categories,
       catalogManifest: isPoe2 ? catalogManifest : [],
       catalogById: isPoe2 ? catalogById : new Map(),
       source: { sourceMode: sourceMode(config), providerMode: config.providerMode },
@@ -303,7 +318,7 @@ export async function getHistory(searchParams) {
 
 export async function getHotlist(searchParams = new URLSearchParams()) {
   const ctx = await context();
-  const { config, names } = ctx;
+  const { config, identityByGame } = ctx;
   const selectedGame = resolveGame(searchParams, config);
   if (selectedGame.error) return selectedGame.error;
   const { game } = selectedGame;
@@ -316,7 +331,7 @@ export async function getHotlist(searchParams = new URLSearchParams()) {
       repo,
       anchors: game.anchors,
       shortlist: config.shortlist,
-      names: game.id === "poe2" ? names : CORE_NAMES,
+      names: identityByGame[game.id]?.names ?? CORE_NAMES,
       radarMaxHotTargets: config.radarMaxHotTargets,
       now: Date.now(),
     }),

@@ -23,13 +23,15 @@ async function computeRadar({
   anchors,
   shortlist = [],
   names = {},
+  icons = {},
+  categories = {},
   now = Date.now(),
   radarMaxHotTargets = 8,
 }) {
   const candles = await repo.readCandleWindow();
   const byPair = groupCandlesByPair(candles);
   const rowsByAnchor = Object.fromEntries(
-    anchors.map((anchor) => [anchor, buildMarketRadar(byPair, { anchor, names, now })]),
+    anchors.map((anchor) => [anchor, buildMarketRadar(byPair, { anchor, names, icons, categories, now })]),
   );
   const union = dedupeRadarRows(Object.values(rowsByAnchor).flat());
   const hotlist = buildHotlist({
@@ -40,7 +42,18 @@ async function computeRadar({
     now,
     minTenureMs: 0, // no prior state to retain in a stateless read
   });
-  return { rowsByAnchor, hotlist };
+  const pricedCandleCount = candles.filter(
+    (candle) => Number.isFinite(candle.reference) && candle.reference > 0,
+  ).length;
+  return {
+    rowsByAnchor,
+    hotlist,
+    marketData: {
+      status: candles.length === 0 ? "no-data" : pricedCandleCount === 0 ? "no-executed-trades" : "available",
+      candleCount: candles.length,
+      pricedCandleCount,
+    },
+  };
 }
 
 /**
@@ -57,14 +70,25 @@ export async function buildRadarPayload({
   anchors,
   shortlist = [],
   names = {},
+  icons = {},
+  categories = {},
   catalogManifest = [],
   catalogById = new Map(),
   source = null,
   now = Date.now(),
   radarMaxHotTargets = 8,
 }) {
-  const { rowsByAnchor, hotlist } = await computeRadar({ repo, anchors, shortlist, names, now, radarMaxHotTargets });
-  return buildRadarResponse({
+  const { rowsByAnchor, hotlist, marketData } = await computeRadar({
+    repo,
+    anchors,
+    shortlist,
+    names,
+    icons,
+    categories,
+    now,
+    radarMaxHotTargets,
+  });
+  const response = buildRadarResponse({
     radarRows: rowsByAnchor[anchor] ?? [],
     hotlistEntries: hotlist,
     catalogManifest,
@@ -73,6 +97,15 @@ export async function buildRadarPayload({
     source,
     now,
   });
+  response.marketData = {
+    ...marketData,
+    trackedMarketCount: response.trackedCount,
+    status:
+      marketData.status === "available" && response.trackedCount === 0
+        ? "no-anchor-markets"
+        : marketData.status,
+  };
+  return response;
 }
 
 /** /api/hotlist payload (the bare hotlist; scheduler is gone in serverless). */

@@ -39,6 +39,17 @@ test("one-hour movement needs two completed hourly observations", () => {
   assert.equal(row.movement.h1, null);
 });
 
+test("radar rows carry game-scoped identity art and category", () => {
+  const all = fixtureCandles();
+  const row = buildMarketRadar(all, {
+    anchor: "exalted",
+    icons: { divine: "https://web.poecdn.com/image/Art/example.png?scale=1" },
+    categories: { divine: "StackableCurrency" },
+  }).find((entry) => entry.target === "divine");
+  assert.equal(row.targetIcon, "https://web.poecdn.com/image/Art/example.png?scale=1");
+  assert.equal(row.category, "StackableCurrency");
+});
+
 test("hotlist keeps pinned items and applies minimum tenure hysteresis", () => {
   const radar = [{ target: "mover", status: "ok", stale: false, activityScore: 90, arbitrageScore: 20 }];
   const first = buildHotlist({ pinned: ["divine"], radar, maxTargets: 2, now: 1000 });

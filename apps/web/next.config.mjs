@@ -16,7 +16,11 @@ const nextConfig = {
     // loadCatalog() + cx-identity resolveCurrency() read these JSONs at runtime;
     // ensure they ship in the function bundle (the file tracer can miss the
     // fileURLToPath(new URL(...)) reads).
-    "/api/**": ["src/data/catalog-poe2.json", "src/data/cx-identity-poe2.json"],
+    "/api/**": [
+      "src/data/catalog-poe2.json",
+      "src/data/cx-identity-poe1.json",
+      "src/data/cx-identity-poe2.json",
+    ],
   },
   env: {
     // Default to same-origin so the hosted app calls its own /api/* route

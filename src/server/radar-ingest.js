@@ -19,7 +19,7 @@ import { resolveCurrency } from "../domain/cx-identity.js";
 /** Map a live PoE2 CX Metadata id to its canonical id (catalog short id where
  *  known, else the Metadata path). A no-op for ids outside the identity map
  *  (e.g. fixture short ids). */
-export const metadataToCanonicalId = (id) => resolveCurrency(id).shortId ?? id;
+export const metadataToCanonicalId = (id) => resolveCurrency(id, "poe2").shortId ?? id;
 
 // These core currency Metadata ids are shared by PoE 1 and PoE 2. Keeping this
 // intentionally tiny makes the PoE 1 Exalted-anchored read model work without
@@ -32,11 +32,12 @@ export const CORE_CURRENCY_IDS = Object.freeze({
 
 export const coreCurrencyToCanonicalId = (id) => CORE_CURRENCY_IDS[id] ?? id;
 
-/** The identity map is PoE2-specific, so only PoE2 gets canonicalized; other
- *  games (PoE1, console) pass through until they get their own identity map —
- *  never risk labelling PoE1 data with PoE2 short ids. */
+/** Canonicalize with the identity map for the matching game. PoE1 currently
+ * claims short ids only for its three core currencies; the long tail keeps its
+ * stable Metadata id while still gaining names, classes, and icons at read time. */
 export function translatorForGame(game) {
-  return game === "poe2" ? metadataToCanonicalId : game === "poe1" ? coreCurrencyToCanonicalId : (id) => id;
+  if (game !== "poe1" && game !== "poe2") return (id) => id;
+  return (id) => resolveCurrency(id, game).shortId ?? id;
 }
 
 const HOUR = 3600_000;
@@ -244,7 +245,7 @@ export async function ingestLiveStreams({ streams, config, now, makeRepo, makePr
       maxDigests: catchingUp
         ? Math.min(config.cxapiMaxBackfillHours, config.cxapiDigestsPerRun ?? 1)
         : 1,
-      // Game-scoped: only PoE2 has an identity map, so PoE1 streams pass through.
+      // Game-scoped: never resolve a PoE1 Metadata id through the PoE2 map.
       translate: translatorForGame(stream.game),
       deadline, // shared budget: stop mid-stream once the invocation time is spent
       state, // avoid a duplicate DB cursor read inside ingestLive

@@ -82,7 +82,7 @@ function QuotePill({ quote, compact = false }) {
   return <PricePill value={quote.value} unit={quote.unit} compact={compact} />;
 }
 
-function KeyCurrencyCard({ card }) {
+function KeyCurrencyCard({ card, emptyLabel = "Waiting for data" }) {
   const points = sparklinePoints(card.values);
   const hasSinglePoint = card.values.length === 1;
   const direction = (card.movement ?? 0) >= 0 ? "up" : "down";
@@ -99,7 +99,7 @@ function KeyCurrencyCard({ card }) {
         <span className={`key-currency-move ${direction}`}>{formatPercent(card.movement)}</span>
       </div>
       <div className="key-currency-card-body">
-        {card.available ? <PricePill value={card.value} unit={card.unit} /> : <span className="key-currency-empty">Waiting for data</span>}
+        {card.available ? <PricePill value={card.value} unit={card.unit} /> : <span className="key-currency-empty">{emptyLabel}</span>}
         {points || hasSinglePoint ? (
           <svg className={`key-currency-spark ${direction}`} viewBox="0 0 180 54" role="img" aria-label={`${card.name} 24 hour chart`}>
             <path className="key-currency-grid-line" d="M3 14 H177 M3 27 H177 M3 40 H177" />
@@ -303,7 +303,7 @@ function categoriesFrom(rows) {
   for (const row of rows) {
     const name = row.category || "Other";
     counts.set(name, (counts.get(name) ?? 0) + 1);
-    if (!icons.has(name) && row.target) icons.set(name, row.target);
+    if (!icons.has(name) && row.target) icons.set(name, row.targetIcon ?? row.target);
   }
   return [...counts.entries()]
     .map(([name, count]) => ({ name, count, icon: CATEGORY_ICON_IDS[name] ?? icons.get(name) ?? null }))
@@ -646,6 +646,15 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
       .map((entry) => ({ value: entry.id, label: entry.label })) ?? [];
   const keyCurrencies = useMemo(() => keyCurrencyCards(tradable, anchorCurrency), [anchorCurrency, tradable]);
   const sourceMode = radar?.source?.sourceMode;
+  const hasUpstreamTrades = radar?.marketData?.status !== "no-executed-trades";
+  const emptyMarketMessage =
+    radar?.marketData?.status === "no-executed-trades"
+      ? `GGG reports no executed trades with usable prices for ${league} in this window.`
+      : radar?.marketData?.status === "no-data"
+        ? `No completed-hour market data is available for ${league}.`
+        : radar?.marketData?.status === "no-anchor-markets"
+          ? `No markets priced in ${titleize(anchorCurrency)} are available for ${league}.`
+          : "No markets match this filter.";
   // On ready we show no subtitle — the header stays clean. Loading/error states
   // still surface a short status line. (Placeholder-gold honesty lives on the
   // "unofficial" eyebrow and the Profit tooltip, so nothing is misrepresented.)
@@ -779,7 +788,13 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
               <span>Last 24 completed hours</span>
             </div>
             <div className="key-currency-grid">
-              {keyCurrencies.map((card) => <KeyCurrencyCard key={card.id} card={card} />)}
+              {keyCurrencies.map((card) => (
+                <KeyCurrencyCard
+                  key={card.id}
+                  card={card}
+                  emptyLabel={hasUpstreamTrades ? "Waiting for data" : "No executed trades"}
+                />
+              ))}
             </div>
           </section>
 
@@ -842,7 +857,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                         onClick={() => openMarket(row.pairId)}
                       >
                         <td className="cell-item">
-                          <img src={iconUrl(row.target)} onError={onIconError} alt="" loading="lazy" />
+                          <img src={iconUrl(row.targetIcon ?? row.target)} onError={onIconError} alt="" loading="lazy" />
                           <span>
                             <strong>{row.targetName}</strong>
                             <small>{row.category || "Other"}</small>
@@ -902,7 +917,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     <tr>
                       <td className="empty-state" colSpan={7}>
                         {status === "ready" ? (
-                          "No markets match this filter."
+                          tradable.length === 0 ? emptyMarketMessage : "No markets match this filter."
                         ) : (
                           <div className="radar-error" role="alert">
                             <strong>Market radar is temporarily unavailable.</strong>
@@ -931,7 +946,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                 <div className="radar-trade">
               <header className="rt-head">
                 <div className="rt-head-id">
-                  <img src={iconUrl(selected.target)} onError={onIconError} alt="" />
+                  <img src={iconUrl(selected.targetIcon ?? selected.target)} onError={onIconError} alt="" />
                   <div>
                     <strong>{selected.targetName}</strong>
                     <span>{selected.category || "Market"}</span>

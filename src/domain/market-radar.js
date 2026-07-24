@@ -3,7 +3,10 @@ import { humanize } from "./cx-identity.js";
 
 const HOUR = 3600_000;
 
-export function buildMarketRadar(candlesByPair, { anchor, now = Date.now(), names = {}, minSamples = 3 } = {}) {
+export function buildMarketRadar(
+  candlesByPair,
+  { anchor, now = Date.now(), names = {}, icons = {}, categories = {}, minSamples = 3 } = {},
+) {
   const rows = [];
   for (const candles of Object.values(candlesByPair ?? {})) {
     const first = candles?.[0];
@@ -21,6 +24,8 @@ export function buildMarketRadar(candlesByPair, { anchor, now = Date.now(), name
       pairId: latest.pairId,
       target,
       targetName: names[target] ?? humanize(target),
+      targetIcon: icons[target] ?? null,
+      category: categories[target] ?? null,
       anchor,
       latestCompletedHour: latest.completedHour,
       reference: latest.reference,

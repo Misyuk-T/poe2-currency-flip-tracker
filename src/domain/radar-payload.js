@@ -70,8 +70,8 @@ export function buildRadarResponse({
     return {
       ...row,
       hotlist: hot.get(row.target) ?? null,
-      category: item?.category ?? null,
-      subcategory: item?.subcategory ?? item?.category ?? null,
+      category: item?.category ?? row.category ?? null,
+      subcategory: item?.subcategory ?? item?.category ?? row.subcategory ?? row.category ?? null,
       catalogOrder: item?.catalogOrder ?? 999999,
       gold: item
         ? { status: item.status, goldPerUnit: item.goldPerUnit }

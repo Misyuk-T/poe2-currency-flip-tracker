@@ -45,6 +45,8 @@ const base = {
   anchors: ["exalted", "divine"],
   shortlist: ["divine"],
   names: { divine: "Divine Orb", exalted: "Exalted Orb" },
+  icons: { divine: "https://web.poecdn.com/image/Art/2DItems/Currency/CurrencyModValues.png?scale=1" },
+  categories: { divine: "StackableCurrency" },
   catalogManifest: manifest,
   catalogById,
   now: NOW,
@@ -58,6 +60,7 @@ test("buildRadarPayload computes radar rows from candles and merges the catalog"
 
   const divine = out.rows.find((row) => row.target === "divine");
   assert.equal(divine.status, "ok");
+  assert.match(divine.targetIcon, /^https:\/\/web\.poecdn\.com\/image\//);
   assert.equal(divine.gold.status, "supported");
   assert.equal(divine.displayPrice.unit, "divine");
   assert.ok(Math.abs(divine.displayPrice.value - 1) < 1e-9);
@@ -66,6 +69,26 @@ test("buildRadarPayload computes radar rows from candles and merges the catalog"
 
   const chaos = out.rows.find((row) => row.target === "chaos");
   assert.equal(chaos.status, "no-trades-this-hour");
+  assert.equal(out.marketData.status, "available");
+  assert.equal(out.marketData.pricedCandleCount, candles.length);
+});
+
+test("buildRadarPayload distinguishes upstream rows with no executed prices from an empty filter", async () => {
+  const noTrades = candles.map((candle) => ({
+    ...candle,
+    low: null,
+    high: null,
+    reference: null,
+  }));
+  const out = await buildRadarPayload({
+    ...base,
+    repo: { ...repo, readCandleWindow: async () => noTrades },
+    anchor: "exalted",
+  });
+  assert.equal(out.trackedCount, 0);
+  assert.equal(out.marketData.status, "no-executed-trades");
+  assert.equal(out.marketData.candleCount, noTrades.length);
+  assert.equal(out.marketData.pricedCandleCount, 0);
 });
 
 test("buildHistoryPayload returns a pair's series in anchor units", async () => {

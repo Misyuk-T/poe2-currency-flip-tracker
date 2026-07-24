@@ -1,7 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { resolveCurrency, metadataForShortId, isKnownCurrency, humanize } from "../src/domain/cx-identity.js";
+import {
+  identityCategories,
+  identityIcons,
+  identityNames,
+  resolveCurrency,
+  metadataForShortId,
+  isKnownCurrency,
+  humanize,
+} from "../src/domain/cx-identity.js";
 
 const EXALTED = "Metadata/Items/Currency/CurrencyAddModToRare";
 const DIVINE = "Metadata/Items/Currency/CurrencyModValues";
@@ -66,4 +74,22 @@ test("built short ids are unique (1:1 reverse bridge invariant)", () => {
     assert.equal(seen.has(e.shortId), false, `duplicate shortId ${e.shortId}: ${seen.get(e.shortId)} vs ${meta}`);
     seen.set(e.shortId, meta);
   }
+});
+
+test("PoE1 identity is game-scoped and resolves long-tail names, classes, and official CDN art", () => {
+  const scarab = "Metadata/Items/Scarabs/ScarabAnarchy2";
+  const resolved = resolveCurrency(scarab, "poe1");
+  assert.equal(resolved.name, "Anarchy Scarab of Gigantification");
+  assert.equal(resolved.category, "Map Fragment");
+  assert.match(resolved.icon, /^https:\/\/web\.poecdn\.com\/image\/Art\/2DItems\//);
+  assert.equal(identityNames("poe1")[scarab], resolved.name);
+  assert.equal(identityCategories("poe1")[scarab], "Map Fragment");
+  assert.equal(identityIcons("poe1")[scarab], resolved.icon);
+});
+
+test("PoE1 core currencies keep the canonical short-id bridge", () => {
+  assert.equal(resolveCurrency(EXALTED, "poe1").shortId, "exalted");
+  assert.equal(metadataForShortId("exalted", "poe1"), EXALTED);
+  assert.equal(identityNames("poe1").exalted, "Exalted Orb");
+  assert.ok(identityIcons("poe1").exalted);
 });

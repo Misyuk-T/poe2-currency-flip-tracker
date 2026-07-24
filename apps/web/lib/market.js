@@ -67,6 +67,12 @@ const ICON_URLS = new Map(
 );
 
 export function iconUrl(id) {
+  if (
+    typeof id === "string" &&
+    /^https:\/\/(?:web\.poecdn\.com|(?:www\.)?pathofexile\.com)\//.test(id)
+  ) {
+    return id;
+  }
   return (id && ICON_URLS.get(id)) || fallbackIconUrl;
 }
 

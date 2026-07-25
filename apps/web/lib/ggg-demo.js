@@ -80,22 +80,68 @@ function randomInt(min, max) {
 }
 
 /**
+ * A stack size that stays plausible for the item's worth: cheap orbs pile up,
+ * expensive ones don't (no 3,000 Mirrors of Kalandra).
+ *
+ * Sizes are derived from a target WORTH drawn log-uniformly across a wide
+ * range, rather than from the unit price directly. That deliberately spreads
+ * holdings across the whole value spectrum, so the "best paid in" answer
+ * genuinely varies — a few exalted of junk can only be taken in exalted, while
+ * a big stack is cheapest taken in divine.
+ */
+const MIN_HOLDING_EX = 3;
+const MAX_HOLDING_EX = 4000;
+
+function plausibleStack(exaltedEach) {
+  if (!Number.isFinite(exaltedEach) || exaltedEach <= 0) return randomInt(1, 20);
+  const logMin = Math.log(MIN_HOLDING_EX);
+  const targetWorth = Math.exp(logMin + Math.random() * (Math.log(MAX_HOLDING_EX) - logMin));
+  return Math.max(1, Math.round(targetWorth / exaltedEach));
+}
+
+/**
  * Mocked shape of one `account:characters` character's currency-frame
  * inventory. Deliberately RANDOM on every call (unlike the deterministic
  * league/ladder mocks above) so it's visibly obvious on repeat use that
  * this is a fake demo character, not a real, stable account read.
+ *
+ * `pool` should be the live radar's tradable rows — passing them in means the
+ * demo shows REAL item names, icons and prices, with only the quantities
+ * invented. Falls back to the three anchors when no pool is available.
+ *
+ * @param {string} league
+ * @param {{ pool?: Array<{id: string, name?: string, icon?: string, exaltedEach?: number}>, count?: number }} [opts]
  */
-export function mockCharacterInventory(league) {
+export function mockCharacterInventory(league, { pool = [], count = 7 } = {}) {
+  const usable = pool.filter((entry) => entry?.id && Number.isFinite(entry.exaltedEach) && entry.exaltedEach > 0);
+  let picks;
+  if (usable.length) {
+    // Sample without replacement so the same orb never appears twice.
+    const remaining = [...usable];
+    picks = [];
+    while (picks.length < Math.min(count, remaining.length)) {
+      picks.push(...remaining.splice(randomInt(0, remaining.length - 1), 1));
+    }
+  } else {
+    picks = [
+      { id: "exalted", exaltedEach: 1 },
+      { id: "chaos", exaltedEach: null },
+      { id: "divine", exaltedEach: null },
+    ];
+  }
+
   return {
     name: "DemoWarbringer",
     class: "Warbringer",
     level: randomInt(40, 100),
     league,
-    currency: [
-      { id: "exalted", stackSize: randomInt(20, 900) },
-      { id: "chaos", stackSize: randomInt(100, 4000) },
-      { id: "divine", stackSize: randomInt(1, 20) },
-    ],
+    currency: picks.map((entry) => ({
+      id: entry.id,
+      name: entry.name ?? null,
+      icon: entry.icon ?? null,
+      exaltedEach: entry.exaltedEach ?? null,
+      stackSize: plausibleStack(entry.exaltedEach),
+    })),
     mocked: true,
   };
 }
@@ -104,11 +150,16 @@ export function mockCharacterInventory(league) {
  * Price a mocked currency stack list against real, currently-live CX rates.
  * A stack whose id has no live rate prices as `null` rather than a guess —
  * same honesty rule as the rest of price-guidance.js.
+ *
+ * Items carrying their own live `exaltedEach` (sampled from the radar) price
+ * directly off it; the three anchors fall back to the `rates` conversion.
  */
 export function valueInventoryInExalted(items, rates) {
   const priced = (items ?? []).map((item) => ({
     ...item,
-    exaltedValue: convertMarketPrice(item.stackSize, item.id, "exalted", rates),
+    exaltedValue: Number.isFinite(item.exaltedEach) && item.exaltedEach > 0
+      ? item.stackSize * item.exaltedEach
+      : convertMarketPrice(item.stackSize, item.id, "exalted", rates),
   }));
   const known = priced.filter((item) => Number.isFinite(item.exaltedValue));
   return {

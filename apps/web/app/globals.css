@@ -2006,39 +2006,32 @@ body:has(.home-page) {
 }
 .league-meta-chip { font-weight: 700; }
 
-/* League Pulse is secondary context, so it sits below the market table and
-   stays collapsed by default — it must never push the table down the page. */
-.league-pulse {
-  border: 1px solid var(--rl-border);
-  border-radius: 14px;
-  background: var(--rl-surface-2);
-}
-.league-pulse[open] { padding-bottom: 14px; }
-.league-pulse-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding: 11px 14px;
-  cursor: pointer;
-  list-style: none;
-  color: var(--rl-ink);
-  font-size: 0.85rem;
-  font-weight: 800;
-}
-.league-pulse-summary::-webkit-details-marker { display: none; }
-.league-pulse-summary::after {
-  content: "▾";
-  margin-left: auto;
+/* League Pulse and the inventory valuator are secondary/demo surfaces: header
+   controls opening a modal, so neither competes with the market table for
+   page space. */
+.league-pulse-control { display: flex; flex-direction: column; gap: 4px; }
+.league-pulse-control > span {
   color: var(--rl-muted);
-  font-size: 0.7rem;
-  transition: transform 0.15s ease;
+  font-size: 0.67rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
-.league-pulse[open] .league-pulse-summary::after { transform: rotate(180deg); }
-.league-pulse-summary:hover { color: var(--rl-gold-bright); }
-.league-pulse-teaser { color: var(--rl-muted); font-size: 0.75rem; font-weight: 600; }
-.league-pulse > *:not(.league-pulse-summary) { margin: 0 14px; }
+.league-pulse-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  border: 1px solid rgba(178, 138, 255, 0.55);
+  border-radius: 11px;
+  padding: 7px 12px;
+  background: rgba(148, 91, 255, 0.14);
+  color: var(--rl-ink);
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.league-pulse-button:hover { background: rgba(148, 91, 255, 0.24); }
 .league-pulse-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .league-pulse-stats article {
   border: 1px solid rgba(240, 169, 59, 0.13);
@@ -2086,7 +2079,7 @@ body:has(.home-page) {
 
 /* ----- pocket valuator modal ----- */
 .pocket-modal {
-  width: min(560px, 92vw);
+  width: min(660px, 94vw);
   max-height: 84vh;
   overflow-y: auto;
   border: 1px solid var(--rl-border-strong);
@@ -2115,9 +2108,31 @@ body:has(.home-page) {
   font-size: 0.8rem;
 }
 .pocket-row img { width: 24px; height: 24px; flex: none; border-radius: 5px; object-fit: contain; background: rgba(0, 0, 0, 0.24); }
-.pocket-row-name { flex: 1; min-width: 0; color: var(--rl-ink-soft); }
+.pocket-row-name { flex: 1; min-width: 0; color: var(--rl-ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pocket-row-rate { flex: none; color: var(--rl-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
-.pocket-row-value { flex: none; min-width: 70px; text-align: right; color: var(--rl-ink); font-variant-numeric: tabular-nums; }
+.pocket-row-value { flex: none; min-width: 84px; text-align: right; color: var(--rl-ink); font-variant-numeric: tabular-nums; }
+.pocket-row-exit {
+  flex: none;
+  min-width: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.25;
+}
+.pocket-row-exit b { color: var(--rl-gold-bright); font-size: 0.8rem; }
+.pocket-row-exit small { color: var(--rl-muted); font-size: 0.66rem; font-variant-numeric: tabular-nums; }
+.pocket-row-head {
+  background: none;
+  padding-bottom: 2px;
+  color: var(--rl-muted);
+  font-size: 0.64rem;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.pocket-row-head .pocket-row-name { padding-left: 34px; color: inherit; }
+.pocket-row-head .pocket-row-value,
+.pocket-row-head .pocket-row-exit { color: inherit; font-weight: 850; }
 .pocket-totals {
   display: flex;
   justify-content: space-between;

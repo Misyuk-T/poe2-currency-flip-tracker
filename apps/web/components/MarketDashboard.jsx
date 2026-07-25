@@ -8,6 +8,7 @@ import PocketValuator from "./PocketValuator.jsx";
 import { roundTripGold } from "../../../src/domain/gold-costs.js";
 import { keyCurrencyCards, sparklinePoints } from "../lib/key-currencies.js";
 import { currentPriceGuidance, quoteFromAnchor, workingPrice } from "../lib/price-guidance.js";
+import { sortByFamily } from "../lib/item-family.js";
 import {
   apiBaseUrl,
   displayDigits,
@@ -38,7 +39,13 @@ const CATEGORY_ICON_IDS = {
   Verisium: "verisium",
   Waystones: "waystone-16",
 };
+// Currency is the market everyone actually comes here for, so it is the landing
+// filter rather than the full 750-row catalog — which also means far fewer table
+// rows to render on first paint.
+const DEFAULT_CATEGORY = "Currency";
+const DEFAULT_SORT = "family:desc";
 const SORT_OPTIONS = [
+  { value: "family:desc", label: "Item family" },
   { value: "spread:desc", label: "Best profit" },
   { value: "activity:desc", label: "Activity" },
   { value: "buy:asc", label: "Buy: cheapest first" },
@@ -360,8 +367,8 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   const [status, setStatus] = useState("loading");
   const [reloadKey, setReloadKey] = useState(0);
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState("activity:desc");
-  const [category, setCategory] = useState("all");
+  const [sort, setSort] = useState(DEFAULT_SORT);
+  const [category, setCategory] = useState(DEFAULT_CATEGORY);
   const [displayCurrency, setDisplayCurrency] = useState(null);
   const [view, setView] = useState("list"); // "list" (table, default) | "chart" (trade view)
   const [horizon, setHorizon] = useState(6);
@@ -546,6 +553,31 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     [radar],
   );
   const rates = useMemo(() => unitRates(tradable, anchorCurrency), [anchorCurrency, tradable]);
+
+  // Real, live item rows the inventory demo samples from — so only the
+  // quantities it shows are invented, never the names/icons/prices.
+  const inventoryPool = useMemo(
+    () =>
+      tradable
+        .filter((row) => Number.isFinite(row.reference) && row.reference > 0)
+        .map((row) => ({
+          id: row.target,
+          name: row.targetName,
+          icon: iconUrl(row.targetIcon ?? row.target),
+          exaltedEach: row.reference,
+        })),
+    [tradable],
+  );
+  // Gold charged per unit RECEIVED of each anchor, for the "best paid in" column.
+  const anchorGoldPerUnit = useMemo(() => {
+    const out = { [anchorCurrency]: radar?.goldPerAnchor ?? null };
+    for (const row of tradable) {
+      if (DISPLAY_CURRENCIES.some((currency) => currency.id === row.target)) {
+        out[row.target] = row.gold?.goldPerUnit ?? null;
+      }
+    }
+    return out;
+  }, [anchorCurrency, radar?.goldPerAnchor, tradable]);
   const manualUnit = displayCurrency && rates[displayCurrency] ? displayCurrency : anchorCurrency;
 
   // Volume terciles across the tradable universe → qualitative liquidity band.
@@ -569,7 +601,10 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
 
   // If the active category vanishes from the (search-narrowed) list, fall back to
   // "all" so the table can't stay filtered to a category the sidebar no longer shows.
+  // Guarded on a non-empty list so the default category isn't wiped before the
+  // first radar payload arrives.
   useEffect(() => {
+    if (!categories.length) return;
     if (category !== "all" && !categories.some((cat) => cat.name === category)) setCategory("all");
   }, [categories, category]);
 
@@ -582,7 +617,10 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
       const { goldPerFlip, profitPer100k } = goldMetrics(row, goldPerAnchor);
       return { ...row, _goldPerFlip: goldPerFlip, _profitPer100k: profitPer100k };
     });
-    return enriched.sort((a, b) => compareRows(a, b, sort)).slice(0, 200);
+    const ordered = sort.startsWith("family:")
+      ? sortByFamily(enriched)
+      : enriched.sort((a, b) => compareRows(a, b, sort));
+    return ordered.slice(0, 200);
   }, [searched, category, sort, goldPerAnchor]);
 
   const selected = selectedPair
@@ -617,7 +655,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     if (!nextLeague || nextLeague === league) return;
     setSelectedPair(null);
     setLeague(nextLeague);
-    setCategory("all");
+    setCategory(DEFAULT_CATEGORY);
     setView("list");
     setHistory([]);
     if (typeof window !== "undefined") {
@@ -635,7 +673,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     setGame(nextGame);
     setLeague(nextLeague);
     setSelectedPair(null);
-    setCategory("all");
+    setCategory(DEFAULT_CATEGORY);
     setSearch("");
     setView("list");
     setHistory([]);
@@ -859,7 +897,13 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                   Trade view
                 </button>
               </div>
-              <PocketValuator league={league} rates={rates} />
+              <LeaguePulsePanel league={league} />
+              <PocketValuator
+                league={league}
+                rates={rates}
+                pool={inventoryPool}
+                goldPerUnit={anchorGoldPerUnit}
+              />
             </div>
           </header>
 
@@ -1017,8 +1061,6 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                 </tbody>
               </table>
           </div>
-
-          <LeaguePulsePanel league={league} />
 
           {view === "chart" && selected && (
             <div className="rt-modal-backdrop" role="presentation" onClick={closeMarket}>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { mockCharacterInventory, valueInventoryInExalted } from "../lib/ggg-demo.js";
+import { bestExitCurrency } from "../lib/exit-currency.js";
 import { convertMarketPrice } from "../lib/price-guidance.js";
 import { displayDigits, fallbackIconUrl, formatNumber, iconUrl, titleize } from "../lib/market.js";
 
@@ -21,26 +22,29 @@ const TOTAL_UNITS = [
 /**
  * Demo of BACKLOG.md T8/T9 ("currency in your pocket" via `account:characters`,
  * realm=poe2). This is NOT a real login and NOT real inventory data — no GGG
- * OAuth happens, no account is read. Clicking Connect randomly generates a
- * fake character and fake currency amounts (a new random roll every time you
- * open it) purely to demo the UI/flow ahead of the real OAuth scope (T1).
- * The ONLY real thing here is the pricing: fake amounts are converted using
- * this page's actual, currently-live market rates.
+ * OAuth happens, no account is read. Clicking the button samples random real
+ * items off the live radar and invents only the QUANTITIES, purely to demo the
+ * UI/flow ahead of the real OAuth scope (T1).
+ *
+ * Everything derived from those quantities is real arithmetic on live data:
+ * the per-item worth, the exalted/chaos/divine totals, and the "best exit"
+ * column (see lib/exit-currency.js — cheapest gold cost among the anchors you
+ * can actually be paid in).
  */
-export default function PocketValuator({ league, rates }) {
+export default function PocketValuator({ league, rates, pool, goldPerUnit }) {
   const [open, setOpen] = useState(false);
   const [character, setCharacter] = useState(null);
   const valuation = character ? valueInventoryInExalted(character.currency, rates) : null;
-
-  function connect() {
-    if (!league) return;
-    setCharacter(mockCharacterInventory(league)); // fresh random roll each time
-    setOpen(true);
-  }
   const totals = TOTAL_UNITS.map((unit) => ({
     ...unit,
     value: valuation?.totalExalted != null ? convertMarketPrice(valuation.totalExalted, "exalted", unit.id, rates) : null,
   }));
+
+  function connect() {
+    if (!league) return;
+    setCharacter(mockCharacterInventory(league, { pool })); // fresh random roll each time
+    setOpen(true);
+  }
 
   useEffect(() => {
     if (!open) return undefined;
@@ -63,7 +67,7 @@ export default function PocketValuator({ league, rates }) {
         type="button"
         className="pocket-connect-button"
         onClick={connect}
-        title="Demo only — no real login. Generates a fake character, priced against this page's live rates."
+        title="Demo only — no real login. Samples random real items, priced against this page's live rates."
       >
         Value my currency
         <b className="demo-tag">DEMO</b>
@@ -91,22 +95,40 @@ export default function PocketValuator({ league, rates }) {
             </header>
 
             <div className="pocket-valuator-rows">
-              {valuation.items.map((item) => (
-                <div className="pocket-row" key={item.id}>
-                  <img src={iconUrl(item.id)} onError={onIconError} alt="" />
-                  <span className="pocket-row-name">{formatNumber(item.stackSize, { maximumFractionDigits: 0 })}× {titleize(item.id)}</span>
-                  <span className="pocket-row-rate">
-                    {Number.isFinite(rates?.[item.id])
-                      ? `${formatNumber(rates[item.id], { maximumFractionDigits: displayDigits(rates[item.id]) })} ex/unit`
-                      : "no live rate"}
-                  </span>
-                  <strong className="pocket-row-value">
-                    {Number.isFinite(item.exaltedValue)
-                      ? `≈ ${formatNumber(item.exaltedValue, { maximumFractionDigits: displayDigits(item.exaltedValue) })} ex`
-                      : "unpriceable"}
-                  </strong>
-                </div>
-              ))}
+              <div className="pocket-row pocket-row-head" aria-hidden="true">
+                <span className="pocket-row-name">Holding</span>
+                <span className="pocket-row-value">Worth</span>
+                <span className="pocket-row-exit">Best paid in</span>
+              </div>
+              {valuation.items.map((item) => {
+                const { best } = bestExitCurrency(item.exaltedValue, { rates, goldPerUnit });
+                return (
+                  <div className="pocket-row" key={item.id}>
+                    <img src={item.icon ?? iconUrl(item.id)} onError={onIconError} alt="" />
+                    <span className="pocket-row-name">
+                      {formatNumber(item.stackSize, { maximumFractionDigits: 0 })}× {item.name ?? titleize(item.id)}
+                    </span>
+                    <strong className="pocket-row-value">
+                      {Number.isFinite(item.exaltedValue)
+                        ? `${formatNumber(item.exaltedValue, { maximumFractionDigits: displayDigits(item.exaltedValue) })} ex`
+                        : "unpriceable"}
+                    </strong>
+                    <span className="pocket-row-exit">
+                      {best ? (
+                        <>
+                          <b>{titleize(best.unit)}</b>
+                          <small>
+                            {formatNumber(best.units, { maximumFractionDigits: displayDigits(best.units) })} ·{" "}
+                            {formatNumber(best.gold, { maximumFractionDigits: 0 })}g
+                          </small>
+                        </>
+                      ) : (
+                        <small>too small to sell whole</small>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="pocket-totals">
@@ -121,10 +143,11 @@ export default function PocketValuator({ league, rates }) {
               </div>
             </div>
             <p className="pocket-valuator-note">
-              <strong>None of the above is real.</strong>{" "}
-              The character and the amounts are randomly generated for this demo — not read from any GGG account.
-              Only the exalted/chaos/divine conversion is real, computed from this page&apos;s actual live market
-              rates.
+              <strong>The character and the quantities are randomly generated</strong> — nothing is read from a GGG
+              account. Item names and prices are real, sampled from this page&apos;s live market. &ldquo;Best paid
+              in&rdquo; is the anchor costing the least <em>gold</em> to receive (gold scales with how many units
+              you take, so a few divine costs far less than thousands of exalted) — and only counts currencies you
+              could receive at least one whole orb of.
             </p>
           </div>
         </div>

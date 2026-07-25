@@ -3,6 +3,41 @@
 Ideas parked for later. Not committed work — candidates to pull into a phase.
 Newest first.
 
+## Data freshness — what's automatic vs manual (2026-07-25)
+Only the hourly price ratios are a live, always-on pipeline (Supabase
+pg_cron -> pg_net -> `/api/cron/radar`, ingesting from the CX CDN). Item
+metadata, icons, identity, gold costs, and the league list are NOT live —
+they're git-committed snapshots, now closing the loop with a scheduled
+review job instead of staying silently stale:
+
+- **New items / names / categories** (`src/data/catalog-poe2.json`, 754
+  items, GGG `trade2/data/static`) — `npm run catalog:build`.
+- **Icons** — not a separate pipeline. `catalog-poe2.json` stores each item's
+  official GGG-hosted image URL directly; the browser loads icons straight
+  from GGG's CDN at read time (see `iconUrl()` in `apps/web/lib/market.js`).
+  Freshness rides entirely on the catalog refresh above.
+- **Metadata id -> name/icon/category for the CX long tail** (gems, runes,
+  omens, soul cores, idols) — `npm run identity:build`, sourced from RePoE;
+  see the Phase 3 mapping entry below (done, not a gap).
+- **Gold costs** (`src/data/gold-costs-poe2.js`, 651 items) —
+  `npm run gold:build` (`scripts/build-gold-costs.mjs`, added 2026-07-25),
+  scraped from poe2db.tw and matched against the catalog by name. Reproduced
+  today's manual scrape byte-for-byte as a correctness check.
+- **New leagues** — still hardcoded env vars (`LEAGUE`/`LEAGUES` in
+  `src/server/config.js`), manual Vercel env edit + redeploy. This is exactly
+  what T3 (`service:leagues` auto-sync) fixes — see the GGG OAuth task queue
+  below. Blocked on T1 (GGG OAuth scope grant), not on engineering; a mocked
+  demo already exists (`apps/web/lib/ggg-demo.js`).
+
+**Shipped 2026-07-25:** `.github/workflows/data-refresh.yml` — a monthly
+(+ manual `workflow_dispatch`) scheduled job running
+`npm run data:refresh` (catalog metadata + identity + gold costs) and the
+test suite, opening a PR only if something changed. **Deliberately does not
+auto-merge or auto-deploy** — a human reviews the diff before any of this
+reaches production, per the honesty rule (never silently change what's shown
+to users). League auto-sync is intentionally NOT in this job — it needs the
+GGG OAuth grant (T1), not a refresh script.
+
 ## ⚠️ Ingest 60s timeout — code fix ready, runtime preview proof pending
 Production evidence showed the problem predates live activation: Vercel reports
 11 `/api/cron/radar` timeouts since July 6, and pg_net requests 632/634 (live)
@@ -40,23 +75,22 @@ Price-normalization correctness is activation-quality. Status:
    after recent live rows exist and `/api/status` succeeds. Never combine preseed
    and public read cutover in one deployment again.
 
-## Phase 3 mapping — Metadata → {id, name, icon, category} data source (DECIDE)
+## ✅ Phase 3 mapping — Metadata → {id, name, icon, category} data source — DONE
 Live CX candles are keyed by Metadata paths (`Metadata/Items/<Class>/<Leaf>`).
-The radar needs a reliable map to real ids/names/icons. Findings (2026-07-21):
-- The curated `catalog-poe2.json` (754 items) is keyed by trade short-ids and only
-  covers currency-like categories — the CX universe also trades gems, runes,
-  omens, soul cores, idols (627 distinct in ONE poe2 league-hour).
-- RULED OUT — deriving Metadata ids from the catalog's image URL (`f` art path).
-  It's the 2D ART asset, not the item id: it COLLIDES (e.g. `CurrencyAddModToRare`
-  resolved to "Perfect Exalted Orb" while live data trades it as the base Exalted
-  anchor) — only ~2% by count / 35% by volume, and WRONG for the anchor. Not usable.
-Options: (i) find/scrape a real Metadata→name/icon source (poe2db, RePoE-style
-data, or a GGG endpoint that exposes metadata ids) — needs permission + validation;
-(ii) MVP: canonical id = the Metadata path, humanize the leaf for display, hand-map
-only the anchors (exalted/divine/chaos) — honest but ugly names for the long tail;
-(iii) hybrid: real map for the tradeable core, humanized fallback for the rest.
-Also required in Phase 3 regardless: fix `candleForAnchor`/market-radar anchor
-matching for the canonical namespace, and the history route rejecting `/` in pairs.
+Option (i) from the 2026-07-21 findings was built, not just decided:
+`scripts/build-identity.mjs` / `build-identity-poe1.mjs` pull RePoE
+(GGPK-derived, MIT) `base_items` data — 100% coverage of observed CX
+currencies, validated (`CurrencyAddModToRare` -> "Exalted Orb", matching the
+live anchor, not the earlier ruled-out art-path collision that misresolved
+it to "Perfect Exalted Orb"). Output is committed as
+`src/data/cx-identity-poe2.json` / `cx-identity-poe1.json`, icons re-joined
+from `catalog-poe2.json` by exact name (not the collision-prone art path),
+and consumed at read time via `src/domain/cx-identity.js` /
+`resolveCurrency()`, wired into `getRadar`/`getConfig` in
+apps/web/lib/radar-backend.js. The history-route `/` rejection is also
+already fixed (the pair regex allows `/` in each id segment for Metadata-path
+ids). **Corrected 2026-07-25** — this entry previously said "DECIDE"; it
+was stale, the work had already shipped.
 
 ## GGG OAuth features (leagues / ladder / characters) — task queue (2026-07-24)
 Three feature ideas from a full pass over `developer.pathofexile.com`'s scope

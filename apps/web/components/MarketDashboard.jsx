@@ -859,6 +859,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                   Trade view
                 </button>
               </div>
+              <PocketValuator league={league} rates={rates} />
             </div>
           </header>
 
@@ -880,11 +881,6 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
               ))}
             </div>
           </section>
-
-          <div className="demo-feature-grid">
-            <LeaguePulsePanel league={league} />
-            <PocketValuator league={league} rates={rates} />
-          </div>
 
           <div className="radar-controls">
             <label className="rc-search">
@@ -1021,6 +1017,8 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                 </tbody>
               </table>
           </div>
+
+          <LeaguePulsePanel league={league} />
 
           {view === "chart" && selected && (
             <div className="rt-modal-backdrop" role="presentation" onClick={closeMarket}>

@@ -2006,25 +2006,39 @@ body:has(.home-page) {
 }
 .league-meta-chip { font-weight: 700; }
 
-.demo-feature-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 14px;
-}
-@media (max-width: 1080px) {
-  .demo-feature-grid { grid-template-columns: minmax(0, 1fr); }
-}
-
-.league-pulse,
-.pocket-valuator {
+/* League Pulse is secondary context, so it sits below the market table and
+   stays collapsed by default — it must never push the table down the page. */
+.league-pulse {
   border: 1px solid var(--rl-border);
   border-radius: 14px;
-  padding: 14px;
   background: var(--rl-surface-2);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
 }
+.league-pulse[open] { padding-bottom: 14px; }
+.league-pulse-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 11px 14px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--rl-ink);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+.league-pulse-summary::-webkit-details-marker { display: none; }
+.league-pulse-summary::after {
+  content: "▾";
+  margin-left: auto;
+  color: var(--rl-muted);
+  font-size: 0.7rem;
+  transition: transform 0.15s ease;
+}
+.league-pulse[open] .league-pulse-summary::after { transform: rotate(180deg); }
+.league-pulse-summary:hover { color: var(--rl-gold-bright); }
+.league-pulse-teaser { color: var(--rl-muted); font-size: 0.75rem; font-weight: 600; }
+.league-pulse > *:not(.league-pulse-summary) { margin: 0 14px; }
 .league-pulse-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .league-pulse-stats article {
   border: 1px solid rgba(240, 169, 59, 0.13);
@@ -2041,14 +2055,29 @@ body:has(.home-page) {
 .lp-bar-col small { color: var(--rl-muted); font-size: 0.62rem; }
 .league-pulse-note,
 .pocket-valuator-note { margin: 0; color: var(--rl-muted); font-size: 0.72rem; line-height: 1.45; }
+.league-pulse-stats,
+.league-pulse-bars { margin-bottom: 12px; }
 
+/* Header control (sits with the Game / League / view toggles). */
+.pocket-valuator-control { display: flex; flex-direction: column; gap: 4px; }
+.pocket-valuator-control > span {
+  color: var(--rl-muted);
+  font-size: 0.67rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
 .pocket-connect-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
   border: 1px solid rgba(178, 138, 255, 0.55);
-  border-radius: 9px;
+  border-radius: 11px;
   padding: 7px 12px;
   background: rgba(148, 91, 255, 0.14);
   color: var(--rl-ink);
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   font-weight: 800;
   cursor: pointer;
 }

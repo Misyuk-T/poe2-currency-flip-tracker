@@ -57,24 +57,17 @@ export default function PocketValuator({ league, rates }) {
   }, [open]);
 
   return (
-    <section className="pocket-valuator" aria-labelledby="pocket-valuator-title">
-      <div className="key-currencies-heading">
-        <div>
-          <p className="eyebrow">account:characters · realm=poe2</p>
-          <h3 id="pocket-valuator-title">
-            Currency in your pocket <span className="demo-badge inline"><b className="demo-tag">DEMO</b></span>
-          </h3>
-        </div>
-        <button type="button" className="pocket-connect-button" onClick={connect}>
-          Connect PoE Account (Demo)
-        </button>
-      </div>
-      <p className="pocket-valuator-note">
-        <strong>Demo only — this is not a real login.</strong> No GGG account is contacted; clicking Connect
-        randomly generates a fake character and fake currency amounts (a new random roll every time). Only the
-        prices shown are real — they use this page&apos;s actual, currently-live market rates. Real account login
-        is planned (BACKLOG.md T8/T9) once the GGG OAuth scope (T1) is granted.
-      </p>
+    <div className="pocket-valuator-control">
+      <span>Inventory</span>
+      <button
+        type="button"
+        className="pocket-connect-button"
+        onClick={connect}
+        title="Demo only — no real login. Generates a fake character, priced against this page's live rates."
+      >
+        Value my currency
+        <b className="demo-tag">DEMO</b>
+      </button>
 
       {open && character && (
         <div className="rt-modal-backdrop" role="presentation" onClick={() => setOpen(false)}>
@@ -128,13 +121,14 @@ export default function PocketValuator({ league, rates }) {
               </div>
             </div>
             <p className="pocket-valuator-note">
-              <strong>None of the above is real.</strong> The character and the amounts are randomly generated for
-              this demo (BACKLOG.md T8/T9) — not read from any GGG account. Only the exalted/chaos/divine conversion
-              is real, computed from this page&apos;s actual live market rates.
+              <strong>None of the above is real.</strong>{" "}
+              The character and the amounts are randomly generated for this demo — not read from any GGG account.
+              Only the exalted/chaos/divine conversion is real, computed from this page&apos;s actual live market
+              rates.
             </p>
           </div>
         </div>
       )}
-    </section>
+    </div>
   );
 }

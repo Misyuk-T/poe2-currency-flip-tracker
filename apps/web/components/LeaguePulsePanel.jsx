@@ -16,16 +16,15 @@ export default function LeaguePulsePanel({ league }) {
   const maxCount = Math.max(...snapshot.distribution.map((bucket) => bucket.count), 1);
 
   return (
-    <section className="league-pulse" aria-labelledby="league-pulse-title">
-      <div className="key-currencies-heading">
-        <div>
-          <p className="eyebrow">Top-1000 ladder · descriptive only</p>
-          <h3 id="league-pulse-title">
-            League Pulse <span className="demo-badge inline"><b className="demo-tag">DEMO</b></span>
-          </h3>
-        </div>
-        <span>Day {snapshot.dayNumber} · {formatNumber(snapshot.totalEntries)} tracked</span>
-      </div>
+    <details className="league-pulse" aria-labelledby="league-pulse-title">
+      <summary className="league-pulse-summary">
+        <span id="league-pulse-title">
+          League Pulse <span className="demo-badge inline"><b className="demo-tag">DEMO</b></span>
+        </span>
+        <span className="league-pulse-teaser">
+          Day {snapshot.dayNumber} · median level {snapshot.medianLevel} · +{snapshot.levelsPerDay}/day
+        </span>
+      </summary>
 
       <div className="league-pulse-stats">
         <article>
@@ -54,10 +53,12 @@ export default function LeaguePulsePanel({ league }) {
       </div>
 
       <p className="league-pulse-note">
-        Simulated <code>service:leagues:ladder</code> aggregate (mocked data, pending GGG OAuth scope T1) — a
-        top-1000 elite-progression proxy that saturates a couple of weeks into a league. Shown descriptively only;
-        no early/mature economy verdict is claimed without a real backtest against currency volatility.
+        How far into the league the top-1000 players have progressed — context for whether the market is still in
+        its chaotic early phase. Simulated <code>service:leagues:ladder</code> data for now (that endpoint is
+        public — it needs an app credential, <strong>never a player login</strong>). A top-1000 elite proxy that
+        saturates a couple of weeks in; shown descriptively only, with no early/mature economy verdict until it is
+        backtested against real currency volatility.
       </p>
-    </section>
+    </details>
   );
 }

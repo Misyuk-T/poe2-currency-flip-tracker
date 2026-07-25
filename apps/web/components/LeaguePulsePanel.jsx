@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { mockLadderSnapshot } from "../lib/ggg-demo.js";
+import { useScrollLock } from "../lib/use-scroll-lock.js";
 import { formatNumber } from "../lib/market.js";
 
 /**
@@ -20,18 +21,15 @@ export default function LeaguePulsePanel({ league }) {
   const [open, setOpen] = useState(false);
   const snapshot = useMemo(() => (league ? mockLadderSnapshot(league) : null), [league]);
 
+  useScrollLock(open);
+
   useEffect(() => {
     if (!open) return undefined;
     function onKeyDown(event) {
       if (event.key === "Escape") setOpen(false);
     }
     document.addEventListener("keydown", onKeyDown);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = previousOverflow;
-    };
+    return () => document.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
   if (!snapshot) return null;

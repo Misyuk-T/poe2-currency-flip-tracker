@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { mockCharacterInventory, valueInventoryInExalted } from "../lib/ggg-demo.js";
+import { useScrollLock } from "../lib/use-scroll-lock.js";
 import { bestExitCurrency } from "../lib/exit-currency.js";
 import { convertMarketPrice } from "../lib/price-guidance.js";
 import { displayDigits, fallbackIconUrl, formatNumber, iconUrl, titleize } from "../lib/market.js";
@@ -46,18 +47,15 @@ export default function PocketValuator({ league, rates, pool, goldPerUnit }) {
     setOpen(true);
   }
 
+  useScrollLock(open);
+
   useEffect(() => {
     if (!open) return undefined;
     function onKeyDown(event) {
       if (event.key === "Escape") setOpen(false);
     }
     document.addEventListener("keydown", onKeyDown);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = previousOverflow;
-    };
+    return () => document.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
   return (

@@ -9,6 +9,7 @@ import { roundTripGold } from "../../../src/domain/gold-costs.js";
 import { keyCurrencyCards, sparklinePoints } from "../lib/key-currencies.js";
 import { currentPriceGuidance, quoteFromAnchor, workingPrice } from "../lib/price-guidance.js";
 import { sortByFamily } from "../lib/item-family.js";
+import { useScrollLock } from "../lib/use-scroll-lock.js";
 import {
   apiBaseUrl,
   displayDigits,
@@ -533,18 +534,15 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   }, [anchorCurrency, game, selectedPair, league]);
 
   // Plan modal: Escape closes it and background scroll is locked while it is open.
+  useScrollLock(view === "chart");
+
   useEffect(() => {
     if (view !== "chart") return undefined;
     function onKeyDown(event) {
       if (event.key === "Escape") setView("list");
     }
     document.addEventListener("keydown", onKeyDown);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = previousOverflow;
-    };
+    return () => document.removeEventListener("keydown", onKeyDown);
   }, [view]);
 
   // All tradable rows (a real pair, traded this hour) — the radar universe.

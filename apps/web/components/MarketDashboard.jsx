@@ -335,7 +335,13 @@ function categoriesFrom(rows) {
   }
   return [...counts.entries()]
     .map(([name, count]) => ({ name, count, icon: CATEGORY_ICON_IDS[name] ?? icons.get(name) ?? null }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    .sort((a, b) => {
+      // Currency is the landing category, so it sits directly under "All
+      // markets" rather than wherever its row count happens to place it.
+      if (a.name === DEFAULT_CATEGORY) return -1;
+      if (b.name === DEFAULT_CATEGORY) return 1;
+      return b.count - a.count || a.name.localeCompare(b.name);
+    });
 }
 
 function manualPriceKey(game, league) {

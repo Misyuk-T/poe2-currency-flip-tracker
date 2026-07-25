@@ -19,12 +19,18 @@ test("Fix 4: every gold-table currency is present, versioned, and a real trade i
 });
 
 test("Fix 4: coverage validation surfaces gaps without guessing", () => {
+  // "vaal" is now a real, sourced entry (2026-07-25 poe2db.tw expansion);
+  // "not-a-real-item" stands in for the still-genuine gap case.
   const cov = validateShortlistCoverage(reg, {
     anchorCurrency: "exalted",
-    shortlist: ["divine", "chaos", "vaal"],
+    shortlist: ["divine", "chaos", "vaal", "not-a-real-item"],
   });
   assert.equal(cov.anchorCovered, true);
-  assert.deepEqual(cov.covered, ["divine", "chaos"]);
-  assert.deepEqual(cov.missing, ["vaal"]); // vaal has no verified cost -> reported, not invented
-  assert.equal(reg.goldPerUnit("vaal"), undefined);
+  assert.deepEqual(cov.covered, ["divine", "chaos", "vaal"]);
+  assert.deepEqual(cov.missing, ["not-a-real-item"]); // no verified cost -> reported, not invented
+  assert.equal(reg.goldPerUnit("not-a-real-item"), undefined);
+});
+
+test("Fix 4: the 2026-07-25 poe2db.tw expansion covers hundreds of items, not just the anchors", () => {
+  assert.ok(POE2_GOLD_COSTS.length > 600, `expected a large table, got ${POE2_GOLD_COSTS.length}`);
 });

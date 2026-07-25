@@ -320,7 +320,10 @@ function categoriesFrom(rows) {
   for (const row of rows) {
     const name = row.category || "Other";
     counts.set(name, (counts.get(name) ?? 0) + 1);
-    if (!icons.has(name) && row.target) icons.set(name, row.targetIcon ?? row.target);
+    // Only claim the category's representative icon from a row that actually
+    // has one — an earlier row with no icon must not blank out the whole
+    // category when a later row in the same bucket has a real one.
+    if (!icons.has(name) && row.targetIcon) icons.set(name, row.targetIcon);
   }
   return [...counts.entries()]
     .map(([name, count]) => ({ name, count, icon: CATEGORY_ICON_IDS[name] ?? icons.get(name) ?? null }))

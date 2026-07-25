@@ -1564,7 +1564,11 @@ body:has(.home-page) {
     var(--rl-bg);
   border: 1px solid var(--rl-border);
   border-radius: 18px;
-  overflow: hidden;
+  /* No overflow:hidden here — it would clip corners, but it also breaks
+     position:sticky on .radar-sidebar below (a hidden-overflow ancestor
+     that never scrolls itself pins sticky children instead of letting them
+     track the real page scroll). The sidebar/header corners are radiused
+     directly below instead of relying on parent clipping. */
   box-shadow: var(--rl-shadow);
 }
 
@@ -1601,10 +1605,16 @@ body:has(.home-page) {
     linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012)),
     var(--rl-surface-2);
   border-right: 1px solid var(--rl-border);
+  border-top-left-radius: 18px;
   padding: 22px 16px;
   display: flex;
   flex-direction: column;
   gap: 22px;
+  position: sticky;
+  top: 16px;
+  align-self: start;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
 }
 .rs-group { display: flex; flex-direction: column; gap: 4px; }
 .rs-heading {
@@ -2044,29 +2054,52 @@ body:has(.home-page) {
 }
 .pocket-connect-button:hover { background: rgba(148, 91, 255, 0.24); }
 .pocket-character-line { margin: 0; color: var(--rl-ink-soft); font-size: 0.8rem; }
+
+/* ----- pocket valuator modal ----- */
+.pocket-modal {
+  width: min(560px, 92vw);
+  max-height: 84vh;
+  overflow-y: auto;
+  border: 1px solid var(--rl-border-strong);
+  border-radius: 16px;
+  padding: 18px;
+  background: var(--rl-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+.pocket-modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
 .pocket-valuator-rows { display: flex; flex-direction: column; gap: 6px; }
 .pocket-row {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 6px 8px;
+  gap: 10px;
+  padding: 7px 9px;
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.16);
   font-size: 0.8rem;
 }
-.pocket-row img { width: 22px; height: 22px; border-radius: 5px; object-fit: contain; background: rgba(0, 0, 0, 0.24); }
-.pocket-row span { flex: 1; color: var(--rl-ink-soft); }
-.pocket-row strong { color: var(--rl-ink); font-variant-numeric: tabular-nums; }
-.pocket-total {
+.pocket-row img { width: 24px; height: 24px; flex: none; border-radius: 5px; object-fit: contain; background: rgba(0, 0, 0, 0.24); }
+.pocket-row-name { flex: 1; min-width: 0; color: var(--rl-ink-soft); }
+.pocket-row-rate { flex: none; color: var(--rl-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+.pocket-row-value { flex: none; min-width: 70px; text-align: right; color: var(--rl-ink); font-variant-numeric: tabular-nums; }
+.pocket-totals {
   display: flex;
   justify-content: space-between;
   align-items: center;
   border-top: 1px solid var(--rl-border);
-  padding-top: 9px;
-  font-size: 0.85rem;
+  padding-top: 12px;
 }
-.pocket-total span { color: var(--rl-muted); text-transform: uppercase; font-size: 0.67rem; letter-spacing: 0.04em; }
-.pocket-total strong { color: var(--rl-gold-bright); }
+.pocket-totals > span { color: var(--rl-muted); text-transform: uppercase; font-size: 0.67rem; letter-spacing: 0.04em; }
+.pocket-totals-values { display: flex; gap: 16px; }
+.pocket-totals-values strong { color: var(--rl-gold-bright); font-size: 1rem; font-variant-numeric: tabular-nums; }
+.pocket-totals-values strong small { color: var(--rl-muted); font-size: 0.65rem; font-weight: 700; text-transform: uppercase; margin-left: 2px; }
 
 /* ----- selected market strip ----- */
 .selected-market {
@@ -2667,7 +2700,16 @@ body:has(.home-page) {
   .radar-shell { grid-template-columns: minmax(0, 1fr); }
   .radar-progress { left: 0; }
   .radar-main { min-width: 0; }
-  .radar-sidebar { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--rl-border); }
+  .radar-sidebar {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: 0;
+    border-top-right-radius: 18px;
+    border-bottom: 1px solid var(--rl-border);
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+  }
   .radar-sidebar .rs-group { flex: 1 1 220px; }
   /* Categories become a horizontal chip strip so the market table isn't buried
      under a 16-item vertical list on narrow screens. */

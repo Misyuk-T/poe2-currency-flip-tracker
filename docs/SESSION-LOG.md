@@ -2,6 +2,41 @@
 
 Newest first. One block per working session: what changed + commit refs.
 
+## 2026-07-25 — Competitive BA pass, T1-T9 mocked demo, gold-cost table expansion
+
+**BMAD competitive analysis** (poe.ninja, Exiled Tools, poe2fun.com checked
+live): confirmed no automated/comprehensive gold-aware, backtested guidance
+exists among competitors today — poe2fun.com is manual-entry only, Exiled
+Tools currently shows no gold figure at all. The wedge concept is still
+"contested not unique" (per the 2026-07-09 review) but nobody found executes
+it as well. Biggest own gap identified: still on fixture/sample data in
+prod — the ingest canary stays the top blocker for credibility.
+
+**Shipped (`a8a46db`, pushed, preview deployed) — T1-T9 demo:** mocked
+`service:leagues` / `service:leagues:ladder` / `account:characters` data
+(`apps/web/lib/ggg-demo.js`) behind a visible purple DEMO badge, wired into
+three new components (league day/countdown chip, descriptive-only League
+Pulse ladder panel, "currency in your pocket" valuator that prices a mock
+character's currency against REAL live radar rates). Browser-verified.
+Nothing touches the real getConfig/getRadar paths.
+
+**Shipped (`4b1eeaf`) — gold-cost coverage 9 -> 651 items (1.2% -> 86.3% of
+the catalog):** confirmed no gold-cost formula exists anywhere (the official
+CX CDN response has no gold/tax/fee field); scraped poe2db.tw's full
+Currency Exchange table (664 items, every CX category) and matched 651 by
+exact display name against `catalog-poe2.json`'s short ids with zero
+collisions — the 9 prior hand-curated entries matched this scrape exactly
+first, confirming it's an expansion of the same lineage, not a new source.
+13 unmatched (rare idols/omens/uniques) omitted per the honesty rule rather
+than guessed. See [DECISIONS.md](DECISIONS.md).
+
+**Drafted, not sent:** the T1 email requesting `service:leagues` +
+`service:leagues:ladder` + `account:characters` scopes on the existing GGG
+OAuth application — user has the draft, needs to send it before T2+ can use
+real (non-mocked) data.
+
+**Tests:** 155 green.
+
 ## 2026-07-24 — Honest trend chart, session cache, GGG CDN confirmation, preview deploy
 
 GGG's OAuth team email confirmed (again, in-chat) the Currency Exchange API is

@@ -2,6 +2,19 @@
 
 Newest first. Each entry: **what** was decided, **why**, and the date.
 
+## 2026-07-25 — Gold-cost source: poe2db.tw scrape, not a formula
+No gold-cost formula exists anywhere — verified directly against the official
+Currency Exchange CDN response schema (no gold/tax/fee field in `markets[]`)
+and against poe2wiki/poe2db (both are lookup tables, not formulas). GGG's own
+design is a curated per-item table, so `src/data/gold-costs-poe2.js` stays a
+curated table too, now sourced from a full scrape of
+`poe2db.tw/us/Currency_Exchange` (664 items) matched by exact display name
+against `catalog-poe2.json`'s trade short ids (651 matched, 13 omitted rather
+than guessed). **Why:** the prior 9-item table's values matched this scrape
+exactly, confirming the same lineage — this is a same-source expansion
+(1.2% -> 86.3% catalog coverage), not a new, unverified source. `robots.txt`
+on poe2db.tw allows crawling (`Allow: /`).
+
 ## 2026-07-21 — Currency Exchange goes live via the PUBLIC CDN (no OAuth)
 GGG's OAuth team replied: CX history is now public through their CDN, so the
 `service:cxapi` token we were waiting on is **no longer required**. Verified live

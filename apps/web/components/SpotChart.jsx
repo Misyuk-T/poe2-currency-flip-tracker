@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { HistogramSeries, LineSeries, createChart } from "lightweight-charts";
+import { CandlestickSeries, HistogramSeries, LineSeries, createChart } from "lightweight-charts";
 import { buildTrendRows } from "../lib/chart-series.js";
 
 function precisionFor(rows) {
-  const values = rows.map((row) => row.line.value).filter(Number.isFinite);
+  const values = rows.flatMap((row) => [row.range.low, row.range.high]).filter(Number.isFinite);
   const magnitude = Math.max(...values.map(Math.abs), 0);
   if (magnitude < 0.01) return 6;
   if (magnitude < 1) return 4;
@@ -63,6 +63,15 @@ export default function SpotChart({ points, height = 420, bucketHours: bucketHou
       },
     });
 
+    // The observed low..high band, drawn as a body-only box. Added before the
+    // midpoint line so the line reads on top of its own range.
+    const range = chart.addSeries(CandlestickSeries, {
+      priceFormat: { type: "price", precision, minMove },
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+    range.setData(rows.map((row) => row.range));
+
     const midpoint = chart.addSeries(LineSeries, {
       color: "#f0b90b",
       lineWidth: 2,
@@ -102,8 +111,8 @@ export default function SpotChart({ points, height = 420, bucketHours: bucketHou
     );
   }
 
-  const low = Math.min(...rows.map((row) => row.line.value));
-  const high = Math.max(...rows.map((row) => row.line.value));
+  const low = Math.min(...rows.map((row) => row.range.low));
+  const high = Math.max(...rows.map((row) => row.range.high));
   const first = rows[0]?.line.time;
   const last = rows.at(-1)?.line.time;
 

@@ -1133,7 +1133,9 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                 </div>
                 <SpotChart points={chartHistory} bucketHours={horizon} loading={historyLoading} />
                 <p className="rt-note">
-                  Indicative trend: median of official hourly range midpoints per selected window. Range extremes are omitted because this is not an OHLC or tick feed.
+                  Bars are the real traded range (lowest to highest official price in each window), green when the
+                  midpoint rose against the previous window. The gold line is the median midpoint. These are not
+                  OHLC candles — GGG publishes no open or close price, so none is drawn.
                 </p>
               </div>
 

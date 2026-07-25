@@ -19,13 +19,24 @@ function median(values) {
     : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
+export const UP_COLOR = "#0ecb81";
+export const DOWN_COLOR = "#f6465d";
+
 /**
- * Build an indicative trend from official hourly range midpoints.
+ * Build a trend series from official hourly records.
  *
- * These records are not exchange OHLC candles: GGG exposes a low/high range
- * and this app derives a midpoint proxy. Median-bucketing prevents a single
- * extreme fill from becoming a fake candlestick wick and flattening the useful
- * part of the chart, while keeping the underlying hourly points untouched.
+ * GGG publishes a low/high range per hour and NO open/close, so this emits two
+ * things and is careful about which is which:
+ *
+ * - `range`: the real traded band — the lowest low and highest high actually
+ *   observed in the bucket. Drawn as a plain box (a candlestick body spanning
+ *   low->high with no wick), NOT as an OHLC candle: an OHLC body would have to
+ *   invent an open and a close, which is exactly the fabrication this replaced.
+ * - `line`: the median of the hourly midpoints, as an indicative trend. Median
+ *   rather than last, so one extreme fill can't yank the whole bucket.
+ *
+ * Direction colouring compares this bucket's median against the previous
+ * bucket's — a real comparison between two observed values.
  */
 export function buildTrendRows(points, explicitBucketHours) {
   const usable = (points ?? [])
@@ -40,15 +51,23 @@ export function buildTrendRows(points, explicitBucketHours) {
   for (const point of usable) {
     const completedHour = Number(point.completedHour) || Date.now();
     const bucketEnd = Math.ceil(completedHour / spanMs) * spanMs;
+    // Fall back to the midpoint when an hour carries no usable band, so a
+    // partial record still contributes its observed price instead of nothing.
+    const low = Number.isFinite(point.low) && point.low > 0 ? point.low : point.reference;
+    const high = Number.isFinite(point.high) && point.high > 0 ? point.high : point.reference;
     const bucket = buckets.at(-1);
     if (bucket?.completedHour === bucketEnd) {
       bucket.references.push(point.reference);
       bucket.volume += pointVolume(point);
+      bucket.low = Math.min(bucket.low, low);
+      bucket.high = Math.max(bucket.high, high);
     } else {
       buckets.push({
         completedHour: bucketEnd,
         references: [point.reference],
         volume: pointVolume(point),
+        low,
+        high,
       });
     }
   }
@@ -57,12 +76,26 @@ export function buildTrendRows(points, explicitBucketHours) {
     const reference = median(bucket.references);
     const prior = median(buckets[index - 1]?.references ?? []) ?? reference;
     const time = Math.floor(bucket.completedHour / 1000);
+    const up = reference >= prior;
+    const color = up ? UP_COLOR : DOWN_COLOR;
     return {
+      // open/close are the band edges, not a fabricated open/close: this draws
+      // a box covering exactly the observed low..high, with no wick.
+      range: {
+        time,
+        open: bucket.low,
+        close: bucket.high,
+        low: bucket.low,
+        high: bucket.high,
+        color,
+        borderColor: color,
+        wickColor: color,
+      },
       line: { time, value: reference },
       volume: {
         time,
         value: bucket.volume,
-        color: reference >= prior ? "rgba(14, 203, 129, 0.36)" : "rgba(246, 70, 93, 0.36)",
+        color: up ? "rgba(14, 203, 129, 0.36)" : "rgba(246, 70, 93, 0.36)",
       },
       samples: bucket.references.length,
     };

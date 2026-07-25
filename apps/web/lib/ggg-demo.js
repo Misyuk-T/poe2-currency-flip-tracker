@@ -75,18 +75,26 @@ export function mockLadderSnapshot(league, { now = Date.now(), dayNumber } = {})
   return { league, fetchedAt: now, dayNumber: day, totalEntries, medianLevel, levelsPerDay, deadCount, distribution, mocked: true };
 }
 
-/** Mocked shape of one `account:characters` character's currency-frame inventory. */
+function randomInt(min, max) {
+  return Math.floor(min + Math.random() * (max - min + 1));
+}
+
+/**
+ * Mocked shape of one `account:characters` character's currency-frame
+ * inventory. Deliberately RANDOM on every call (unlike the deterministic
+ * league/ladder mocks above) so it's visibly obvious on repeat use that
+ * this is a fake demo character, not a real, stable account read.
+ */
 export function mockCharacterInventory(league) {
-  const seed = hashSeed(`${league}:character`);
   return {
     name: "DemoWarbringer",
     class: "Warbringer",
-    level: 62 + Math.round(seed * 30),
+    level: randomInt(40, 100),
     league,
     currency: [
-      { id: "exalted", stackSize: 120 + Math.round(seed * 300) },
-      { id: "chaos", stackSize: 800 + Math.round(seed * 1200) },
-      { id: "divine", stackSize: 2 + Math.round(seed * 8) },
+      { id: "exalted", stackSize: randomInt(20, 900) },
+      { id: "chaos", stackSize: randomInt(100, 4000) },
+      { id: "divine", stackSize: randomInt(1, 20) },
     ],
     mocked: true,
   };

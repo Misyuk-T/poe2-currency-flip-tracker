@@ -20,15 +20,23 @@ const TOTAL_UNITS = [
 
 /**
  * Demo of BACKLOG.md T8/T9 ("currency in your pocket" via `account:characters`,
- * realm=poe2). No real GGG OAuth login happens here — clicking Connect just
- * loads a fixed demo character (lib/ggg-demo.js) and prices its currency
- * stacks against the CURRENT live radar rates, so the pricing itself is real
- * even though the character/inventory is not.
+ * realm=poe2). This is NOT a real login and NOT real inventory data — no GGG
+ * OAuth happens, no account is read. Clicking Connect randomly generates a
+ * fake character and fake currency amounts (a new random roll every time you
+ * open it) purely to demo the UI/flow ahead of the real OAuth scope (T1).
+ * The ONLY real thing here is the pricing: fake amounts are converted using
+ * this page's actual, currently-live market rates.
  */
 export default function PocketValuator({ league, rates }) {
   const [open, setOpen] = useState(false);
-  const character = open && league ? mockCharacterInventory(league) : null;
+  const [character, setCharacter] = useState(null);
   const valuation = character ? valueInventoryInExalted(character.currency, rates) : null;
+
+  function connect() {
+    if (!league) return;
+    setCharacter(mockCharacterInventory(league)); // fresh random roll each time
+    setOpen(true);
+  }
   const totals = TOTAL_UNITS.map((unit) => ({
     ...unit,
     value: valuation?.totalExalted != null ? convertMarketPrice(valuation.totalExalted, "exalted", unit.id, rates) : null,
@@ -57,14 +65,15 @@ export default function PocketValuator({ league, rates }) {
             Currency in your pocket <span className="demo-badge inline"><b className="demo-tag">DEMO</b></span>
           </h3>
         </div>
-        <button type="button" className="pocket-connect-button" onClick={() => setOpen(true)}>
+        <button type="button" className="pocket-connect-button" onClick={connect}>
           Connect PoE Account (Demo)
         </button>
       </div>
       <p className="pocket-valuator-note">
-        Simulates a player logging in with their own GGG account (pending OAuth scope T1) and reading their active
-        character&apos;s inventory — never another player&apos;s stash. Click Connect for a demo character priced
-        against the market rates on this page right now.
+        <strong>Demo only — this is not a real login.</strong> No GGG account is contacted; clicking Connect
+        randomly generates a fake character and fake currency amounts (a new random roll every time). Only the
+        prices shown are real — they use this page&apos;s actual, currently-live market rates. Real account login
+        is planned (BACKLOG.md T8/T9) once the GGG OAuth scope (T1) is granted.
       </p>
 
       {open && character && (
@@ -81,7 +90,7 @@ export default function PocketValuator({ league, rates }) {
                 <p className="pocket-character-line">
                   <strong>{character.name}</strong> · {character.class} · Level {character.level} · {character.league}
                 </p>
-                <p className="eyebrow">What you have, best current rate, and what it&apos;s worth</p>
+                <p className="eyebrow">Fake demo character · randomly generated · not a real account</p>
               </div>
               <button type="button" className="trade-close-button" aria-label="Close" title="Close" onClick={() => setOpen(false)}>
                 ×
@@ -119,8 +128,9 @@ export default function PocketValuator({ league, rates }) {
               </div>
             </div>
             <p className="pocket-valuator-note">
-              Character/inventory data is mocked (BACKLOG T8/T9, pending T1). Pricing uses this page&apos;s real,
-              currently-live market rates — nothing about the conversion itself is fabricated.
+              <strong>None of the above is real.</strong> The character and the amounts are randomly generated for
+              this demo (BACKLOG.md T8/T9) — not read from any GGG account. Only the exalted/chaos/divine conversion
+              is real, computed from this page&apos;s actual live market rates.
             </p>
           </div>
         </div>

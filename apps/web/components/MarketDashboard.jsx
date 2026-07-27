@@ -10,6 +10,7 @@ import { keyCurrencyCards, sparklinePoints } from "../lib/key-currencies.js";
 import { currentPriceGuidance, quoteFromAnchor, workingPrice } from "../lib/price-guidance.js";
 import { sortByFamily } from "../lib/item-family.js";
 import { useScrollLock } from "../lib/use-scroll-lock.js";
+import { preloadIcons } from "../lib/preload-icons.js";
 import {
   categoryIconMap,
   iconCandidatesForCategory,
@@ -653,6 +654,14 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
 
   const categories = useMemo(() => categoriesFrom(searched, categoryIcons), [searched, categoryIcons]);
 
+  // Warm every icon in the payload, not just the visible category. Rows render
+  // their icon lazily, so without this a category or league switch paints the
+  // new rows a moment before their images arrive and the icons visibly pop in.
+  useEffect(() => {
+    if (!tradable.length) return undefined;
+    return preloadIcons(tradable.map((row) => row.targetIcon).filter(Boolean));
+  }, [tradable]);
+
   // If the active category vanishes from the (search-narrowed) list, fall back to
   // "all" so the table can't stay filtered to a category the sidebar no longer shows.
   // Guarded on a non-empty list so the default category isn't wiped before the
@@ -1039,7 +1048,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                         onClick={() => openMarket(row.pairId)}
                       >
                         <td className="cell-item">
-                          <FallbackIcon candidates={iconCandidatesForRow(row, categoryIcons, CATEGORY_ICON_IDS)} lazy />
+                          <FallbackIcon candidates={iconCandidatesForRow(row, categoryIcons, CATEGORY_ICON_IDS)} />
                           <span>
                             <strong>{row.targetName}</strong>
                             <small>{row.category || "Other"}</small>

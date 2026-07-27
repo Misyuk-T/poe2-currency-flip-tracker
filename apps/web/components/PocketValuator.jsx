@@ -114,11 +114,12 @@ export default function PocketValuator({ league, rates, pool, goldPerUnit }) {
                     <span className="pocket-row-exit">
                       {best ? (
                         <>
-                          <b>{titleize(best.unit)}</b>
-                          <small>
-                            {formatNumber(best.units, { maximumFractionDigits: displayDigits(best.units) })} ·{" "}
-                            {formatNumber(best.gold, { maximumFractionDigits: 0 })}g
-                          </small>
+                          <b>
+                            <img src={iconUrl(best.unit)} onError={onIconError} alt="" />
+                            {formatNumber(best.units, { maximumFractionDigits: displayDigits(best.units) })}{" "}
+                            {titleize(best.unit)}
+                          </b>
+                          <small>{formatNumber(best.gold, { maximumFractionDigits: 0 })} gold to receive</small>
                         </>
                       ) : (
                         <small>too small to sell whole</small>
@@ -134,8 +135,9 @@ export default function PocketValuator({ league, rates, pool, goldPerUnit }) {
               <div className="pocket-totals-values">
                 {totals.map((unit) => (
                   <strong key={unit.id}>
+                    <img src={iconUrl(unit.id)} onError={onIconError} alt="" />
                     {unit.value != null ? formatNumber(unit.value, { maximumFractionDigits: unit.id === "exalted" ? 0 : 2 }) : "—"}
-                    <small> {unit.label}</small>
+                    <small>{unit.label}</small>
                   </strong>
                 ))}
               </div>

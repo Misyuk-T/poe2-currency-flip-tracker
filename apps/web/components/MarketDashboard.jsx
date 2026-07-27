@@ -92,6 +92,29 @@ function onIconError(event) {
   img.src = fallbackIconUrl;
 }
 
+/**
+ * Category glyph that walks a list of candidate icons.
+ *
+ * GGG's CDN 404s a handful of derived art paths (rare/new items whose RePoE
+ * art path doesn't resolve), so the first item in a category is not always a
+ * usable icon. Step to the next candidate on error rather than giving the
+ * whole category the neutral fallback.
+ */
+function CategoryIcon({ candidates }) {
+  const [index, setIndex] = useState(0);
+  const src = candidates[index];
+  if (!src) return <img className="rs-cat-icon" src={fallbackIconUrl} alt="" aria-hidden="true" />;
+  return (
+    <img
+      className="rs-cat-icon"
+      src={iconUrl(src)}
+      onError={() => setIndex((current) => current + 1)}
+      alt=""
+      aria-hidden="true"
+    />
+  );
+}
+
 function PricePill({ value, unit, compact = false }) {
   if (!unit || !Number.isFinite(value)) return <span className="price-pill empty">—</span>;
   return (
@@ -322,19 +345,30 @@ function SortHeader({ label, sublabel, column, activeKey, direction, onSort, ali
 }
 
 /** Group tradable rows into { name, count } category buckets for the sidebar. */
+const MAX_ICON_CANDIDATES = 5;
+
 function categoriesFrom(rows) {
   const counts = new Map();
   const icons = new Map();
   for (const row of rows) {
     const name = row.category || "Other";
     counts.set(name, (counts.get(name) ?? 0) + 1);
-    // Only claim the category's representative icon from a row that actually
-    // has one — an earlier row with no icon must not blank out the whole
-    // category when a later row in the same bucket has a real one.
-    if (!icons.has(name) && row.targetIcon) icons.set(name, row.targetIcon);
+    // Keep several candidates, not just the first: some long-tail items carry a
+    // derived art URL that 404s on GGG's CDN, and a single bad first row would
+    // otherwise leave the whole category with the fallback glyph.
+    if (!row.targetIcon) continue;
+    const candidates = icons.get(name) ?? [];
+    if (candidates.length < MAX_ICON_CANDIDATES && !candidates.includes(row.targetIcon)) {
+      candidates.push(row.targetIcon);
+      icons.set(name, candidates);
+    }
   }
   return [...counts.entries()]
-    .map(([name, count]) => ({ name, count, icon: CATEGORY_ICON_IDS[name] ?? icons.get(name) ?? null }))
+    .map(([name, count]) => ({
+      name,
+      count,
+      icons: [CATEGORY_ICON_IDS[name], ...(icons.get(name) ?? [])].filter(Boolean),
+    }))
     .sort((a, b) => {
       // Currency is the landing category, so it sits directly under "All
       // markets" rather than wherever its row count happens to place it.
@@ -813,7 +847,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                 aria-pressed={category === cat.name}
                 onClick={() => setCategory(cat.name)}
               >
-                <img className="rs-cat-icon" src={iconUrl(cat.icon)} onError={onIconError} alt="" aria-hidden="true" />
+                <CategoryIcon candidates={cat.icons} />
                 <span className="rs-cat-name">{cat.name}</span>
                 <small>{cat.count}</small>
               </button>

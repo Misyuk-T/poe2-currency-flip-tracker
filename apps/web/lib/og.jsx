@@ -57,7 +57,7 @@ export function ogImageResponse({ eyebrow, title, tagline }) {
             <div style={{ position: "absolute", width: 18, height: 7, top: 32, right: 6, border: "2px solid #d6b37a", borderTop: "0", borderRadius: "0 0 12px 12px" }} />
             <div style={{ position: "absolute", width: 20, height: 2, top: 44, left: 18, background: "#d6b37a", borderRadius: 999 }} />
           </div>
-          <div style={{ fontSize: 32, fontWeight: 700, color: "#d6b37a" }}>PoE2 Flip Helper</div>
+          <div style={{ fontSize: 32, fontWeight: 700, color: "#d6b37a" }}>Exile Radar</div>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column" }}>

@@ -1,7 +1,7 @@
 import MarketDashboard from "../../components/MarketDashboard.jsx";
 
 export const metadata = {
-  title: "PoE Market Radar",
+  title: "PoE currency market",
   description:
     "Path of Exile currency dashboard using official completed-hour Currency Exchange data.",
 };

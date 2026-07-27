@@ -3,13 +3,15 @@ import "./globals.css";
 export const metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   title: {
-    default: "PoE Currency Market Radar",
-    template: "%s · PoE Currency Market Radar",
+    default: "Exile Radar — PoE & PoE2 currency market",
+    // Brand first, keyword second: "Exile Radar" is the name, but "PoE"/"PoE2"
+    // still has to appear in the title for search.
+    template: "%s · Exile Radar",
   },
   description:
     "Path of Exile and Path of Exile 2 currency market radar using official completed-hour data.",
   openGraph: {
-    title: "PoE Currency Market Radar",
+    title: "Exile Radar — PoE & PoE2 currency market",
     description:
       "Track key currency rates and moving markets across Path of Exile and Path of Exile 2.",
     type: "website",
@@ -33,7 +35,7 @@ export default function RootLayout({ children }) {
                   <path d="M23 12 19.5 19h7L23 12Z" />
                 </svg>
               </span>
-              <span>PoE Market Radar</span>
+              <span>Exile Radar</span>
             </a>
           </header>
           {children}

@@ -2632,6 +2632,33 @@ body:has(.home-page) {
   outline: 2px solid var(--rl-cyan);
   outline-offset: 2px;
 }
+/* Bulk-size toggle above the buy/sell pair — reuses the horizon segment look
+   so the two controls in this panel read as the same kind of thing. */
+.qty-segments {
+  display: inline-flex;
+  align-self: flex-end;
+  gap: 3px;
+  margin-bottom: 10px;
+  padding: 3px;
+  border: 1px solid var(--rl-border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+}
+.qty-segments button {
+  min-width: 46px;
+  min-height: 29px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--rl-ink-soft);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+.qty-segments button[aria-pressed="true"] { background: var(--rl-gold); color: #1c1206; }
+.qty-segments button:focus-visible { outline: 2px solid var(--rl-cyan); outline-offset: 2px; }
+
 .trade-answer {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2796,33 +2823,105 @@ body:has(.home-page) {
 .radar-light .guidance-grid strong { color: var(--rl-ink); font-size: 1.16rem; }
 .radar-light .guidance-empty { color: var(--rl-muted); padding: 12px; }
 
-@media (max-width: 920px) {
+/* Burger + off-canvas drawer. The sidebar is a 258px column that, together
+   with the header controls, stops fitting well before the old 920px cut — at
+   ~1180px the header already wraps onto two rows. Below that the categories
+   become a drawer rather than a horizontal chip strip: a 20-item strip forced
+   sideways scrolling and still ate vertical space above the table. */
+.radar-nav-toggle { display: none; }
+.radar-nav-close { display: none; }
+
+@media (max-width: 1180px) {
   .radar-shell { grid-template-columns: minmax(0, 1fr); }
   .radar-progress { left: 0; }
   .radar-main { min-width: 0; }
-  .radar-sidebar {
-    flex-direction: row;
-    flex-wrap: wrap;
-    border-right: 0;
-    border-top-right-radius: 18px;
-    border-bottom: 1px solid var(--rl-border);
-    position: static;
-    max-height: none;
-    overflow-y: visible;
+
+  .radar-nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    align-self: flex-start;
+    margin: 16px 0 0 16px;
+    padding: 9px 14px;
+    min-height: 42px;
+    border: 1px solid var(--rl-border-strong);
+    border-radius: 11px;
+    background: rgba(0, 0, 0, 0.24);
+    color: var(--rl-ink);
+    font: inherit;
+    font-size: 0.84rem;
+    font-weight: 800;
+    cursor: pointer;
   }
-  .radar-sidebar .rs-group { flex: 1 1 220px; }
-  /* Categories become a horizontal chip strip so the market table isn't buried
-     under a 16-item vertical list on narrow screens. */
-  .radar-sidebar .rs-categories { flex: 1 1 100%; flex-direction: row; flex-wrap: nowrap; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
-  .radar-sidebar .rs-categories .rs-heading { display: none; }
-  .radar-sidebar .rs-categories .rs-cat { width: auto; flex: 0 0 auto; min-height: 36px; padding: 7px 12px; }
-  .radar-sidebar .rs-categories .rs-cat small { margin-left: 6px; }
+  .radar-nav-toggle svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: var(--rl-gold);
+    stroke-width: 2;
+    stroke-linecap: round;
+  }
+  .radar-nav-toggle span {
+    max-width: 42vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .radar-nav-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    background: rgba(6, 8, 10, 0.6);
+  }
+
+  .radar-sidebar {
+    position: fixed;
+    z-index: 80;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(320px, 86vw);
+    max-height: none;
+    border-right: 1px solid var(--rl-border);
+    border-radius: 0;
+    overflow-y: auto;
+    transform: translateX(-100%);
+    transition: transform 0.18s ease;
+    padding-top: 56px;
+  }
+  .radar-sidebar.open { transform: translateX(0); }
+
+  .radar-nav-close {
+    display: block;
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--rl-border);
+    border-radius: 9px;
+    background: rgba(0, 0, 0, 0.3);
+    color: var(--rl-ink);
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
   .rs-foot { display: none; }
   .radar-trade { grid-template-columns: 1fr; }
   .radar-light .manual-price-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radar-sidebar { transition: none; }
+}
+
+@media (max-width: 920px) {
   .key-currency-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .key-currency-card:last-child { grid-column: 1 / -1; }
 }
+
 
 @media (max-width: 620px) {
   .app-shell:has(.radar-page) { width: min(100% - 20px, 1480px); }

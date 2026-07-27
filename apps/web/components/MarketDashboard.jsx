@@ -72,6 +72,10 @@ const SORT_OPTIONS = [
   { value: "liquidity:desc", label: "Liquidity" },
   { value: "name:asc", label: "Name" },
 ];
+// You rarely flip a single orb, so the plan can be read per-unit or for a
+// realistic bulk size. Purely a display multiplier — it never changes the
+// underlying prices or the historical stats.
+const QUANTITY_OPTIONS = [1, 10, 100];
 const HORIZON_OPTIONS = [
   { value: 1, label: "1h" },
   { value: 2, label: "2h" },
@@ -257,6 +261,13 @@ function CustomSelect({ id, value, options, onChange }) {
   );
 }
 
+/** Multiply a quote for the bulk-size toggle. Display only — the underlying
+ *  price, the margin and the historical stats are per-unit and unchanged. */
+function scaleQuote(quote, multiplier) {
+  if (!quote || !Number.isFinite(quote.value) || multiplier === 1) return quote;
+  return { ...quote, value: quote.value * multiplier };
+}
+
 function rowSpread(row) {
   if (!Number.isFinite(row?.low) || !Number.isFinite(row?.high) || row.low <= 0 || row.high <= row.low) return null;
   return row.high / row.low - 1;
@@ -426,6 +437,8 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   const [displayCurrency, setDisplayCurrency] = useState(null);
   const [view, setView] = useState("list"); // "list" (table, default) | "chart" (trade view)
   const [horizon, setHorizon] = useState(6);
+  const [quantity, setQuantity] = useState(1);
+  const [navOpen, setNavOpen] = useState(false);
   const [manualPrices, setManualPrices] = useState({});
   const [draftPrice, setDraftPrice] = useState("");
   const [draftUnit, setDraftUnit] = useState("exalted");
@@ -588,6 +601,16 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
 
   // Plan modal: Escape closes it and background scroll is locked while it is open.
   useScrollLock(view === "chart");
+  useScrollLock(navOpen);
+
+  useEffect(() => {
+    if (!navOpen) return undefined;
+    function onKeyDown(event) {
+      if (event.key === "Escape") setNavOpen(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [navOpen]);
 
   useEffect(() => {
     if (view !== "chart") return undefined;
@@ -844,7 +867,23 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     <div className="radar-light">
       <section className="radar-shell">
         <span className={status === "loading" ? "radar-progress active" : "radar-progress"} aria-hidden="true" />
-        <aside className="radar-sidebar" aria-label="Market navigation">
+        <button
+          type="button"
+          className="radar-nav-toggle"
+          aria-label="Categories"
+          aria-expanded={navOpen}
+          onClick={() => setNavOpen(true)}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16" />
+          </svg>
+          <span>{category === "all" ? "All markets" : category}</span>
+        </button>
+        {navOpen && <div className="radar-nav-scrim" onClick={() => setNavOpen(false)} role="presentation" />}
+        <aside className={navOpen ? "radar-sidebar open" : "radar-sidebar"} aria-label="Market navigation">
+          <button type="button" className="radar-nav-close" aria-label="Close categories" onClick={() => setNavOpen(false)}>
+            ×
+          </button>
           <div className="rs-group">
             <p className="rs-heading">Workspace</p>
             <button className="rs-link active" type="button" aria-pressed="true">
@@ -858,7 +897,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
               className={category === "all" ? "rs-cat active" : "rs-cat"}
               type="button"
               aria-pressed={category === "all"}
-              onClick={() => setCategory("all")}
+              onClick={() => { setCategory("all"); setNavOpen(false); }}
             >
               <img className="rs-cat-icon" src={iconUrl("exalted")} onError={onIconError} alt="" aria-hidden="true" />
               <span>All markets</span>
@@ -870,7 +909,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                 className={category === cat.name ? "rs-cat active" : "rs-cat"}
                 type="button"
                 aria-pressed={category === cat.name}
-                onClick={() => setCategory(cat.name)}
+                onClick={() => { setCategory(cat.name); setNavOpen(false); }}
               >
                 <FallbackIcon candidates={cat.icons} className="rs-cat-icon" />
                 <span className="rs-cat-name">{cat.name}</span>
@@ -1213,23 +1252,36 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     </div>
                   ) : guidance.status === "ok" && entryQuote?.value != null && exitQuote?.value != null ? (
                     <>
+                      <div className="qty-segments" role="group" aria-label="Quantity">
+                        {QUANTITY_OPTIONS.map((option) => (
+                          <button
+                            key={option}
+                            type="button"
+                            aria-pressed={quantity === option}
+                            onClick={() => setQuantity(option)}
+                          >
+                            ×{option}
+                          </button>
+                        ))}
+                      </div>
+
                       <div className="trade-answer">
                         <article className="buy">
                           <span className="ta-head">Buy<i className="ta-arrow" aria-hidden="true">→</i></span>
-                          <strong><QuotePill quote={entryQuote} /></strong>
-                          <small>{formatPercent(Math.abs(guidance.entryDiscount), { signed: false })} below working price</small>
+                          <strong><QuotePill quote={scaleQuote(entryQuote, quantity)} /></strong>
+                          <small>{formatPercent(Math.abs(guidance.entryDiscount), { signed: false })} below market</small>
                         </article>
                         <article className="sell">
                           <span className="ta-head">Sell<i className="ta-arrow" aria-hidden="true">→</i></span>
-                          <strong><QuotePill quote={exitQuote} /></strong>
-                          <small>{formatPercent(guidance.exitPremium, { signed: false })} above working price</small>
+                          <strong><QuotePill quote={scaleQuote(exitQuote, quantity)} /></strong>
+                          <small>{formatPercent(guidance.exitPremium, { signed: false })} above market</small>
                         </article>
                       </div>
 
                       <div className="working-price-line">
-                        <span>Working price</span>
+                        <span>Market now</span>
                         <strong><QuotePill quote={workingQuote} compact /></strong>
-                        <small>{currentWorkingPrice.sourceLabel}{currentWorkingPrice.ageMs == null ? "" : ` · ${formatAge(currentWorkingPrice.ageMs)}`}</small>
+                        <small>{currentWorkingPrice.ageMs == null ? currentWorkingPrice.sourceLabel : formatAge(currentWorkingPrice.ageMs)}</small>
                       </div>
 
                       {Number.isFinite(planSpread) && (
@@ -1242,7 +1294,6 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                       )}
 
                       <p className="rt-section-label">Seeing a different price in-game?</p>
-                      <p className="rt-hint">Data lags ~1h. Enter the price you see now and the plan re-computes against it.</p>
                       <div className="manual-price-row">
                         <label>
                           Live price
@@ -1269,12 +1320,12 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                         <article>
                           <span>Reached sell price</span>
                           <strong>{formatPercent(guidance.hitRate, { signed: false, maximumFractionDigits: 0 })}</strong>
-                          <small>{guidance.horizonSamples || guidance.samples} rolling {horizon}h windows</small>
+                          <small>over {guidance.horizonSamples || guidance.samples} past {horizon}h windows</small>
                         </article>
                         <article>
                           <span>Usual wait</span>
                           <strong>{formatDurationHours(guidance.medianTimeToHitHours)}</strong>
-                          <small>when sell price was reached</small>
+                          <small>when it did</small>
                         </article>
                       </div>
                     </>

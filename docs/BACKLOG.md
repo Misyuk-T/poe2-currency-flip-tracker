@@ -178,6 +178,33 @@ import as a side feature since that scope already covers PoE1 (lower priority
 - Anchor: value in exalted + divine; show gold-cost-to-liquidate (ties into the
   existing gold wedge).
 
+## trade2 API — how competitors price uniques (RESEARCH, do not start yet)
+Answers a question the earlier "no item-search API exists" finding got wrong in
+spirit: there IS no *documented* item-search API, but poe2scout.com prices
+uniques and every item category through an **undocumented** endpoint, and their
+source is public. Read from
+`net/Poe2scout.UniquePriceLog.Worker/PoeTradeClient.cs` (2026-07-27):
+
+- Base URL `https://www.pathofexile.com/api/trade2` — the same API behind the
+  in-game trade site. `POST /search/poe2/{league}` to run a query, then
+  `GET /fetch/{ids}?query=…&realm=poe2` for listing detail.
+- **No authentication in that client at all** — no Bearer, no POESESSID, only
+  `User-Agent: POE2SCOUT (contact: …)`. (`POEAPI_CLIENT_ID`/`SECRET` in their
+  README belong to other workers, not this one.)
+- Deliberately slow: **17s between POSTs**, 3s between GETs, 5 retries with a
+  300s backoff on 403/503. Not aggressive scraping — a pace chosen to stay
+  tolerated.
+
+**Why this is parked, not queued.** It is a grey area: real and evidently
+tolerated, but outside the documented API surface, with no guarantee. We are
+mid-conversation with GGG asking for documented scopes — starting to poll an
+undocumented endpoint in parallel is exactly the wrong signal at the wrong
+time. Revisit only after the scope request is answered.
+
+Also note the cost: at 17s per query, covering the unique universe is hours of
+worker time per pass. That is an infrastructure project (queue, scheduling,
+backoff, storage), not an evening's work.
+
 ## API opportunities to explore
 The public CDN gives more than hourly ratios — worth a dedicated exploration
 session to find features the giants don't ship. Verified against the official

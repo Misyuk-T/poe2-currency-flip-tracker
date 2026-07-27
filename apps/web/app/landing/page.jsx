@@ -12,7 +12,7 @@ import HomeMiniRadar from "../../components/HomeMiniRadar.jsx";
 export const revalidate = 3600;
 
 export const metadata = {
-  title: "PoE2 Currency Flip Helper",
+  title: "PoE2 currency market radar",
   description:
     "Use official Path of Exile 2 hourly market data to spot currency movement, verify your current quote, and plan conservative entry and exit levels.",
   alternates: { canonical: `${siteUrl}/landing` },

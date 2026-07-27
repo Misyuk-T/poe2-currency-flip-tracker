@@ -74,6 +74,23 @@ a { color: inherit; text-decoration: none; }
   margin: 0 auto;
 }
 
+/* GGG requires third-party applications to display the affiliation notice
+   visibly, so it sits on every page rather than behind a link. */
+.site-footer {
+  width: min(1620px, calc(100% - 64px));
+  margin: 48px auto 0;
+  padding: 20px 0 32px;
+  border-top: 1px solid rgba(240, 169, 59, 0.16);
+  color: #8b8478;
+  font-size: 0.76rem;
+  line-height: 1.55;
+}
+.site-footer p { margin: 0; }
+.site-footer-sub { margin-top: 4px; color: #6f6a60; font-size: 0.72rem; }
+@media (max-width: 860px) {
+  .site-footer { width: calc(100% - 32px); margin-top: 32px; }
+}
+
 .brand {
   display: flex;
   align-items: center;

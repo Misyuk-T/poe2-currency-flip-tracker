@@ -37,6 +37,15 @@ export default function RootLayout({ children }) {
             </a>
           </header>
           {children}
+          <footer className="site-footer">
+            {/* Exact wording required of third-party applications by GGG's
+                developer documentation — do not paraphrase. */}
+            <p>This product isn&apos;t affiliated with or endorsed by Grinding Gear Games in any way.</p>
+            <p className="site-footer-sub">
+              Market data from the official Path of Exile Currency Exchange API. Item names and artwork are
+              © Grinding Gear Games.
+            </p>
+          </footer>
         </div>
       </body>
     </html>

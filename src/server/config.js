@@ -61,9 +61,13 @@ export function loadConfig(env = process.env) {
     pollIntervalMs: int(env.POLL_INTERVAL_MS, 5 * 60 * 1000),
     maxListingAgeMs: int(env.MAX_LISTING_AGE_MS, 15 * 60 * 1000),
     batchSize: int(env.BATCH_SIZE, 4),
+    // GGG's developer docs mandate this exact shape for API clients:
+    //   OAuth {clientId}/{version} (contact: {contact})
+    // Set GGG_CLIENT_ID to the real registered client id once OAuth scopes are
+    // granted; the fallback keeps the format valid before then.
     userAgent:
       env.USER_AGENT ??
-      "poe2-currency-flip-tracker/0.1 (experimental; non-commercial; contact via config)",
+      `OAuth ${env.GGG_CLIENT_ID ?? "poe2flighelper"}/0.1.0 (contact: ${env.CONTACT_EMAIL ?? "misyuktaras@gmail.com"})`,
     contactEmail: env.CONTACT_EMAIL ?? null,
     poesessid: env.POESESSID ?? null,
 

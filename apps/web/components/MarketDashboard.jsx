@@ -887,7 +887,13 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
           <div className="rs-group">
             <p className="rs-heading">Workspace</p>
             <button className="rs-link active" type="button" aria-pressed="true">
-              <span className="rs-icon" aria-hidden="true">⌁</span>
+              <span className="rs-icon" aria-hidden="true">
+                <svg viewBox="0 0 32 32" focusable="false">
+                  <path d="M26 16a10 10 0 1 1-20 0 10 10 0 1 1 20 0Z" />
+                  <path d="M21 16a5 5 0 1 1-10 0 5 5 0 1 1 10 0Z" />
+                  <path d="M16 16 23 9" />
+                </svg>
+              </span>
               <span>Market Radar</span>
             </button>
           </div>

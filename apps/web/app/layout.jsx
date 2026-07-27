@@ -26,13 +26,13 @@ export default function RootLayout({ children }) {
           <header className="site-header">
             <a className="brand" href="/">
               <span className="brand-mark" aria-hidden="true">
+                {/* Radar scope: two rings, a sweep, and one blip. Inherits
+                    currentColor from .brand-mark, so no fills here. */}
                 <svg viewBox="0 0 32 32" focusable="false">
-                  <path d="M16 7v18" />
-                  <path d="M10 25h12" />
-                  <path d="M8 11h16" />
-                  <path d="M16 8l-6 3 6 3 6-3-6-3Z" />
-                  <path d="M9 12 5.5 19h7L9 12Z" />
-                  <path d="M23 12 19.5 19h7L23 12Z" />
+                  <path d="M26 16a10 10 0 1 1-20 0 10 10 0 1 1 20 0Z" />
+                  <path d="M21 16a5 5 0 1 1-10 0 5 5 0 1 1 10 0Z" />
+                  <path d="M16 16 23 9" />
+                  <path d="M24.1 13.3a1.4 1.4 0 1 1-2.8 0 1.4 1.4 0 1 1 2.8 0Z" />
                 </svg>
               </span>
               <span>Exile Radar</span>

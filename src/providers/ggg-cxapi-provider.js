@@ -1,5 +1,7 @@
 /** Official, OAuth-gated hourly Currency Exchange history provider. */
 
+import { readRateLimit } from "./rate-limit.js";
+
 const BASE = "https://api.pathofexile.com/currency-exchange";
 
 export function createGggCxapiProvider(config) {
@@ -27,7 +29,18 @@ export function createGggCxapiProvider(config) {
         throw new CxapiError("network", `cxapi request failed: ${err.message}`, { cause: err });
       }
       trace("provider.fetch.headers.end", { source: "oauth", realm: config.poeRealm, digestId: id, status: response.status });
-      if (response.status === 429) throw new CxapiError("rate-limited", "cxapi returned 429");
+      // GGG's docs require reading the rate-limit headers, not just reacting to
+      // a 429. Carry the server's own wait (Retry-After, else the largest
+      // remaining penalty) out with the error so the caller honours it.
+      const rateLimit = readRateLimit(response.headers);
+      if (rateLimit.states.length) {
+        trace("provider.rate-limit", { source: "oauth", states: rateLimit.states, penaltySeconds: rateLimit.penaltySeconds });
+      }
+      if (response.status === 429 || rateLimit.shouldBackOff) {
+        throw new CxapiError("rate-limited", `cxapi rate limited; wait ${rateLimit.penaltySeconds}s`, {
+          retryAfterSeconds: rateLimit.penaltySeconds,
+        });
+      }
       if (!response.ok) throw new CxapiError("http", `cxapi returned ${response.status}`);
       trace("provider.fetch.body.start", { source: "oauth", realm: config.poeRealm, digestId: id });
       const payload = await response.json();

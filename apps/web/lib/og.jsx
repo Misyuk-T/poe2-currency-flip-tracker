@@ -51,11 +51,12 @@ export function ogImageResponse({ eyebrow, title, tagline }) {
               position: "relative",
             }}
           >
-            <div style={{ position: "absolute", width: 2, height: 34, top: 10, left: 27, background: "#d6b37a", borderRadius: 999 }} />
-            <div style={{ position: "absolute", width: 34, height: 2, top: 18, left: 11, background: "#d6b37a", borderRadius: 999 }} />
-            <div style={{ position: "absolute", width: 18, height: 7, top: 32, left: 6, border: "2px solid #d6b37a", borderTop: "0", borderRadius: "0 0 12px 12px" }} />
-            <div style={{ position: "absolute", width: 18, height: 7, top: 32, right: 6, border: "2px solid #d6b37a", borderTop: "0", borderRadius: "0 0 12px 12px" }} />
-            <div style={{ position: "absolute", width: 20, height: 2, top: 44, left: 18, background: "#d6b37a", borderRadius: 999 }} />
+            {/* Radar scope, built from divs because Satori has no SVG stroke
+                support: outer ring, inner ring, sweep, and the teal blip. */}
+            <div style={{ position: "absolute", width: 40, height: 40, top: 6, left: 6, border: "2px solid #d6b37a", borderRadius: 9999 }} />
+            <div style={{ position: "absolute", width: 20, height: 20, top: 16, left: 16, border: "2px solid #d6b37a", borderRadius: 9999 }} />
+            <div style={{ position: "absolute", width: 20, height: 2, top: 25, left: 26, background: "#d6b37a", borderRadius: 999, transform: "rotate(-45deg)", transformOrigin: "0 50%" }} />
+            <div style={{ position: "absolute", width: 8, height: 8, top: 12, right: 10, border: "2px solid #39c2c9", borderRadius: 9999 }} />
           </div>
           <div style={{ fontSize: 32, fontWeight: 700, color: "#d6b37a" }}>Exile Radar</div>
         </div>

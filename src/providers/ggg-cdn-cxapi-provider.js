@@ -19,6 +19,8 @@
  * would mislabel the empty in-progress hour as the previous completed hour.
  */
 
+import { readRateLimit } from "./rate-limit.js";
+
 const CDN_BASE = "https://web.poecdn.com/api/currency-exchange";
 
 // Map our realm label -> the CDN path segment. PoE1 PC is the CDN default (no
@@ -58,7 +60,20 @@ export function createGggCdnCxapiProvider(config) {
         throw new CxapiError("network", `cxapi cdn request failed: ${err.message}`, { cause: err });
       }
       trace("provider.fetch.headers.end", { source: "cdn", realm: config.poeRealm, digestId: id, status: response.status });
-      if (response.status === 429) throw new CxapiError("rate-limited", "cxapi cdn returned 429");
+      // GGG's docs require clients to read the rate-limit headers, not just
+      // react to a 429. Log the current state on every response so the ingest
+      // trace shows how close we run to the policy, and carry the server's own
+      // wait (Retry-After, else the largest remaining penalty) out with the
+      // error so the caller honours it instead of guessing.
+      const rateLimit = readRateLimit(response.headers);
+      if (rateLimit.states.length) {
+        trace("provider.rate-limit", { source: "cdn", states: rateLimit.states, penaltySeconds: rateLimit.penaltySeconds });
+      }
+      if (response.status === 429 || rateLimit.shouldBackOff) {
+        throw new CxapiError("rate-limited", `cxapi cdn rate limited; wait ${rateLimit.penaltySeconds}s`, {
+          retryAfterSeconds: rateLimit.penaltySeconds,
+        });
+      }
       // The CDN can expose the cursor for an hour before that hour's object is
       // published. Near the live edge a 404 therefore means "retry this cursor
       // later", not an ingest failure. Return the same terminal shape as the

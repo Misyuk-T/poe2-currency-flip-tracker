@@ -11,6 +11,11 @@ import { currentPriceGuidance, quoteFromAnchor, workingPrice } from "../lib/pric
 import { sortByFamily } from "../lib/item-family.js";
 import { useScrollLock } from "../lib/use-scroll-lock.js";
 import {
+  categoryIconMap,
+  iconCandidatesForCategory,
+  iconCandidatesForRow,
+} from "../lib/icon-candidates.js";
+import {
   apiBaseUrl,
   displayDigits,
   fallbackIconUrl,
@@ -101,24 +106,35 @@ function onIconError(event) {
 }
 
 /**
- * Category glyph that walks a list of candidate icons.
+ * Icon that walks a list of candidates, stepping to the next one whenever the
+ * current source fails to load.
  *
- * GGG's CDN 404s a handful of derived art paths (rare/new items whose RePoE
- * art path doesn't resolve), so the first item in a category is not always a
- * usable icon. Step to the next candidate on error rather than giving the
- * whole category the neutral fallback.
+ * Some items only have an icon URL derived from a RePoE art path, and GGG's
+ * CDN 404s a slice of those (verified: no extension, realm or host variant
+ * resolves them — the art path itself is wrong upstream). Rather than curate a
+ * per-item list, callers pass fallbacks computed from the live data — an
+ * item falls back to a working sibling in its own category — so new leagues
+ * and new items are handled without a code change.
  */
-function CategoryIcon({ candidates }) {
+function FallbackIcon({ candidates, className, lazy = false }) {
   const [index, setIndex] = useState(0);
+  // A changed candidate list means a different row/category is being shown.
+  const key = candidates.join("|");
+  const [seenKey, setSeenKey] = useState(key);
+  if (key !== seenKey) {
+    setSeenKey(key);
+    setIndex(0);
+  }
   const src = candidates[index];
-  if (!src) return <img className="rs-cat-icon" src={fallbackIconUrl} alt="" aria-hidden="true" />;
+  if (!src) return <img className={className} src={fallbackIconUrl} alt="" aria-hidden="true" />;
   return (
     <img
-      className="rs-cat-icon"
+      className={className}
       src={iconUrl(src)}
       onError={() => setIndex((current) => current + 1)}
       alt=""
       aria-hidden="true"
+      loading={lazy ? "lazy" : undefined}
     />
   );
 }
@@ -353,29 +369,17 @@ function SortHeader({ label, sublabel, column, activeKey, direction, onSort, ali
 }
 
 /** Group tradable rows into { name, count } category buckets for the sidebar. */
-const MAX_ICON_CANDIDATES = 5;
-
-function categoriesFrom(rows) {
+function categoriesFrom(rows, categoryIcons) {
   const counts = new Map();
-  const icons = new Map();
   for (const row of rows) {
     const name = row.category || "Other";
     counts.set(name, (counts.get(name) ?? 0) + 1);
-    // Keep several candidates, not just the first: some long-tail items carry a
-    // derived art URL that 404s on GGG's CDN, and a single bad first row would
-    // otherwise leave the whole category with the fallback glyph.
-    if (!row.targetIcon) continue;
-    const candidates = icons.get(name) ?? [];
-    if (candidates.length < MAX_ICON_CANDIDATES && !candidates.includes(row.targetIcon)) {
-      candidates.push(row.targetIcon);
-      icons.set(name, candidates);
-    }
   }
   return [...counts.entries()]
     .map(([name, count]) => ({
       name,
       count,
-      icons: [CATEGORY_ICON_IDS[name], ...(icons.get(name) ?? [])].filter(Boolean),
+      icons: iconCandidatesForCategory(name, categoryIcons, CATEGORY_ICON_IDS),
     }))
     .sort((a, b) => {
       // Currency is the landing category, so it sits directly under "All
@@ -643,7 +647,11 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     return tradable.filter((row) => row.targetName?.toLowerCase().includes(q) || row.target?.toLowerCase().includes(q));
   }, [tradable, search]);
 
-  const categories = useMemo(() => categoriesFrom(searched), [searched]);
+  // Built from the whole tradable set (not the filtered view) so narrowing the
+  // table never removes a usable fallback.
+  const categoryIcons = useMemo(() => categoryIconMap(tradable), [tradable]);
+
+  const categories = useMemo(() => categoriesFrom(searched, categoryIcons), [searched, categoryIcons]);
 
   // If the active category vanishes from the (search-narrowed) list, fall back to
   // "all" so the table can't stay filtered to a category the sidebar no longer shows.
@@ -855,7 +863,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                 aria-pressed={category === cat.name}
                 onClick={() => setCategory(cat.name)}
               >
-                <CategoryIcon candidates={cat.icons} />
+                <FallbackIcon candidates={cat.icons} className="rs-cat-icon" />
                 <span className="rs-cat-name">{cat.name}</span>
                 <small>{cat.count}</small>
               </button>
@@ -1031,7 +1039,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                         onClick={() => openMarket(row.pairId)}
                       >
                         <td className="cell-item">
-                          <img src={iconUrl(row.targetIcon ?? row.target)} onError={onIconError} alt="" loading="lazy" />
+                          <FallbackIcon candidates={iconCandidatesForRow(row, categoryIcons, CATEGORY_ICON_IDS)} lazy />
                           <span>
                             <strong>{row.targetName}</strong>
                             <small>{row.category || "Other"}</small>

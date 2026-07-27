@@ -2,6 +2,63 @@
 
 Newest first. One block per working session: what changed + commit refs.
 
+## 2026-07-26/27 — Compliance, real-data UX, icon fallbacks, cold-read 502s
+
+**Two stale-doc corrections, both of which had already caused wrong advice.**
+Production has been on live GGG data for some time (`providerMode: live`,
+"Official GGG data" badge) — the BACKLOG's pre-activation checklist and
+"ingest 60s timeout" entries described a world that no longer existed and were
+read twice this session as evidence to the contrary. Also verified from Vercel
+logs that the cron is healthy: a representative run finished in 28.9s of 300s,
+and there were exactly two ingest failures in 7 days, not the "11 timeouts"
+the old entry implied. Both entries replaced.
+
+**GGG compliance (`643d742`)** — checked the app against the developer docs
+before requesting more scopes and found two gaps the *previous* application
+email had already claimed were in place: the required notice ("This product
+isn't affiliated with or endorsed by Grinding Gear Games in any way.", exact
+wording) was absent, and the User-Agent didn't follow the mandated
+`OAuth {clientId}/{version} (contact: …)` shape. Both fixed; a scope-request
+email for `service:leagues` + `service:leagues:ladder` drafted for the user to
+send (deliberately *not* asking for `account:characters`, which needs a
+different grant type than the app is registered for and would contradict the
+earlier statement that users don't sign in).
+
+**Real-data product work**
+- `bb823a2` — "Best paid in" column (`lib/exit-currency.js`, unit-tested): the
+  *worth* is identical whichever anchor you accept, but the **gold** is not
+  (it scales with units received), and you can't receive a fraction of an orb.
+  So the cheapest exit genuinely differs per item. The inventory demo now
+  samples random **real** items off the live radar — only quantities invented —
+  with stack sizes drawn log-uniformly so holdings land across the whole value
+  range (previously every stack was large enough that divine always won).
+- `bb823a2` — table defaults: category **Currency** (the market people come
+  for, and ~35 rows instead of 200 on first paint) and a new default sort,
+  "Item family" (`lib/item-family.js`, unit-tested) — name-sorting scattered
+  tiers across the alphabet, price-sorting scattered them by value; family
+  grouping keeps Regal → Greater Regal → Perfect Regal adjacent.
+- `9b1d6e8` — brought back the green/red bars, but as the **real traded range**
+  (body spans the observed low..high, no wick) rather than the old fabricated
+  OHLC body. The wicks were always real; only open/close were invented.
+- `242380b` — background scroll lock actually works now: it set `overflow:
+  hidden` on `<body>` only, but the page scrolls on `<html>`, so the viewport
+  kept scrolling behind every modal — including the pre-existing Trade view one.
+
+**Icons (`efc1c04`, `59ef75c`, `e28368c`)** — traced to GGG's CDN 404ing a
+slice of RePoE-derived art paths (no URL variant recovers them). Replaced the
+hardcoded stopgap with fallback chains computed from live data; verified across
+every game and league in production, where the only remaining fallback glyph is
+the category literally named "Other".
+
+**Cold-read 502s (`4f9d6cf`)** — see DECISIONS.md; timeouts were ordered
+inwards so the database limit was unreachable.
+
+**Tests:** 181 green.
+
+**Open / user-owned:** send the GGG scope email; buy a domain (analysis in
+ADVICE.md); then the Reddit post. Supabase MCP is unauthorized in-session, so
+DB-side inspection needs the connector enabled.
+
 ## 2026-07-25 — Competitive BA pass, T1-T9 mocked demo, gold-cost table expansion
 
 **BMAD competitive analysis** (poe.ninja, Exiled Tools, poe2fun.com checked

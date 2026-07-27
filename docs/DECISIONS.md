@@ -2,6 +2,45 @@
 
 Newest first. Each entry: **what** was decided, **why**, and the date.
 
+## 2026-07-27 — Cold-read 502s: cascading timeouts + stale-while-revalidate, not a warm-up cron
+Read routes were intermittently 502ing on the first request after an idle
+stretch (always `cache=MISS`, always followed seconds later by a successful
+retry). Two causes, both fixed in code rather than papered over:
+1. The timeout limits were ordered **inwards**: the repository's app-level
+   guard (10s) was tighter than the Postgres `statement_timeout` (8s→15s), so
+   the database-side limit was unreachable and raising it alone would have
+   changed nothing. They now cascade outward — **Postgres 15s → app guard 18s
+   → route `maxDuration` 30s** — so a slow query dies with a real Postgres
+   error, the app guard only fires on a silent connection, and the platform
+   limit is the last resort. Read routes previously declared no `maxDuration`
+   at all and inherited a default too tight for a cold start plus a fresh
+   pooled connection.
+2. Reads now lean on `stale-while-revalidate` (`s-maxage` 300→900, `swr`
+   3600→86400) so the next visitor after idle gets the previous copy instantly
+   while Vercel refreshes in the background. 15 minutes is still finer-grained
+   than the hourly source, and staleness stays visible via `generatedAt`.
+
+**Why not a warm-up cron** (pinging our own `/api/radar` every few minutes):
+same outcome for visitors, but it adds a scheduled job whose only purpose is
+to hide a cold path that we can simply fix. Worth recording since the idea was
+considered seriously: it would **not** have touched GGG — it reads our own
+database — so the "are we DDoSing GGG" concern was unfounded either way. GGG is
+contacted only by the hourly ingest (~100 CDN requests/day).
+
+## 2026-07-27 — Item icons: fallback chains derived from live data, never a curated list
+A slice of CX items only have an icon URL derived from a RePoE art path, and
+GGG's CDN 404s those; verified no URL rule recovers them (every extension,
+realm and host variant fails, including poe2db's own CDN). Rather than
+hardcode the affected items — which would go stale next league — each row now
+falls back to a **working sibling from its own category**, computed from
+whatever the API returned, then to an optional curated category glyph, then to
+the neutral fallback. A shared `FallbackIcon` walks the chain on image load
+errors, so which candidate resolves is decided by the browser at paint time
+instead of guessed. **Why:** new leagues, items and item classes must work with
+no code change. Logic lives in `apps/web/lib/icon-candidates.js` with unit
+tests, including "a brand-new category from a future league needs no code
+change". Verified across every game and league in production.
+
 ## 2026-07-25 — Gold-cost source: poe2db.tw scrape, not a formula
 No gold-cost formula exists anywhere — verified directly against the official
 Currency Exchange CDN response schema (no gold/tax/fee field in `markets[]`)

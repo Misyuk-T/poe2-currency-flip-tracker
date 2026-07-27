@@ -12,10 +12,17 @@ review job instead of staying silently stale:
 
 - **New items / names / categories** (`src/data/catalog-poe2.json`, 754
   items, GGG `trade2/data/static`) — `npm run catalog:build`.
-- **Icons** — not a separate pipeline. `catalog-poe2.json` stores each item's
-  official GGG-hosted image URL directly; the browser loads icons straight
-  from GGG's CDN at read time (see `iconUrl()` in `apps/web/lib/market.js`).
-  Freshness rides entirely on the catalog refresh above.
+- **Icons** — not a separate pipeline, but two different sources with very
+  different reliability. Catalog items carry GGG's own hashed
+  `pathofexile.com/gen/image/...` URL, which always resolves. Everything else
+  (the CX long tail) only gets a URL *derived* from a RePoE art path, and GGG's
+  CDN 404s a slice of those — the art path itself is wrong upstream, and no URL
+  variant recovers it (`.png`/`.webp`, with/without `?scale`/`&realm`, even
+  poe2db's CDN — all checked 2026-07-27). Handled at render time by a fallback
+  chain built from live data (`apps/web/lib/icon-candidates.js`): the item's own
+  icon, then a working sibling from its category, then an optional curated
+  category glyph, then the neutral fallback. No per-item list to maintain, so
+  new leagues and item classes are covered automatically.
 - **Metadata id -> name/icon/category for the CX long tail** (gems, runes,
   omens, soul cores, idols) — `npm run identity:build`, sourced from RePoE;
   see the Phase 3 mapping entry below (done, not a gap).
@@ -38,42 +45,27 @@ reaches production, per the honesty rule (never silently change what's shown
 to users). League auto-sync is intentionally NOT in this job — it needs the
 GGG OAuth grant (T1), not a refresh script.
 
-## ⚠️ Ingest 60s timeout — code fix ready, runtime preview proof pending
-Production evidence showed the problem predates live activation: Vercel reports
-11 `/api/cron/radar` timeouts since July 6, and pg_net requests 632/634 (live)
-and 635 (fixture after rollback) all died at exactly 60s. Fixture candles were
-also stale since July 18, disproving the earlier claim that fixture cron worked
-and the CDN was the likely blocker.
+## ✅ Live activation + ingest timeout — DONE (verified 2026-07-27)
+**Both of the entries that used to sit here are obsolete.** They described a
+pre-activation world and, left stale, actively misled: they were read twice in
+the 2026-07-27 session as evidence that production was still on fixture data
+and that the cron was systematically failing. Neither is true.
 
-Branch `codex/ingest-diagnostics` addresses the shared path: structured phase
-logs at every async boundary, error logging with a run id, poisoned postgres.js
-client destruction on operation timeout, one live digest/run, PoE2-only default,
-and fixture cron appending only the newest completed hour instead of rebuilding
-168 x the full catalog. `INGEST_PROVIDER_MODE` is separate from `PROVIDER_MODE`,
-so live rows can be preseeded while public reads remain fixture. Unit/build proof
-is complete; one preview/runtime canary still must identify/confirm the exact DB
-phase before any production read cutover.
+Verified against production, not from memory:
+- `/api/config` reports `providerMode: live` and the dashboard renders the
+  **"Official GGG data"** badge. The `PROVIDER_MODE=fixture` cutover step is
+  long done; local dev still shows "Sample fixture data" only because it has
+  no `DATABASE_URL` and falls back to the in-memory fixture repo.
+- The hourly cron is healthy. A representative run (18:05) completed in
+  **28.9s** of its 300s budget, ingesting both games, 4 digests, ~9,000
+  candles, `status:200`. Over 7 days Vercel recorded exactly **two** ingest
+  failures — one transient `cxapi cdn returned 503` and one
+  `recordCxDigest timed out after 10000ms` — not the "11 timeouts, every run"
+  picture the old entry painted. The 10s guard behind that second failure was
+  widened as part of the timeout-cascade fix below.
 
-## Pre-activation checklist (before flipping PROVIDER_MODE=live)
-The local live-data canary PASSED (`scripts/canary-live.mjs`): 28 real poe2 hours,
-511 price-orientation checks independently verified vs raw ratios (121 inverse +
-390 direct), volume-side provenance, cross-anchor reciprocal (divine@ex × ex@div =
-1.00000, divine ≈ 407.5 ex), league isolation, identity, structural invariants.
-Price-normalization correctness is activation-quality. Status:
-1. ✅ **Terminal-hour poisoning fix DONE** (db5f00a): `ingestLive` no longer persists
-   a terminal/in-progress digest (breaks before recordCxDigest); cursor left at T so
-   the next run re-fetches once complete. Regression test proves a nonempty zero-ratio
-   terminal isn't persisted and the same hour lands once complete.
-2. ✅ **Staging Postgres round-trip DONE** — disposable `canary_staging` schema
-   (isolated from public/prod, dropped after). Validated the new-to-live persistence
-   concerns: multi-league read isolation (HC didn't leak into a Runes read), tail
-   Metadata `/` pair_id round-trip, jsonb/numeric/timestamptz serialization, and
-   CONFIRMED the null-then-valid poisoning at the DB level (on-conflict-do-nothing
-   keeps the null → validates fix #1). Prod untouched.
-3. ⬜ Set **`INGEST_PROVIDER_MODE=live` while `PROVIDER_MODE=fixture`**, run one
-   instrumented digest, and verify cursor/candles/timings. Flip the read mode only
-   after recent live rows exist and `/api/status` succeeds. Never combine preseed
-   and public read cutover in one deployment again.
+Kept as the standing lesson, since it still holds: never combine a preseed and
+a public read cutover in one deployment.
 
 ## ✅ Phase 3 mapping — Metadata → {id, name, icon, category} data source — DONE
 Live CX candles are keyed by Metadata paths (`Metadata/Items/<Class>/<Leaf>`).

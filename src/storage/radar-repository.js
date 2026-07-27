@@ -14,7 +14,14 @@ const WINDOW_DAYS = 30;
 // metrics, so the latest ~48 completed hours per pair is ample. This bounds a
 // read to ~(pairs × 48) rows instead of every candle in the 30-day window.
 const MAX_HOURS_PER_PAIR = 48;
-const OP_TIMEOUT_MS = 10_000;
+// Outer guard in a deliberate cascade, each layer wider than the one inside it:
+//   Postgres statement_timeout (15s, apps/web/lib/db.js)
+//     -> this app-level guard (18s)
+//       -> the route's maxDuration (30s)
+// So a slow query is cancelled by Postgres with a real error, and this only
+// fires when the connection went silent entirely. It previously sat BELOW the
+// statement timeout, which made the database-side limit unreachable.
+const OP_TIMEOUT_MS = 18_000;
 
 /** Wall-clock guard so a stalled connection can't hang a serverless invocation. */
 function withTimeout(promise, ms, label, onTimeout = null) {

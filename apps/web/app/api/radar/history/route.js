@@ -3,12 +3,16 @@ import { cacheHeader } from "../../../../lib/http.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// A cold instance pays lambda start + a fresh pooled connection before the
+// query even runs; the default limit is too tight for that and turns into a
+// 502. Reads stay far below this in the warm case.
+export const maxDuration = 30;
 
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const { status, body } = await getHistory(searchParams);
-    return Response.json(body, { status, headers: cacheHeader(status, { sMaxAge: 300, swr: 3600 }) });
+    return Response.json(body, { status, headers: cacheHeader(status, { sMaxAge: 900, swr: 86400 }) });
   } catch {
     return Response.json(
       { error: { code: "history-failed", message: "history unavailable" } },

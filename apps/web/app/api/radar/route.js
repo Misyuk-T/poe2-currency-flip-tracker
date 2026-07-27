@@ -3,16 +3,22 @@ import { cacheHeader } from "../../../lib/http.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// A cold instance pays lambda start + a fresh pooled connection before the
+// query even runs; the default limit is too tight for that and turns into a
+// 502. Reads stay far below this in the warm case.
+export const maxDuration = 30;
 
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const { status, body } = await getRadar(searchParams);
-    // The source advances only on completed hourly digests. Keep a five-minute
-    // fresh edge copy and serve the previous hour immediately while Vercel
-    // revalidates in the background instead of making league switches wait on
-    // a cold database computation.
-    return Response.json(body, { status, headers: cacheHeader(status, { sMaxAge: 300, swr: 3600 }) });
+    // The source only advances on completed hourly digests, so a 15-minute
+    // fresh window is already finer-grained than the data. The long
+    // stale-while-revalidate is the point: after an idle stretch the next
+    // visitor is served the previous copy instantly while Vercel refreshes in
+    // the background, instead of waiting on — or 502ing from — a cold database
+    // path. Staleness is visible in the payload's generatedAt.
+    return Response.json(body, { status, headers: cacheHeader(status, { sMaxAge: 900, swr: 86400 }) });
   } catch {
     return Response.json(
       { error: { code: "radar-failed", message: "radar unavailable" } },

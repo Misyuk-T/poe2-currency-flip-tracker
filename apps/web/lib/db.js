@@ -21,7 +21,13 @@ export function getSql() {
       max: 1, // one connection per warm instance; the pooler fans out concurrency
       idle_timeout: 20,
       connect_timeout: 10,
-      connection: { statement_timeout: 8000 },
+      // Headroom for the cold path: a request landing on a cold instance pays
+      // lambda start and a fresh pooled connection before the query runs, and
+      // Postgres plans it against a cold cache. 8s left no room for that and
+      // surfaced as a 502 on the first visit after an idle stretch. Warm reads
+      // finish far inside this; a query that genuinely needs longer is a
+      // missing index, not a budget to raise again.
+      connection: { statement_timeout: 15000 },
     });
   }
   return client;

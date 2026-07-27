@@ -97,11 +97,9 @@ export default function LeaguePulsePanel({ league }) {
             </div>
 
             <p className="league-pulse-note">
-              How far into the league the top-1000 players have progressed — context for whether the market is
-              still in its chaotic early phase. <strong>Simulated data for now</strong>, pending access to{" "}
-              <code>service:leagues:ladder</code> (a public endpoint needing only an app credential — never a
-              player login). A top-1000 elite proxy that saturates a couple of weeks in; shown descriptively only,
-              with no early/mature economy verdict until it is backtested against real currency volatility.
+              How far the top-1000 players have progressed — context for whether the market is still in its early,
+              chaotic phase. <strong>These numbers are simulated.</strong> Goes live as soon as GGG approves our
+              API access.
             </p>
           </div>
         </div>

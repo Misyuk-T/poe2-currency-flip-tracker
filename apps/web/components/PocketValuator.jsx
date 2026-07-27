@@ -143,11 +143,10 @@ export default function PocketValuator({ league, rates, pool, goldPerUnit }) {
               </div>
             </div>
             <p className="pocket-valuator-note">
-              <strong>The character and the quantities are randomly generated</strong> — nothing is read from a GGG
-              account. Item names and prices are real, sampled from this page&apos;s live market. &ldquo;Best paid
-              in&rdquo; is the anchor costing the least <em>gold</em> to receive (gold scales with how many units
-              you take, so a few divine costs far less than thousands of exalted) — and only counts currencies you
-              could receive at least one whole orb of.
+              <strong>The character and amounts are randomly generated</strong> — nothing is read from a GGG
+              account. Item names and prices are real, from this page&apos;s live market. &ldquo;Best paid
+              in&rdquo; is the currency costing the least gold to receive. Goes live once GGG grants account
+              access.
             </p>
           </div>
         </div>

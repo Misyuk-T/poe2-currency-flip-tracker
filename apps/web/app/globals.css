@@ -2056,15 +2056,15 @@ body:has(.home-page) {
   padding: 8px 10px;
   background: rgba(0, 0, 0, 0.16);
 }
-.league-pulse-stats span { display: block; color: var(--rl-muted); font-size: 0.67rem; text-transform: uppercase; letter-spacing: 0.04em; }
-.league-pulse-stats strong { color: var(--rl-ink); font-size: 1.05rem; }
+.league-pulse-stats span { display: block; color: var(--rl-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.league-pulse-stats strong { color: var(--rl-ink); font-size: 1.25rem; }
 .league-pulse-bars { display: flex; align-items: flex-end; gap: 8px; height: 90px; }
 .lp-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; }
 .lp-bar-track { width: 100%; height: 100%; display: flex; align-items: flex-end; border-radius: 6px; background: rgba(255, 255, 255, 0.04); }
 .lp-bar-fill { width: 100%; border-radius: 6px; background: linear-gradient(180deg, rgba(178, 138, 255, 0.85), rgba(148, 91, 255, 0.35)); }
-.lp-bar-col small { color: var(--rl-muted); font-size: 0.62rem; }
+.lp-bar-col small { color: var(--rl-muted); font-size: 0.74rem; }
 .league-pulse-note,
-.pocket-valuator-note { margin: 0; color: var(--rl-muted); font-size: 0.72rem; line-height: 1.45; }
+.pocket-valuator-note { margin: 0; color: var(--rl-ink-soft); font-size: 0.86rem; line-height: 1.5; }
 .league-pulse-stats,
 .league-pulse-bars { margin-bottom: 12px; }
 
@@ -2114,7 +2114,10 @@ body:has(.home-page) {
   align-items: flex-start;
   gap: 12px;
 }
-.pocket-character-line { margin: 0; color: var(--rl-ink); font-size: 0.95rem; }
+.pocket-character-line { margin: 0; color: var(--rl-ink); font-size: 1.02rem; }
+/* The "not real data" line is the most important text in these modals, so it
+   is not the smallest thing on screen. */
+.pocket-modal-head .eyebrow { font-size: 0.8rem; }
 .pocket-valuator-rows { display: flex; flex-direction: column; gap: 7px; }
 .pocket-row {
   display: flex;
@@ -2152,12 +2155,12 @@ body:has(.home-page) {
   font-variant-numeric: tabular-nums;
 }
 .pocket-row-exit b img { width: 22px; height: 22px; border-radius: 4px; }
-.pocket-row-exit small { color: var(--rl-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+.pocket-row-exit small { color: var(--rl-muted); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
 .pocket-row-head {
   background: none;
   padding: 0 12px 2px;
   color: var(--rl-muted);
-  font-size: 0.68rem;
+  font-size: 0.76rem;
   font-weight: 850;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -2174,7 +2177,7 @@ body:has(.home-page) {
   border-top: 1px solid var(--rl-border);
   padding-top: 14px;
 }
-.pocket-totals > span { color: var(--rl-muted); text-transform: uppercase; font-size: 0.7rem; font-weight: 850; letter-spacing: 0.05em; }
+.pocket-totals > span { color: var(--rl-muted); text-transform: uppercase; font-size: 0.78rem; font-weight: 850; letter-spacing: 0.05em; }
 .pocket-totals-values { display: flex; gap: 22px; flex-wrap: wrap; }
 .pocket-totals-values strong {
   display: inline-flex;
@@ -2185,8 +2188,8 @@ body:has(.home-page) {
   font-variant-numeric: tabular-nums;
 }
 .pocket-totals-values strong img { width: 24px; height: 24px; border-radius: 5px; object-fit: contain; }
-.pocket-totals-values strong small { color: var(--rl-muted); font-size: 0.68rem; font-weight: 700; text-transform: uppercase; }
-.pocket-valuator-note { font-size: 0.76rem; }
+.pocket-totals-values strong small { color: var(--rl-muted); font-size: 0.76rem; font-weight: 700; text-transform: uppercase; }
+
 
 @media (max-width: 700px) {
   .pocket-modal { padding: 16px; }

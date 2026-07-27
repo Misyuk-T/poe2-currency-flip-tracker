@@ -25,6 +25,10 @@ import {
 } from "../lib/market.js";
 
 const MANUAL_PRICE_KEY = "poe2flip.next.manualPrices.v2";
+// Representative glyph per category, using catalog ids whose hashed GGG image
+// URLs always resolve. The lower half covers live item classes whose own
+// members only have derived art paths that 404 on the CDN, so there is no
+// working icon to borrow from the rows themselves.
 const CATEGORY_ICON_IDS = {
   "Abyssal Bones": "gnawed-jawbone",
   Breach: "breach-splinter",
@@ -39,6 +43,10 @@ const CATEGORY_ICON_IDS = {
   Vaal: "vaal",
   Verisium: "verisium",
   Waystones: "waystone-16",
+  "Map Fragment": "runic-splinter",
+  "Soul Core": "soul-core-of-tacati",
+  "Stackable Currency": "exalted",
+  "Support Skill Gem": "ataluis-bloodletting",
 };
 // Currency is the market everyone actually comes here for, so it is the landing
 // filter rather than the full 750-row catalog — which also means far fewer table

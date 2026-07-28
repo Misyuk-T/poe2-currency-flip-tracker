@@ -73,10 +73,10 @@ const SORT_OPTIONS = [
   { value: "liquidity:desc", label: "Liquidity" },
   { value: "name:asc", label: "Name" },
 ];
-// You rarely flip a single orb, so the plan can be read per-unit or for a
-// realistic bulk size. Purely a display multiplier — it never changes the
-// underlying prices or the historical stats.
-const QUANTITY_OPTIONS = [1, 10, 100];
+// You rarely flip a single orb, so the table and plan can be read per-unit or
+// for a realistic bulk size. Purely a display multiplier — it never changes
+// the underlying prices or the historical stats.
+const QUANTITY_OPTIONS = [1, 10, 100, 1000];
 const HORIZON_OPTIONS = [
   { value: 1, label: "1h" },
   { value: 2, label: "2h" },
@@ -495,10 +495,12 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
       setRadar(data);
       const tradable = (data.rows ?? []).filter((row) => row.pairId && row.status !== "no-trades-this-hour");
       // Deep-link from the SEO currency pages: /poe2?currency=divine preselects
-      // that market if it's tradable this hour, else fall back to the first row.
+      // that market if it's tradable this hour. Otherwise leave selection empty:
+      // a plan should always open from an explicit row click, never an arbitrary
+      // first market from the current sort.
       const wanted = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("currency") : null;
       const preferred = wanted ? tradable.find((row) => row.target === wanted) : null;
-      setSelectedPair((preferred ?? tradable[0])?.pairId ?? null);
+      setSelectedPair(preferred?.pairId ?? null);
       setStatus("ready");
       setLoadingMinHeight(null);
     }
@@ -992,18 +994,18 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                   </button>
                 ))}
               </div>
-              <div className="radar-view-toggle" role="group" aria-label="Radar display">
-                <button type="button" aria-pressed={view === "list"} onClick={closeMarket}>
-                  Table
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={view === "chart"}
-                  onClick={() => setView("chart")}
-                  disabled={!selected}
-                >
-                  Trade view
-                </button>
+              <div className="radar-quantity-toggle" role="group" aria-label="Table quantity">
+                {QUANTITY_OPTIONS.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    aria-pressed={quantity === option}
+                    title={`Show buy and sell totals for ${option} item${option === 1 ? "" : "s"}`}
+                    onClick={() => setQuantity(option)}
+                  >
+                    ×{option}
+                  </button>
+                ))}
               </div>
               <LeaguePulsePanel league={league} />
               <PocketValuator
@@ -1056,10 +1058,27 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                       <SortHeader label="Item" sublabel="market" column="name" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} defaultDirection="asc" />
                     </th>
                     <th className="right" scope="col">
-                      <SortHeader label="Buy price" sublabel="(low)" column="buy" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} align="right" defaultDirection="asc" />
+                      <SortHeader
+                        label="Buy price"
+                        sublabel={quantity === 1 ? "(low)" : `(low · ×${quantity})`}
+                        column="buy"
+                        activeKey={sortKey}
+                        direction={sortDirection}
+                        onSort={sortColumn}
+                        align="right"
+                        defaultDirection="asc"
+                      />
                     </th>
                     <th className="right" scope="col">
-                      <SortHeader label="Sell price" sublabel="(high)" column="sell" activeKey={sortKey} direction={sortDirection} onSort={sortColumn} align="right" />
+                      <SortHeader
+                        label="Sell price"
+                        sublabel={quantity === 1 ? "(high)" : `(high · ×${quantity})`}
+                        column="sell"
+                        activeKey={sortKey}
+                        direction={sortDirection}
+                        onSort={sortColumn}
+                        align="right"
+                      />
                     </th>
                     <th className="right" scope="col">
                       <SortHeader
@@ -1100,10 +1119,22 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                           </span>
                         </td>
                         <td className="right">
-                          <QuotePill quote={quoteFromAnchor(row.low, { anchor: row.anchor, displayCurrency, rates, target: row.target })} compact />
+                          <QuotePill
+                            quote={scaleQuote(
+                              quoteFromAnchor(row.low, { anchor: row.anchor, displayCurrency, rates, target: row.target }),
+                              quantity,
+                            )}
+                            compact
+                          />
                         </td>
                         <td className="right">
-                          <QuotePill quote={quoteFromAnchor(row.high, { anchor: row.anchor, displayCurrency, rates, target: row.target })} compact />
+                          <QuotePill
+                            quote={scaleQuote(
+                              quoteFromAnchor(row.high, { anchor: row.anchor, displayCurrency, rates, target: row.target }),
+                              quantity,
+                            )}
+                            compact
+                          />
                         </td>
                         <td className="right cell-profit">
                           {Number.isFinite(spread) ? (

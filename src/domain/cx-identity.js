@@ -13,9 +13,14 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+// `fileURLToPath` is given the URL's href, not the URL object. Next bundles this
+// module into a runtime whose `URL` global is a different realm's class, so the
+// `instanceof URL` check inside node:url fails on an object that is a perfectly
+// good URL — "The path argument must be of type string or an instance of URL.
+// Received an instance of URL". A string sidesteps the identity check entirely.
 const IDENTITY_PATHS = Object.freeze({
-  poe1: fileURLToPath(new URL("../data/cx-identity-poe1.json", import.meta.url)),
-  poe2: fileURLToPath(new URL("../data/cx-identity-poe2.json", import.meta.url)),
+  poe1: fileURLToPath(new URL("../data/cx-identity-poe1.json", import.meta.url).href),
+  poe2: fileURLToPath(new URL("../data/cx-identity-poe2.json", import.meta.url).href),
 });
 
 const stores = new Map();

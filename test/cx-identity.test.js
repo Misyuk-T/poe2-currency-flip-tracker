@@ -115,3 +115,20 @@ test("no trade short id is claimed by two Metadata ids", () => {
     }
   }
 });
+
+test("data files are resolved from a URL string, never a URL object", () => {
+  // Production proof that this matters: every /poe2/currencies/<id> page
+  // rendered without market data because importing this chain threw
+  // ERR_INVALID_ARG_TYPE — "must be ... an instance of URL. Received an
+  // instance of URL" — under Next's bundled runtime, where the URL global is a
+  // different realm's class than the one node:url brand-checks against. Passing
+  // the href sidesteps the identity check, so guard the shape at the source.
+  for (const file of ["src/domain/cx-identity.js", "src/domain/catalog.js"]) {
+    const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+    assert.doesNotMatch(
+      source,
+      /fileURLToPath\(new URL\([^;]*\)\)/,
+      `${file} passes a URL object to fileURLToPath; pass .href instead`,
+    );
+  }
+});

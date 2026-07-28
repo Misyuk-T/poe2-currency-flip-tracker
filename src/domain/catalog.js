@@ -15,7 +15,12 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { catalogTaxonomy } from "./catalog-taxonomy.js";
 
-const CATALOG_PATH = fileURLToPath(new URL("../data/catalog-poe2.json", import.meta.url));
+// `fileURLToPath` is given the URL's href, not the URL object. Next bundles this
+// module into a runtime whose `URL` global is a different realm's class, so the
+// `instanceof URL` check inside node:url fails on an object that is a perfectly
+// good URL — "The path argument must be of type string or an instance of URL.
+// Received an instance of URL". A string sidesteps the identity check entirely.
+const CATALOG_PATH = fileURLToPath(new URL("../data/catalog-poe2.json", import.meta.url).href);
 
 /** @returns {Promise<{game:string, items:{id:string,name:string,category:string,image:string|null}[]}>} */
 export async function loadCatalog() {

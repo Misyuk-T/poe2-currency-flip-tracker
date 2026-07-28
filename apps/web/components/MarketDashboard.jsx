@@ -9,7 +9,6 @@ import { roundTripGold } from "../../../src/domain/gold-costs.js";
 import { keyCurrencyCards, sparklinePoints } from "../lib/key-currencies.js";
 import { currentPriceGuidance, quoteFromAnchor, workingPrice } from "../lib/price-guidance.js";
 import { sortByFamily } from "../lib/item-family.js";
-import { planReliability } from "../lib/plan-reliability.js";
 import { useScrollLock } from "../lib/use-scroll-lock.js";
 import { preloadIcons } from "../lib/preload-icons.js";
 import {
@@ -786,9 +785,6 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     () => currentPriceGuidance(history, currentWorkingPrice.anchorValue, { horizonHours: horizon }),
     [currentWorkingPrice.anchorValue, history, horizon],
   );
-  // A plan is only shown when the observations behind it are steady enough to
-  // support one; otherwise the panel says why instead of printing noise.
-  const reliability = useMemo(() => planReliability(history, guidance), [history, guidance]);
   const planSpread = guidance.status === "ok" ? guidance.rangePotential : null;
   const planMetrics = selected && guidance.status === "ok"
     ? goldMetrics({ ...selected, low: guidance.entry, high: guidance.exit }, goldPerAnchor)
@@ -1302,7 +1298,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     <div className="rt-plan-loading">
                       <span className="rt-spinner" aria-label="Loading trade plan" />
                     </div>
-                  ) : guidance.status === "ok" && reliability.usable && entryQuote?.value != null && exitQuote?.value != null ? (
+                  ) : guidance.status === "ok" && entryQuote?.value != null && exitQuote?.value != null ? (
                     <>
                       <div className="trade-answer">
                         <article className="buy">
@@ -1372,23 +1368,11 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                       </div>
                     </>
                   ) : (
-                    <div className="guidance-empty">
-                      {!reliability.usable && guidance.status === "ok" ? (
-                        <>
-                          <strong>Not enough trading to plan against.</strong>
-                          <span>{reliability.detail}</span>
-                          <span className="guidance-empty-note">
-                            The chart above still shows every price GGG published for this market.
-                          </span>
-                        </>
-                      ) : (
-                        <span>
-                          {guidance.status === "insufficient-history"
-                            ? `Not enough completed-hour history yet (${guidance.samples ?? 0}/3).`
-                            : "Enter a current price, or wait for a usable hourly midpoint."}
-                        </span>
-                      )}
-                    </div>
+                    <p className="guidance-empty">
+                      {guidance.status === "insufficient-history"
+                        ? `Not enough completed-hour history yet (${guidance.samples ?? 0}/3).`
+                        : "Enter a current price, or wait for a usable hourly midpoint."}
+                    </p>
                   )}
                 </aside>
               )}

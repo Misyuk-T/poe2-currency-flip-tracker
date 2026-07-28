@@ -12,9 +12,24 @@
 import { canonicalizeCandle } from "../domain/cx-market.js";
 
 const WINDOW_DAYS = 30;
+// How far back the RADAR read looks — deliberately much shorter than the 30-day
+// retention above.
+//
+// The per-pair cap below means the read never consumes more than 48 hours of any
+// one pair, but the query still had to enumerate every pair that traded in 30
+// days to find them. On the busiest league that scan crossed the statement
+// timeout, and the hourly snapshot rebuild failed with it every single hour —
+// silently, because the caller degrades instead of erroring. Every smaller
+// league rebuilt fine, so the failure looked like a data problem rather than a
+// query that had simply outgrown its window.
+//
+// The trade-off, stated plainly: a market whose last trade is older than this
+// drops out of the tracked rows and appears as "no trades this hour" instead of
+// showing a week-old price. It was already flagged stale; now it is absent.
+const READ_WINDOW_DAYS = 7;
 // Per-pair cap on the radar read: the UI needs a 25-point sparkline and 24h
 // metrics, so the latest ~48 completed hours per pair is ample. This bounds a
-// read to ~(pairs × 48) rows instead of every candle in the 30-day window.
+// read to ~(pairs × 48) rows instead of every candle in the window.
 const MAX_HOURS_PER_PAIR = 48;
 // Outer guard in a deliberate cascade, each layer wider than the one inside it:
 //   Postgres statement_timeout (15s, apps/web/lib/db.js)
@@ -90,7 +105,8 @@ export function groupCandlesByPair(candles, { canonicalId } = {}) {
  * @param {{
  *   sql: any,                              // postgres.js client (or a mock)
  *   scope: { game: string, realm: string, league: string, mode: string },
- *   windowDays?: number,
+ *   windowDays?: number,                   // retention window for per-pair history
+ *   readWindowDays?: number,               // how far back the radar read looks
  *   opTimeoutMs?: number,
  * }} opts
  */
@@ -98,6 +114,7 @@ export function createRadarRepository({
   sql,
   scope,
   windowDays = WINDOW_DAYS,
+  readWindowDays = READ_WINDOW_DAYS,
   maxHoursPerPair = MAX_HOURS_PER_PAIR,
   opTimeoutMs = OP_TIMEOUT_MS,
   onPhase = noop,
@@ -130,7 +147,7 @@ export function createRadarRepository({
           from hourly_market_candles
           where game = ${scope.game} and realm = ${scope.realm} and league = ${scope.league}
             and provider = ${scope.mode}
-            and completed_hour >= now() - make_interval(days => ${windowDays})
+            and completed_hour >= now() - make_interval(days => ${readWindowDays})
         ) p
         cross join lateral (
           select extract(epoch from h.completed_hour) * 1000 as completed_hour,
@@ -139,7 +156,7 @@ export function createRadarRepository({
           from hourly_market_candles h
           where h.game = ${scope.game} and h.realm = ${scope.realm} and h.league = ${scope.league}
             and h.provider = ${scope.mode} and h.pair_id = p.pair_id
-            and h.completed_hour >= now() - make_interval(days => ${windowDays})
+            and h.completed_hour >= now() - make_interval(days => ${readWindowDays})
           order by h.completed_hour desc
           limit ${maxHoursPerPair}
         ) c`,

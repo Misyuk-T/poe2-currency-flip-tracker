@@ -112,3 +112,38 @@ test("readCxapiState parses the cursor, or reports null when absent", async () =
   const absent = createRadarRepository({ sql: fakeSql([[]]), scope });
   assert.deepEqual(await absent.readCxapiState(), { cursor: null, lastDigestId: null });
 });
+
+test("the radar read looks back days, not the whole retention window", () => {
+  // The per-pair cap means this read never uses more than 48 hours of any pair,
+  // but the pair-discovery scan used to span the full 30-day retention. On the
+  // busiest league that crossed the statement timeout and the hourly snapshot
+  // rebuild failed every hour — while every smaller league succeeded, so it read
+  // as a data problem rather than a query that had outgrown its window.
+  const calls = [];
+  const sql = (strings, ...values) => {
+    calls.push({ text: strings.join("?"), values });
+    return Promise.resolve([]);
+  };
+  const repo = createRadarRepository({ sql, scope });
+  return repo.readCandleWindow().then(() => {
+    const { text, values } = calls[0];
+    const days = values.filter((value) => value === 7 || value === 30);
+    assert.equal(days.length, 2, "both the discovery scan and the lateral take a window");
+    assert.deepEqual(days, [7, 7], "the radar read must not scan the retention window");
+    assert.match(text, /cross join lateral/i);
+  });
+});
+
+test("per-pair history still spans the full retention window", () => {
+  // Only the radar's fan-out read was the problem. A single pair is an index
+  // range scan, and the chart wants more than a week of it.
+  const calls = [];
+  const sql = (strings, ...values) => {
+    calls.push(values);
+    return Promise.resolve([]);
+  };
+  const repo = createRadarRepository({ sql, scope });
+  return repo.readPairCandles("divine|exalted").then(() => {
+    assert.ok(calls[0].includes(30), "readPairCandles should keep the 30-day window");
+  });
+});

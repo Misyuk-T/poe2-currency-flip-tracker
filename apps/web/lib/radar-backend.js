@@ -18,7 +18,12 @@ import {
 import { createGoldRegistry, createFlatGoldRegistry } from "../../../src/domain/gold-costs.js";
 import { POE2_GOLD_COSTS } from "../../../src/data/gold-costs-poe2.js";
 import { createRadarRepository } from "../../../src/storage/radar-repository.js";
-import { buildRadarPayload, buildHistoryPayload, buildHotlistPayload } from "../../../src/server/radar-core.js";
+import {
+  buildRadarPayload,
+  buildRadarPayloads,
+  buildHistoryPayload,
+  buildHotlistPayload,
+} from "../../../src/server/radar-core.js";
 import { CORE_CURRENCY_IDS, ingestFixtures, ingestFixtureIncrement, ingestLiveStreams } from "../../../src/server/radar-ingest.js";
 import { createCxapiProvider } from "../../../src/providers/create-cxapi-provider.js";
 import { getSql, resetSql, withDbRetry } from "./db.js";
@@ -240,6 +245,7 @@ function scopeFor(ctx, game, league, mode = ctx.config.providerMode) {
 }
 
 const sourceMode = (config) => (config.providerMode === "live" ? "official" : "fixture");
+const SNAPSHOT_MAX_AGE_MS = 6 * 3600_000;
 
 /**
  * Drop no-trade placeholder rows from a radar payload's `rows`. Every browser
@@ -252,9 +258,35 @@ export function tradableRows(rows) {
   return (rows ?? []).filter((row) => row?.pairId && row.status !== "no-trades-this-hour");
 }
 
+function radarBuildInput(ctx, game, repo, now = Date.now()) {
+  const isPoe2 = game.id === "poe2";
+  const identity = ctx.identityByGame[game.id] ?? { names: CORE_NAMES, icons: {}, categories: {} };
+  return {
+    repo,
+    anchors: game.anchors,
+    shortlist: ctx.config.shortlist,
+    names: identity.names,
+    icons: identity.icons,
+    categories: identity.categories,
+    catalogManifest: isPoe2 ? ctx.catalogManifest : [],
+    catalogById: isPoe2 ? ctx.catalogById : new Map(),
+    source: { sourceMode: sourceMode(ctx.config), providerMode: ctx.config.providerMode },
+    radarMaxHotTargets: ctx.config.radarMaxHotTargets,
+    now,
+  };
+}
+
+function finalizeRadarBody(body, game, league) {
+  body.rows = tradableRows(body.rows);
+  body.league = league;
+  body.game = game.id;
+  body.realm = game.realm;
+  return body;
+}
+
 export async function getRadar(searchParams) {
   const ctx = await context();
-  const { config, catalogManifest, catalogById, identityByGame } = ctx;
+  const { config } = ctx;
   const selectedGame = resolveGame(searchParams, config);
   if (selectedGame.error) return selectedGame.error;
   const { game } = selectedGame;
@@ -263,31 +295,87 @@ export async function getRadar(searchParams) {
   const repo = gameAwareRepository(await resolveRepo(ctx, scopeFor(ctx, game, selected.league)), game.id);
   if (!repo) return NO_DB;
   const anchor = resolveAnchor(searchParams, game);
-  const isPoe2 = game.id === "poe2";
-  const identity = identityByGame[game.id] ?? { names: CORE_NAMES, icons: {}, categories: {} };
-  const body = await withDbRetry(() =>
-    buildRadarPayload({
-      repo,
-      anchor,
-      anchors: game.anchors,
-      shortlist: config.shortlist,
-      names: identity.names,
-      icons: identity.icons,
-      categories: identity.categories,
-      catalogManifest: isPoe2 ? catalogManifest : [],
-      catalogById: isPoe2 ? catalogById : new Map(),
-      source: { sourceMode: sourceMode(config), providerMode: config.providerMode },
-      radarMaxHotTargets: config.radarMaxHotTargets,
-      now: Date.now(),
-    }),
+  const snapshot = repo.readRadarSnapshot
+    ? await withDbRetry(() => repo.readRadarSnapshot(anchor))
+    : null;
+  if (
+    snapshot?.payload &&
+    Number.isFinite(snapshot.refreshedAt) &&
+    Date.now() - snapshot.refreshedAt < SNAPSHOT_MAX_AGE_MS
+  ) {
+    return { status: 200, body: snapshot.payload };
+  }
+
+  // Backward-compatible/self-healing fallback for the first request after the
+  // migration or if the hourly snapshot refresh failed. It is deliberately not
+  // the normal path anymore.
+  const body = finalizeRadarBody(
+    await withDbRetry(() => buildRadarPayload({ ...radarBuildInput(ctx, game, repo), anchor })),
+    game,
+    selected.league,
   );
-  // Send only tradable rows over the wire; the no-trade catalog placeholders are
-  // the bulk of the payload and no browser consumer renders them.
-  body.rows = tradableRows(body.rows);
-  body.league = selected.league;
-  body.game = game.id;
-  body.realm = game.realm;
+  if (repo.writeRadarSnapshots) {
+    try {
+      await withDbRetry(() => repo.writeRadarSnapshots([{ anchor, payload: body }]));
+    } catch (error) {
+      console.error("[radar-snapshot] on-demand upsert failed", {
+        game: game.id,
+        league: selected.league,
+        anchor,
+        error: error?.message ?? String(error),
+      });
+    }
+  }
   return { status: 200, body };
+}
+
+async function refreshRadarSnapshots(ctx, { now = Date.now(), trace = noop } = {}) {
+  const results = [];
+  for (const game of gameConfigs(ctx.config)) {
+    if (!game.enabled) continue;
+    for (const league of game.leagues) {
+      const startedAt = Date.now();
+      trace("snapshot.scope.start", { game: game.id, league });
+      try {
+        const repo = gameAwareRepository(
+          repository(scopeFor(ctx, game, league), { trace }),
+          game.id,
+        );
+        if (!repo || !(await withDbRetry(() => repo.hasPricedCandles()))) {
+          results.push({ game: game.id, league, skipped: "no-data" });
+          trace("snapshot.scope.end", { game: game.id, league, skipped: "no-data" });
+          continue;
+        }
+        const payloads = await withDbRetry(() =>
+          buildRadarPayloads(radarBuildInput(ctx, game, repo, now)),
+        );
+        const snapshots = Object.entries(payloads).map(([anchor, payload]) => ({
+          anchor,
+          payload: finalizeRadarBody(payload, game, league),
+        }));
+        await withDbRetry(() => repo.writeRadarSnapshots(snapshots));
+        const result = {
+          game: game.id,
+          league,
+          anchors: snapshots.length,
+          rows: snapshots.reduce((count, item) => count + item.payload.rows.length, 0),
+          elapsedMs: Date.now() - startedAt,
+        };
+        results.push(result);
+        trace("snapshot.scope.end", result);
+      } catch (error) {
+        const result = {
+          game: game.id,
+          league,
+          error: error?.message ?? String(error),
+          elapsedMs: Date.now() - startedAt,
+        };
+        results.push(result);
+        trace("snapshot.scope.error", result);
+      }
+    }
+  }
+  return results;
 }
 
 export async function getHistory(searchParams) {
@@ -450,7 +538,8 @@ export async function runRadarIngest({ now = Date.now(), trace = noop } = {}) {
       budgetMs: config.cxapiIngestBudgetMs,
       trace,
     });
-    return { status: 200, body: { mode: "live", streams } };
+    const snapshots = await refreshRadarSnapshots(await context(), { now, trace });
+    return { status: 200, body: { mode: "live", streams, snapshots } };
   }
   // Production cron is incremental. The offline in-memory fallback above still
   // seeds full history once, but a deployed invocation writes only one digest.
@@ -462,7 +551,8 @@ export async function runRadarIngest({ now = Date.now(), trace = noop } = {}) {
     now,
     trace,
   });
-  return { status: 200, body: summary };
+  const snapshots = await refreshRadarSnapshots(await context(), { now, trace });
+  return { status: 200, body: { ...summary, snapshots } };
 }
 
 export async function getStatus() {

@@ -48,6 +48,10 @@ function errorDetails(error) {
   };
 }
 
+function jsonValue(value) {
+  return typeof value === "string" ? JSON.parse(value) : value;
+}
+
 /** DB row -> candle object (mirrors createSupabaseStorage's hydration mapping). */
 export function candleFromRow(r, { league } = {}) {
   return {
@@ -183,6 +187,80 @@ export function createRadarRepository({
     return rows[0]?.available === true;
   }
 
+  /** Latest precomputed /api/radar response for one anchor, if present. */
+  async function readRadarSnapshot(anchor) {
+    const rows = await withTimeout(
+      sql`
+        select payload, extract(epoch from refreshed_at) * 1000 as refreshed_at
+        from radar_snapshots
+        where game = ${scope.game} and realm = ${scope.realm} and league = ${scope.league}
+          and provider = ${scope.mode} and anchor = ${anchor}
+        limit 1`,
+      opTimeoutMs,
+      "radar snapshot read",
+      onTimeout,
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      payload: jsonValue(row.payload),
+      refreshedAt: Number(row.refreshed_at),
+    };
+  }
+
+  /**
+   * Replace one or more anchor responses for this scope. Each anchor upsert is
+   * atomic, and the primary key makes overlapping cron/on-demand refreshes
+   * idempotent.
+   */
+  async function writeRadarSnapshots(snapshots) {
+    const values = (snapshots ?? []).filter((snapshot) => snapshot?.anchor && snapshot?.payload);
+    if (!values.length) return 0;
+    const rows = values.map(({ anchor, payload }) => {
+      const latestCompletedHour = (payload.rows ?? []).reduce(
+        (latest, row) => Math.max(latest, Number(row.latestCompletedHour) || 0),
+        0,
+      );
+      return {
+        game: scope.game,
+        realm: scope.realm,
+        league: scope.league,
+        provider: scope.mode,
+        anchor,
+        latest_completed_hour: latestCompletedHour ? new Date(latestCompletedHour) : null,
+        generated_at: new Date(payload.generatedAt),
+        refreshed_at: new Date(),
+        payload,
+      };
+    });
+    onPhase("db.snapshots.upsert.start", { league: scope.league, snapshots: rows.length });
+    let written = 0;
+    for (const row of rows) {
+      const result = await withTimeout(
+        sql`
+          insert into radar_snapshots (
+            game, realm, league, provider, anchor,
+            latest_completed_hour, generated_at, refreshed_at, payload
+          ) values (
+            ${row.game}, ${row.realm}, ${row.league}, ${row.provider}, ${row.anchor},
+            ${row.latest_completed_hour}, ${row.generated_at}, ${row.refreshed_at},
+            ${sql.json(row.payload)}
+          )
+          on conflict (game, realm, league, provider, anchor) do update set
+            latest_completed_hour = excluded.latest_completed_hour,
+            generated_at = excluded.generated_at,
+            refreshed_at = excluded.refreshed_at,
+            payload = excluded.payload`,
+        opTimeoutMs,
+        "radar snapshot upsert",
+        onTimeout,
+      );
+      written += result.count ?? 1;
+    }
+    onPhase("db.snapshots.upsert.end", { league: scope.league, snapshots: rows.length });
+    return written;
+  }
+
   /** The cxapi ingestion cursor for this scope. */
   async function readCxapiState() {
     const rows = await withTimeout(
@@ -291,5 +369,13 @@ export function createRadarRepository({
     }
   }
 
-  return { readCandleWindow, readPairCandles, hasPricedCandles, readCxapiState, recordCxDigest };
+  return {
+    readCandleWindow,
+    readPairCandles,
+    hasPricedCandles,
+    readRadarSnapshot,
+    writeRadarSnapshots,
+    readCxapiState,
+    recordCxDigest,
+  };
 }

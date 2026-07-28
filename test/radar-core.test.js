@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildRadarPayload, buildHistoryPayload, buildHotlistPayload } from "../src/server/radar-core.js";
+import {
+  buildRadarPayload,
+  buildRadarPayloads,
+  buildHistoryPayload,
+  buildHotlistPayload,
+} from "../src/server/radar-core.js";
 
 const HOUR = 3600_000;
 const NOW = 1_700_000_000_000;
@@ -71,6 +76,25 @@ test("buildRadarPayload computes radar rows from candles and merges the catalog"
   assert.equal(chaos.status, "no-trades-this-hour");
   assert.equal(out.marketData.status, "available");
   assert.equal(out.marketData.pricedCandleCount, candles.length);
+});
+
+test("buildRadarPayloads reads the candle window once for every anchor snapshot", async () => {
+  let reads = 0;
+  const payloads = await buildRadarPayloads({
+    ...base,
+    repo: {
+      ...repo,
+      async readCandleWindow() {
+        reads += 1;
+        return candles;
+      },
+    },
+    source: { sourceMode: "test" },
+  });
+  assert.equal(reads, 1);
+  assert.deepEqual(Object.keys(payloads), ["exalted", "divine"]);
+  assert.equal(payloads.exalted.anchor, "exalted");
+  assert.equal(payloads.divine.anchor, "divine");
 });
 
 test("buildRadarPayload distinguishes upstream rows with no executed prices from an empty filter", async () => {

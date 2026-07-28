@@ -19,7 +19,12 @@ export async function GET(request) {
     // the background, instead of waiting on — or 502ing from — a cold database
     // path. Staleness is visible in the payload's generatedAt.
     return Response.json(body, { status, headers: cacheHeader(status, { sMaxAge: 900, swr: 86400 }) });
-  } catch {
+  } catch (error) {
+    console.error("[api/radar] request failed", {
+      errorName: error?.name ?? "Error",
+      errorCode: error?.code ?? null,
+      errorMessage: error?.message ?? String(error),
+    });
     return Response.json(
       { error: { code: "radar-failed", message: "radar unavailable" } },
       { status: 502, headers: { "Cache-Control": "no-store" } },

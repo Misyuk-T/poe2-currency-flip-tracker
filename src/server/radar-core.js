@@ -56,38 +56,15 @@ async function computeRadar({
   };
 }
 
-/**
- * Full /api/radar payload for one anchor.
- * @param {{
- *   repo: any, anchor: string, anchors: string[], shortlist?: string[],
- *   names?: object, catalogManifest?: any[], catalogById?: Map<string, any>,
- *   source?: any, now?: number, radarMaxHotTargets?: number,
- * }} input
- */
-export async function buildRadarPayload({
-  repo,
+function radarPayloadFromComputed({
+  computed,
   anchor,
-  anchors,
-  shortlist = [],
-  names = {},
-  icons = {},
-  categories = {},
   catalogManifest = [],
   catalogById = new Map(),
   source = null,
   now = Date.now(),
-  radarMaxHotTargets = 8,
 }) {
-  const { rowsByAnchor, hotlist, marketData } = await computeRadar({
-    repo,
-    anchors,
-    shortlist,
-    names,
-    icons,
-    categories,
-    now,
-    radarMaxHotTargets,
-  });
+  const { rowsByAnchor, hotlist, marketData } = computed;
   const response = buildRadarResponse({
     radarRows: rowsByAnchor[anchor] ?? [],
     hotlistEntries: hotlist,
@@ -106,6 +83,55 @@ export async function buildRadarPayload({
         : marketData.status,
   };
   return response;
+}
+
+/**
+ * Full /api/radar payloads for every configured anchor, computed from one
+ * candle-window read. This is the background snapshot builder.
+ */
+export async function buildRadarPayloads({
+  repo,
+  anchors,
+  shortlist = [],
+  names = {},
+  icons = {},
+  categories = {},
+  catalogManifest = [],
+  catalogById = new Map(),
+  source = null,
+  now = Date.now(),
+  radarMaxHotTargets = 8,
+}) {
+  const computed = await computeRadar({
+    repo,
+    anchors,
+    shortlist,
+    names,
+    icons,
+    categories,
+    now,
+    radarMaxHotTargets,
+  });
+  return Object.fromEntries(
+    anchors.map((anchor) => [
+      anchor,
+      radarPayloadFromComputed({
+        computed,
+        anchor,
+        catalogManifest,
+        catalogById,
+        source,
+        now,
+      }),
+    ]),
+  );
+}
+
+/** Full /api/radar payload for one anchor. */
+export async function buildRadarPayload(input) {
+  const anchors = [...new Set([...(input.anchors ?? []), input.anchor])];
+  const payloads = await buildRadarPayloads({ ...input, anchors });
+  return payloads[input.anchor];
 }
 
 /** /api/hotlist payload (the bare hotlist; scheduler is gone in serverless). */

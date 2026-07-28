@@ -76,6 +76,35 @@ test("hasPricedCandles returns the lightweight league availability flag", async 
   assert.equal(await empty.hasPricedCandles(), false);
 });
 
+test("readRadarSnapshot parses a stored JSON payload and refresh time", async () => {
+  const repo = createRadarRepository({
+    sql: fakeSql([[{ payload: '{"anchor":"exalted","rows":[]}', refreshed_at: "1700000000000" }]]),
+    scope,
+  });
+  assert.deepEqual(await repo.readRadarSnapshot("exalted"), {
+    payload: { anchor: "exalted", rows: [] },
+    refreshedAt: 1_700_000_000_000,
+  });
+});
+
+test("writeRadarSnapshots uses postgres.js JSON serialization, not a JSON string scalar", async () => {
+  const serialized = [];
+  const sql = (..._args) => Promise.resolve({ count: 1 });
+  sql.json = (value) => {
+    serialized.push(value);
+    return value;
+  };
+  const repo = createRadarRepository({ sql, scope });
+  const payload = {
+    anchor: "exalted",
+    generatedAt: "2026-07-28T07:00:00.000Z",
+    rows: [{ latestCompletedHour: 1_785_218_400_000 }],
+  };
+  assert.equal(await repo.writeRadarSnapshots([{ anchor: "exalted", payload }]), 1);
+  assert.equal(serialized[0], payload);
+  assert.equal(typeof serialized[0], "object");
+});
+
 test("readCxapiState parses the cursor, or reports null when absent", async () => {
   const present = createRadarRepository({ sql: fakeSql([[{ next_change_id: "100", last_digest_id: "99" }]]), scope });
   assert.deepEqual(await present.readCxapiState(), { cursor: 100, lastDigestId: 99 });

@@ -718,12 +718,6 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     : null;
   const [sortKey, sortDirection = "desc"] = sort.split(":");
 
-  // Freshness context for the trade modal header/plan.
-  const freshnessAgeMs = radar?.generatedAt ? Date.now() - Date.parse(radar.generatedAt) : null;
-  const freshness = Number.isFinite(freshnessAgeMs)
-    ? freshnessAgeMs < 60_000 ? "just now" : formatAge(freshnessAgeMs)
-    : null;
-
   function openMarket(pairId) {
     setSelectedPair(pairId);
     setView("chart");
@@ -806,6 +800,17 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
       high: Number.isFinite(point.high) ? point.high * factor : point.high,
     }));
   }, [chartUnit, history, rates, selected?.anchor]);
+  // The plan drawn onto the history. Same factor the series uses, so the lines
+  // land in the chart's own unit rather than the anchor's.
+  const chartLevels = useMemo(() => {
+    if (guidance.status !== "ok") return [];
+    const factor = rates[selected?.anchor] && rates[chartUnit] ? rates[selected.anchor] / rates[chartUnit] : 1;
+    return [
+      { price: guidance.entry * factor, label: "Buy", color: "#0ecb81" },
+      { price: currentWorkingPrice.anchorValue * factor, label: "Now", color: "#b7bdc6" },
+      { price: guidance.exit * factor, label: "Sell", color: "#f6465d" },
+    ].filter((level) => Number.isFinite(level.price));
+  }, [chartUnit, currentWorkingPrice.anchorValue, guidance, rates, selected?.anchor]);
   const workingQuote = selected
     ? quoteFromAnchor(currentWorkingPrice.anchorValue, { anchor: selected.anchor, displayCurrency, rates, target: selected.target })
     : null;
@@ -1224,24 +1229,17 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     <span>{selected.category || "Market"}</span>
                   </div>
                 </div>
+                {/* The price, its 24h move and the data age all appear again in
+                    the plan basis and on the chart. Liquidity does not, and it
+                    is the one number that governs whether a price being
+                    "touched" could have become a fill. */}
                 <div className="rt-head-metrics">
-                  <div className="rt-metric">
-                    <strong className="rt-price">
-                      <QuotePill quote={quoteFromAnchor(selected.reference, { anchor: selected.anchor, displayCurrency, rates, target: selected.target })} compact />
-                    </strong>
-                    <small className={(selected.movement?.h24 ?? 0) >= 0 ? "up" : "down"}>{formatPercent(selected.movement?.h24)} · 24h</small>
-                  </div>
                   <div className="rt-metric">
                     <strong>{Number.isFinite(selected.volume) ? formatNumber(selected.volume, { maximumFractionDigits: 0 }) : "—"}</strong>
                     <small className={`liq-${liquidityBand(selected.volume, liquidityThresholds) ?? "na"}`}>
                       {liquidityLabel(selected.volume, liquidityThresholds)} liquidity
                     </small>
                   </div>
-                  {freshness && (
-                    <div className="rt-metric rt-metric-fresh">
-                      <small>Updated {freshness}</small>
-                    </div>
-                  )}
                 </div>
                 <div className="rt-head-controls">
                   <button
@@ -1274,7 +1272,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     </div>
                   </div>
                 </div>
-                <SpotChart points={chartHistory} bucketHours={horizon} loading={historyLoading} />
+                <SpotChart points={chartHistory} bucketHours={horizon} loading={historyLoading} levels={chartLevels} />
                 {/* Was a three-line paragraph in prime space. The disclosure has
                     to stay — GGG publishes no open or close — but it belongs in
                     a line you can skip, with the detail on hover/focus. */}
@@ -1287,7 +1285,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     "The gold line is the median midpoint."
                   }
                 >
-                  Wick = prices touched · body = first→last midpoint · <abbr title="GGG publishes no open or close price, so no true OHLC candle is possible.">not OHLC</abbr>
+                  Wick = hour's reported low–high · body = first→last midpoint · <abbr title="The midpoint is (low + high) / 2, a derived proxy — not a traded price. GGG publishes no open or close, so no true OHLC candle is possible.">not OHLC</abbr>
                 </p>
               </div>
 
@@ -1390,18 +1388,6 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                               ? `of the ${guidance.observableSamples} that bought`
                               : "needs a 2h+ horizon to observe"}
                           </small>
-                        </article>
-                        <article>
-                          <span>Held for</span>
-                          <strong>{formatDurationHours(guidance.medianHoursHeld)}</strong>
-                          <small>median, buy to sell</small>
-                        </article>
-                        <article>
-                          <span>Worst dip after buying</span>
-                          <strong className={(guidance.medianAdverseMove ?? 0) < 0 ? "down" : ""}>
-                            {formatPercent(guidance.medianAdverseMove, { maximumFractionDigits: 1 })}
-                          </strong>
-                          <small>median</small>
                         </article>
                       </div>
                       <p className="rt-fineprint">

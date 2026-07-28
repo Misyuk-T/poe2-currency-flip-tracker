@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { CandlestickSeries, HistogramSeries, LineSeries, createChart } from "lightweight-charts";
+import { CandlestickSeries, HistogramSeries, LineStyle, createChart } from "lightweight-charts";
 import { buildTrendRows } from "../lib/chart-series.js";
 
 function precisionFor(rows) {
@@ -13,22 +13,14 @@ function precisionFor(rows) {
   return 2;
 }
 
-function fmt(value, precision) {
-  if (!Number.isFinite(value)) return "—";
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: precision }).format(value);
-}
-
-function timeLabel(timestamp) {
-  if (!Number.isFinite(timestamp)) return "—";
-  return new Date(timestamp * 1000).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-export default function SpotChart({ points, height = 420, bucketHours: bucketHoursProp, loading = false }) {
+/**
+ * @param {{ levels?: Array<{ price: number, label: string, color: string }> }} props
+ *   `levels` draws the plan onto the history — the buy, the working price and
+ *   the sell. Without them the chart is a picture of the past; with them it
+ *   answers the question actually being asked: have these levels been inside
+ *   the market before?
+ */
+export default function SpotChart({ points, height = 420, bucketHours: bucketHoursProp, loading = false, levels = [] }) {
   const hostRef = useRef(null);
   const { rows } = useMemo(() => buildTrendRows(points, bucketHoursProp), [points, bucketHoursProp]);
   const precision = useMemo(() => precisionFor(rows), [rows]);
@@ -86,14 +78,17 @@ export default function SpotChart({ points, height = 420, bucketHours: bucketHou
     });
     range.setData(rows.map((row) => row.range));
 
-    const midpoint = chart.addSeries(LineSeries, {
-      color: "#f0b90b",
-      lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      priceFormat: { type: "price", precision, minMove },
-    });
-    midpoint.setData(rows.map((row) => row.line));
+    for (const level of levels) {
+      if (!Number.isFinite(level?.price)) continue;
+      range.createPriceLine({
+        price: level.price,
+        color: level.color,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: level.label,
+      });
+    }
 
     const volume = chart.addSeries(HistogramSeries, {
       priceFormat: { type: "volume" },
@@ -108,7 +103,7 @@ export default function SpotChart({ points, height = 420, bucketHours: bucketHou
     return () => {
       chart.remove();
     };
-  }, [height, precision, rows]);
+  }, [height, levels, precision, rows]);
 
   if (rows.length < 2) {
     // Reserve the chart's height so the modal doesn't resize when history arrives.
@@ -125,18 +120,9 @@ export default function SpotChart({ points, height = 420, bucketHours: bucketHou
     );
   }
 
-  const low = Math.min(...rows.map((row) => row.range.low));
-  const high = Math.max(...rows.map((row) => row.range.high));
-  const first = rows[0]?.line.time;
-  const last = rows.at(-1)?.line.time;
-
+  // The high/low/date strip that used to sit here repeated both axes.
   return (
     <div className="spot-chart-wrap">
-      <div className="spot-chart-meta">
-        <span>high {fmt(high, precision)}</span>
-        <span>{timeLabel(first)} → {timeLabel(last)}</span>
-        <span>low {fmt(low, precision)}</span>
-      </div>
       <div className="spot-chart" ref={hostRef} style={{ height }} />
     </div>
   );

@@ -62,21 +62,23 @@ export default function SpotChart({ points, height = 420, bucketHours: bucketHou
       priceFormat: { type: "price", precision, minMove },
       priceLineVisible: false,
       lastValueVisible: false,
-      // A price is never negative, but the bottom scale margin that makes room
-      // for the volume histogram was extending the axis past zero on markets
-      // with a wide range — the scale printed -1000 for a currency whose low was
-      // 500. Clamp the autoscale floor at zero instead of reserving space below
-      // the data.
-      autoscaleInfoProvider: (original) => {
-        const info = original();
-        if (!info?.priceRange) return info;
-        return {
-          ...info,
-          priceRange: { ...info.priceRange, minValue: Math.max(0, info.priceRange.minValue) },
-        };
-      },
     });
     range.setData(rows.map((row) => row.range));
+
+    // A price is never negative, yet the axis printed -1000 for a currency whose
+    // low was 500. The cause is not the autoscale — clamping that changes
+    // nothing — it is the bottom scale margin that reserves room for the volume
+    // histogram, which is applied AFTER the data range and drags the visible
+    // floor below it. Shrink the margin to whatever still lands on zero.
+    //   visible span S = (max - min) / (1 - top - bottom)
+    //   floor         = min - S * bottom  >= 0
+    const dataMin = Math.min(...rows.map((row) => row.range.low));
+    const dataMax = Math.max(...rows.map((row) => row.range.high));
+    const topMargin = 0.08;
+    const maxBottom = dataMax > 0 ? (dataMin * (1 - topMargin)) / dataMax : 0;
+    chart.priceScale("right").applyOptions({
+      scaleMargins: { top: topMargin, bottom: Math.max(0, Math.min(0.24, maxBottom)) },
+    });
 
     for (const level of levels) {
       if (!Number.isFinite(level?.price)) continue;

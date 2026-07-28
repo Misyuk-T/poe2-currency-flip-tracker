@@ -136,58 +136,11 @@ export function currencySitemapUrls(index, { popularIds = [] } = {}) {
 }
 
 /**
- * Pure: the same index shape, read off a precomputed radar snapshot instead of
- * recomputing it from raw candles. The snapshot already carries a finished row
- * per market, so this is a projection, not a computation.
- *
- * Rows without a priced hour are dropped: a market with no trades has nothing
- * unique to say, and listing it would put a thin page in the sitemap.
- */
-export function currencyIndexFromSnapshot(payload, { sourceMode = "fixture" } = {}) {
-  if (!payload?.anchor || !Array.isArray(payload.rows)) return null;
-  const byId = {};
-  let latestMs = 0;
-  for (const row of payload.rows) {
-    if (!row?.target || !Number.isFinite(row.reference)) continue;
-    const hourMs = Number.isFinite(row.latestCompletedHour) ? row.latestCompletedHour : null;
-    if (hourMs && hourMs > latestMs) latestMs = hourMs;
-    byId[row.target] = {
-      target: row.target,
-      reference: row.reference,
-      referenceKind: row.referenceKind ?? null,
-      low: row.low ?? null,
-      high: row.high ?? null,
-      rangePct: row.rangePct ?? null,
-      movement: row.movement ?? null,
-      samples: row.samples ?? null,
-      stale: row.stale ?? false,
-      latestCompletedHour: hourMs ? new Date(hourMs).toISOString() : null,
-      latestCompletedHourMs: hourMs,
-    };
-  }
-  if (Object.keys(byId).length === 0) return null;
-  return {
-    anchor: payload.anchor,
-    sourceMode,
-    byId,
-    latestCompletedHour: latestMs ? new Date(latestMs).toISOString() : null,
-    latestCompletedHourMs: latestMs || null,
-  };
-}
-
-/**
  * Slim multi-currency read for the list page + sitemap: the latest stored price
- * and 24h movement for every target vs the configured anchor. Returns null when
- * there's no database or no data so callers render their static fallback. Import
- * this dynamically inside the component (keeps the DB driver out of Next's
- * page-config collection pass).
- *
- * Prefers the precomputed snapshot — the same row set /api/radar serves. The
- * candle-window read behind the old path scans ~7 days across every pair, and
- * when it exceeds its timeout the caller degrades silently: the sitemap quietly
- * shrank to the six hardcoded popular currencies while hundreds of markets had
- * pages that nothing linked to. Falling back to it keeps a cold scope working
- * before the first snapshot is written.
+ * and 24h movement for every target vs the configured anchor, from a single
+ * bounded candle-window read. Returns null when there's no database or no data
+ * so callers render their static fallback. Import this dynamically inside the
+ * component (keeps the DB driver out of Next's page-config collection pass).
  */
 export async function getCurrencyIndex() {
   const config = loadConfig();
@@ -196,22 +149,12 @@ export async function getCurrencyIndex() {
 
   const scope = { game: config.poeGame, realm: config.poeRealm, league: config.league, mode: config.providerMode };
   const repo = createRadarRepository({ sql, scope });
-  const sourceMode = config.providerMode === "live" ? "official" : "fixture";
-
-  try {
-    const snapshot = await repo.readRadarSnapshot(config.anchorCurrency);
-    const index = currencyIndexFromSnapshot(snapshot?.payload, { sourceMode });
-    if (index) return index;
-  } catch {
-    // Fall through to the slower path rather than failing the page.
-  }
-
   const candles = await repo.readCandleWindow();
   if (!candles.length) return null;
 
   return buildCurrencyIndex(groupCandlesByPair(candles), {
     anchor: config.anchorCurrency,
-    sourceMode,
+    sourceMode: config.providerMode === "live" ? "official" : "fixture",
     now: Date.now(),
   });
 }

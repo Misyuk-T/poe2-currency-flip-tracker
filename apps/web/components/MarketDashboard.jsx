@@ -159,10 +159,16 @@ function QuotePill({ quote, compact = false }) {
   return <PricePill value={quote.value} unit={quote.unit} compact={compact} />;
 }
 
-function KeyCurrencyCard({ card, emptyLabel = "Waiting for data" }) {
+function KeyCurrencyCard({ card, emptyLabel = "Waiting for data", quantity = 1 }) {
   const points = sparklinePoints(card.values);
   const hasSinglePoint = card.values.length === 1;
   const direction = (card.movement ?? 0) >= 0 ? "up" : "down";
+  // The bulk toggle scales these cards too, but the rate only stays true if the
+  // denominator moves with it: "Exalted per 100 Chaos", not "per Chaos". The
+  // sparkline and the 24h movement are shape and ratio, so a multiplier leaves
+  // them untouched by definition.
+  const scaledValue = Number.isFinite(card.value) ? card.value * quantity : card.value;
+  const per = quantity === 1 ? titleize(card.id) : `${formatNumber(quantity)} ${titleize(card.id)}`;
   return (
     <article className="key-currency-card">
       <div className="key-currency-card-head">
@@ -170,13 +176,13 @@ function KeyCurrencyCard({ card, emptyLabel = "Waiting for data" }) {
           <img src={iconUrl(card.id)} onError={onIconError} alt="" />
           <span>
             <strong>{card.name}</strong>
-            <small>{card.unit ? `${titleize(card.unit)} per ${titleize(card.id)}` : "Hourly market rate"}</small>
+            <small>{card.unit ? `${titleize(card.unit)} per ${per}` : "Hourly market rate"}</small>
           </span>
         </span>
         <span className={`key-currency-move ${direction}`}>{formatPercent(card.movement)}</span>
       </div>
       <div className="key-currency-card-body">
-        {card.available ? <PricePill value={card.value} unit={card.unit} /> : <span className="key-currency-empty">{emptyLabel}</span>}
+        {card.available ? <PricePill value={scaledValue} unit={card.unit} /> : <span className="key-currency-empty">{emptyLabel}</span>}
         {points || hasSinglePoint ? (
           <svg className={`key-currency-spark ${direction}`} viewBox="0 0 180 54" role="img" aria-label={`${card.name} 24 hour chart`}>
             <path className="key-currency-grid-line" d="M3 14 H177 M3 27 H177 M3 40 H177" />
@@ -1026,6 +1032,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                 <KeyCurrencyCard
                   key={card.id}
                   card={card}
+                  quantity={quantity}
                   emptyLabel={hasUpstreamTrades ? "Waiting for data" : "No executed trades"}
                 />
               ))}

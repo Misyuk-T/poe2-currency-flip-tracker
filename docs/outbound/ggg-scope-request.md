@@ -8,19 +8,20 @@ completed-hour Currency Exchange data and has moved to its own domain:
 
 https://exileradar.com/poe2
 
-I'd like to request two additional scopes on the same application.
+I'd like to request two additional scopes on the same application. Here are the
+OAuth details:
 
-Application:     PoE2 Flip Helper  (site now branded "Exile Radar")
-PoE account:     Artorio#0429
-Client type:     Confidential Client
-Grant type:      Client Credentials
-Existing scope:  service:cxapi (approved earlier, now unused — Currency
-                 Exchange data comes from the public CDN)
-Requested:       service:leagues
-                 service:leagues:ladder
-Contact:         misyuktaras@gmail.com
+PoE account: Artorio#0429
+Application name: PoE2 Flip Helper
+Client type: Confidential Client
+Grant type: Client Credentials
+Requested scope: service:leagues, service:leagues:ladder
 
-Your documentation lists both as service scopes for confidential clients using
+The application already holds service:cxapi from the earlier request. It is no
+longer used — Currency Exchange data now comes from the public CDN — so please
+feel free to drop it if that is tidier on your side.
+
+Both requested scopes are service scopes for confidential clients using
 client_credentials, so no change to the client type or grant is needed, and no
 account scope or player sign-in is involved.
 

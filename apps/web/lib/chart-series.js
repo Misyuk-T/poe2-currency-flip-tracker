@@ -127,28 +127,37 @@ export function buildTrendRows(points, explicitBucketHours) {
 }
 
 /**
- * The price band the market actually lives in, ignoring a thin tail at each end.
+ * The band the axis should frame: the candle BODIES, plus whatever plan levels
+ * are drawn, plus a little air.
  *
- * Some hours report a low two orders of magnitude under the going rate — one
- * odd print, not a level. Autoscaling to those left every ordinary candle
- * squeezed into the top fifth of the pane, even on a log axis. Scaling to the
- * bulk instead keeps the chart legible; the outlier wicks are still drawn, they
- * simply run past the edge rather than dictating the whole view.
+ * Trimming a tail off the wicks was the obvious idea and it does not work here.
+ * Chaos Orb reports hourly ranges like low 1 / high 65 around a midpoint of 33,
+ * and 15% of its hours look like that — a percentile deep enough to exclude
+ * them would be hiding a sixth of the data, not a stray print.
  *
- * Returns null when trimming would change nothing, so a well-behaved market
- * keeps plain autoscaling.
+ * So frame the price rather than the range. Bodies move between roughly 30 and
+ * 50 on that market, which is legible; the wide wicks still render, they simply
+ * run past the edge. The plan's own lines are folded in so a buy or sell target
+ * can never end up outside the view.
+ *
+ * Returns null when the wicks already fit, so ordinary markets autoscale plainly.
  */
-export function bulkPriceRange(rows, { tail = 0.02 } = {}) {
-  const lows = rows.map((row) => row.range.low).filter((value) => Number.isFinite(value) && value > 0).sort((a, b) => a - b);
-  const highs = rows.map((row) => row.range.high).filter((value) => Number.isFinite(value) && value > 0).sort((a, b) => a - b);
-  if (lows.length < 8 || highs.length < 8) return null;
-  const at = (sorted, q) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * q)))];
-  const minValue = at(lows, tail);
-  const maxValue = at(highs, 1 - tail);
+export function readablePriceRange(rows, levels = [], { pad = 0.12, tolerance = 1.6 } = {}) {
+  const bodies = rows.flatMap((row) => [row.range.open, row.range.close]).filter((v) => Number.isFinite(v) && v > 0);
+  if (bodies.length < 6) return null;
+  const levelPrices = levels.map((level) => level?.price).filter((v) => Number.isFinite(v) && v > 0);
+  let minValue = Math.min(...bodies, ...levelPrices);
+  let maxValue = Math.max(...bodies, ...levelPrices);
   if (!(minValue > 0) || !(maxValue > minValue)) return null;
-  // Only worth trimming when the tail is genuinely distorting the view.
-  const full = at(highs, 1) / at(lows, 0);
-  const trimmed = maxValue / minValue;
-  if (!(full > trimmed * 2)) return null;
+
+  const span = maxValue - minValue;
+  minValue = Math.max(minValue - span * pad, minValue * 0.5);
+  maxValue = maxValue + span * pad;
+
+  const wickLow = Math.min(...rows.map((row) => row.range.low).filter((v) => Number.isFinite(v) && v > 0));
+  const wickHigh = Math.max(...rows.map((row) => row.range.high).filter(Number.isFinite));
+  // Nothing to gain from clipping a market whose wicks are already in frame.
+  if (wickLow >= minValue && wickHigh <= maxValue) return null;
+  if (wickHigh / wickLow < (maxValue / minValue) * tolerance) return null;
   return { minValue, maxValue };
 }

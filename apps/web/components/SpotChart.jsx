@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { CandlestickSeries, HistogramSeries, LineStyle, PriceScaleMode, createChart } from "lightweight-charts";
-import { buildTrendRows, bulkPriceRange } from "../lib/chart-series.js";
+import { buildTrendRows, readablePriceRange } from "../lib/chart-series.js";
 
 function precisionFor(rows) {
   const values = rows.flatMap((row) => [row.range.low, row.range.high]).filter(Number.isFinite);
@@ -65,20 +65,16 @@ export default function SpotChart({ points, height = 420, bucketHours: bucketHou
     // Body = first/last hourly midpoint in the bucket, wick = the full touched
     // range (see buildTrendRows). Added before the midpoint line so the line
     // reads on top of its own candles.
-    const bulk = bulkPriceRange(rows);
+    const framed = readablePriceRange(rows, levels);
     const range = chart.addSeries(CandlestickSeries, {
       priceFormat: { type: "price", precision, minMove },
       priceLineVisible: false,
       lastValueVisible: false,
-      // Scale to where the market actually trades. Without this a single hour
-      // reporting a low of 0.24 against a price of 48 pushed every real candle
-      // into a sliver at the top of the pane.
-      ...(bulk
-        ? {
-            autoscaleInfoProvider: () => ({
-              priceRange: { minValue: bulk.minValue, maxValue: bulk.maxValue },
-            }),
-          }
+      // Frame the price, not the range. On markets whose hourly low routinely
+      // reports a fraction of the going rate, autoscaling to the wicks left
+      // every candle in a sliver at the top of the pane.
+      ...(framed
+        ? { autoscaleInfoProvider: () => ({ priceRange: framed }) }
         : {}),
     });
     range.setData(rows.map((row) => row.range));

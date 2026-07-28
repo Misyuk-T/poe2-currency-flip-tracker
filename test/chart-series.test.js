@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildTrendRows, bulkPriceRange, UP_COLOR, DOWN_COLOR } from "../apps/web/lib/chart-series.js";
+import { buildTrendRows, readablePriceRange, UP_COLOR, DOWN_COLOR } from "../apps/web/lib/chart-series.js";
 
 const HOUR = 3_600_000;
 
@@ -105,28 +105,37 @@ test("an hour with no usable band falls back to its midpoint rather than vanishi
   assert.equal(rows[0].range.high, 12);
 });
 
-test("the axis scales to where the market trades, not to a single odd print", () => {
-  // Chaos Orb on production: hours reporting a low of 0.24 against a price of
-  // 48 pushed every real candle into a sliver at the top of the pane, even on a
-  // log axis.
-  const rows = Array.from({ length: 30 }, (_, i) => banded(i, 48, 47, 49));
-  rows[7] = banded(7, 48, 0.24, 49);
-  const { rows: built } = buildTrendRows(rows, 1);
-  const range = bulkPriceRange(built);
-  assert.ok(range, "a two-orders-of-magnitude tail should be trimmed");
-  assert.ok(range.minValue > 1, `min ${range.minValue} still follows the outlier`);
-  assert.ok(range.maxValue >= 49);
+test("the axis frames the price when the wicks are hopeless", () => {
+  // Chaos Orb, real production shape: hourly ranges like low 1 / high 65 around
+  // a midpoint near 40, and 15% of hours look like that — far too many to call a
+  // stray print and trim off as a tail.
+  const points = Array.from({ length: 24 }, (_, hour) => {
+    const reference = 40 + (hour % 6);
+    return banded(hour, reference, hour % 7 === 0 ? 1 : reference - 12, reference + 22);
+  });
+  const { rows } = buildTrendRows(points, 6);
+  const range = readablePriceRange(rows, [{ price: 38 }, { price: 57 }]);
+  assert.ok(range, "a market whose wicks span two orders should be framed");
+  assert.ok(range.minValue > 10, `min ${range.minValue} still chases the outlier low`);
+  assert.ok(range.maxValue >= 57, "the sell target must stay in view");
 });
 
-test("a well-behaved market keeps plain autoscaling", () => {
+test("plan levels are never pushed out of frame", () => {
+  const points = Array.from({ length: 24 }, (_, hour) => banded(hour, 40, hour % 7 === 0 ? 1 : 38, 42));
+  const { rows } = buildTrendRows(points, 6);
+  const range = readablePriceRange(rows, [{ price: 12 }]);
+  if (range) assert.ok(range.minValue <= 12, `buy target 12 fell outside ${range.minValue}`);
+});
+
+test("a market whose wicks already fit keeps plain autoscaling", () => {
   const { rows } = buildTrendRows(
-    Array.from({ length: 30 }, (_, i) => banded(i, 48, 46 + (i % 3), 50 + (i % 3))),
-    1,
+    Array.from({ length: 24 }, (_, hour) => banded(hour, 48, 46 + (hour % 3), 50 + (hour % 3))),
+    6,
   );
-  assert.equal(bulkPriceRange(rows), null);
+  assert.equal(readablePriceRange(rows, []), null);
 });
 
-test("too few points to judge a tail leaves the scale alone", () => {
+test("too few candles to judge leaves the scale alone", () => {
   const { rows } = buildTrendRows([banded(1, 48, 1, 49), banded(2, 48, 47, 49)], 1);
-  assert.equal(bulkPriceRange(rows), null);
+  assert.equal(readablePriceRange(rows, []), null);
 });

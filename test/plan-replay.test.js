@@ -39,12 +39,14 @@ test("a completed round trip is timed from the buy, not from the decision", () =
   assert.equal(result.medianHoursHeld, 3);
 });
 
-test("a sell in the same hour as the buy does not count", () => {
+test("a sell in the same hour as the buy is unanswerable, not a failure", () => {
   // GGG publishes an hour's low and high with no ordering between them, so this
-  // hour cannot show the sell followed the buy. Only the later hour can.
+  // hour cannot show the sell followed the buy. With no hour after the fill the
+  // question has no answer — reporting 0% would blame the plan for the horizon.
   const sameHour = replayPlan([window([88, 115])], PLAN);
   assert.equal(sameHour.entryFillRate, 1);
-  assert.equal(sameHour.exitAfterEntryRate, 0);
+  assert.equal(sameHour.exitAfterEntryRate, null);
+  assert.equal(sameHour.observableSamples, 0);
 
   const nextHour = replayPlan([window([88, 95], [100, 115])], PLAN);
   assert.equal(nextHour.exitAfterEntryRate, 1);
@@ -81,4 +83,20 @@ test("rates are aggregated over every window, fill rate and hit rate separately"
   assert.equal(result.filled, 2);
   assert.equal(result.entryFillRate, 0.5);
   assert.equal(result.exitAfterEntryRate, 0.5, "one of the two that bought went on to sell");
+});
+
+test("the hour that sold cannot also contribute a drawdown", () => {
+  // Hour 2 both dips to 45 (-50% against the 90 buy) and reaches the sell at
+  // 115. With no ordering inside an hour, that dip may well have happened after
+  // the sale — and a closed position cannot draw down. Counting it read as a
+  // catastrophic dip on a trade that actually worked.
+  const result = replayPlan([window([88, 95], [45, 115], [40, 50])], PLAN);
+  assert.equal(result.exitAfterEntryRate, 1);
+  assert.equal(result.medianAdverseMove, 0, "only hours strictly between buy and sell can draw down");
+});
+
+test("a dip strictly between the buy and the sell still counts", () => {
+  const result = replayPlan([window([88, 95], [72, 95], [100, 115])], PLAN);
+  assert.equal(result.exitAfterEntryRate, 1);
+  assert.ok(Math.abs(result.medianAdverseMove - -0.2) < 1e-9, `got ${result.medianAdverseMove}`);
 });

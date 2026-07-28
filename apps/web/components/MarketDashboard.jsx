@@ -1385,7 +1385,11 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                         <article>
                           <span>Then sell price</span>
                           <strong>{formatPercent(guidance.exitAfterEntryRate, { signed: false, maximumFractionDigits: 0 })}</strong>
-                          <small>of the {guidance.filledSamples} that bought</small>
+                          <small>
+                            {guidance.observableSamples
+                              ? `of the ${guidance.observableSamples} that bought`
+                              : "needs a 2h+ horizon to observe"}
+                          </small>
                         </article>
                         <article>
                           <span>Held for</span>

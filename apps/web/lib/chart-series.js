@@ -21,6 +21,8 @@ function median(values) {
 
 export const UP_COLOR = "#0ecb81";
 export const DOWN_COLOR = "#f6465d";
+// No measurable move inside the bucket — neither a rise nor a fall.
+export const FLAT_COLOR = "#8b93a1";
 
 /**
  * Build a trend series from official hourly records.
@@ -87,8 +89,12 @@ export function buildTrendRows(points, explicitBucketHours) {
   const rows = buckets.map((bucket) => {
     const reference = median(bucket.references);
     const time = Math.floor(bucket.completedHour / 1000);
-    const up = bucket.last >= bucket.first;
-    const color = up ? UP_COLOR : DOWN_COLOR;
+    // A single-hour bucket has first === last: no move was measured, so colouring
+    // it green claims a rise that was never observed. Neutral is the honest
+    // answer, and the volume bar follows the same rule.
+    const flat = bucket.last === bucket.first;
+    const up = bucket.last > bucket.first;
+    const color = flat ? FLAT_COLOR : up ? UP_COLOR : DOWN_COLOR;
     return {
       range: {
         time,
@@ -107,7 +113,11 @@ export function buildTrendRows(points, explicitBucketHours) {
       volume: {
         time,
         value: bucket.volume,
-        color: up ? "rgba(14, 203, 129, 0.36)" : "rgba(246, 70, 93, 0.36)",
+        color: flat
+          ? "rgba(160, 170, 184, 0.30)"
+          : up
+            ? "rgba(14, 203, 129, 0.36)"
+            : "rgba(246, 70, 93, 0.36)",
       },
       samples: bucket.references.length,
     };

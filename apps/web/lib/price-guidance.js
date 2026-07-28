@@ -154,6 +154,7 @@ export function currentPriceGuidance(points, currentPrice, { maxSamples = 25, mi
     medianAdverseMove: replay?.medianAdverseMove ?? null,
     replaySamples: replay?.samples ?? 0,
     filledSamples: replay?.filled ?? 0,
+    observableSamples: replay?.observableSamples ?? 0,
   };
 }
 
@@ -176,15 +177,20 @@ export function currentPriceGuidance(points, currentPrice, { maxSamples = 25, mi
 export function replayPlan(windows, { entryFactor, exitFactor }) {
   const results = (windows ?? []).map((window) => replayWindow(window, entryFactor, exitFactor));
   const filled = results.filter((result) => result.filled);
+  const observable = filled.filter((result) => result.canObserveExit);
   const held = filled.map((result) => result.hoursHeld).filter(Number.isFinite);
   const adverse = filled.map((result) => result.worstAfterEntry).filter(Number.isFinite);
   return {
     samples: results.length,
     filled: filled.length,
     entryFillRate: results.length ? filled.length / results.length : null,
-    // Conditional on the buy having filled — the only population for which
-    // "did it then reach the target" is a meaningful question.
-    exitAfterEntryRate: filled.length ? filled.filter((result) => result.reachedExit).length / filled.length : null,
+    // Conditional on the buy having filled AND on an hour existing afterwards in
+    // which a sell could have been seen. Null, not zero, when nothing can answer
+    // it — the horizon is too short to contain a round trip.
+    exitAfterEntryRate: observable.length
+      ? observable.filter((result) => result.reachedExit).length / observable.length
+      : null,
+    observableSamples: observable.length,
     medianHoursHeld: held.length ? median(held) : null,
     medianAdverseMove: adverse.length ? median(adverse) : null,
   };
@@ -200,32 +206,49 @@ function replayWindow(window, entryFactor, exitFactor) {
   const entryIndex = future.findIndex((point) => positive(point.low) && point.low <= entryPrice);
   if (entryIndex === -1) return { filled: false };
   const entryTime = pointTime(future[entryIndex]);
+  // Whether a sell could even be observed. At a 1-hour horizon there is exactly
+  // one future hour, so a filled buy has nothing after it and "then sold" was
+  // structurally 0% — an artefact of the horizon, printed as if it were a fact
+  // about the market.
+  const canObserveExit = entryIndex < future.length - 1;
 
   let worstAfterEntry = 0;
   for (let i = entryIndex + 1; i < future.length; i++) {
     const point = future[i];
-    if (positive(point.low)) worstAfterEntry = Math.min(worstAfterEntry, point.low / entryPrice - 1);
+    // Test the sell BEFORE counting this hour's low. Same reason the sell may
+    // not share the buy's hour: with no ordering inside an hour, a low in the
+    // hour that sold could have happened after the sale, and a closed position
+    // cannot draw down.
     if (positive(point.high) && point.high >= exitPrice) {
       const exitTime = pointTime(point);
       return {
         filled: true,
+        canObserveExit,
         reachedExit: true,
         hoursHeld:
           Number.isFinite(exitTime) && Number.isFinite(entryTime) ? Math.max(0, (exitTime - entryTime) / 3600_000) : null,
         worstAfterEntry,
       };
     }
+    if (positive(point.low)) worstAfterEntry = Math.min(worstAfterEntry, point.low / entryPrice - 1);
   }
-  return { filled: true, reachedExit: false, hoursHeld: null, worstAfterEntry };
+  return { filled: true, canObserveExit, reachedExit: false, hoursHeld: null, worstAfterEntry };
 }
 
 function horizonWindows(points, { maxSamples, minSamples, horizonHours }) {
   const horizonMs = Math.max(1, Number(horizonHours) || 1) * 3600_000;
   const windows = [];
+  // The newest hours cannot answer a question about the next N hours yet. Left
+  // in, they were counted as windows where the plan simply did not work out —
+  // at a 24h horizon almost every one of the 25 sampled windows was truncated,
+  // so the score was mostly measuring how close each window sat to the end of
+  // the data.
+  const lastTime = pointTime(points.at(-1));
   for (let i = 0; i < points.length - 1; i++) {
     const start = points[i];
     const startTime = pointTime(start);
     if (!Number.isFinite(startTime) || !positive(start.reference)) continue;
+    if (Number.isFinite(lastTime) && lastTime < startTime + horizonMs) continue;
     const future = points.slice(i + 1).filter((point) => {
       const t = pointTime(point);
       return Number.isFinite(t) && t > startTime && t <= startTime + horizonMs;

@@ -15,16 +15,13 @@ function point(hour, reference, low, high) {
 }
 
 test("currentPriceGuidance widens buy/sell targets as the horizon grows", () => {
-  const series = [
-    point(0, 100, 99, 101),
-    point(1, 100, 98, 102),
-    point(2, 100, 97, 103),
-    point(3, 100, 96, 104),
-    point(4, 100, 95, 105),
-    point(5, 100, 94, 106),
-    point(6, 100, 93, 107),
-    point(7, 100, 92, 108),
-  ];
+  // Long enough that BOTH horizons have several windows with their full future
+  // present. Windows whose horizon runs past the end of the data are now
+  // dropped, so an 8-point series could only ever offer two complete 6h windows
+  // and the 6h case silently fell back to the non-horizon path.
+  const series = Array.from({ length: 20 }, (_, hour) =>
+    point(hour, 100, 99 - hour * 0.4, 101 + hour * 0.4),
+  );
 
   const short = currentPriceGuidance(series, 100, { horizonHours: 2, minSamples: 3 });
   const long = currentPriceGuidance(series, 100, { horizonHours: 6, minSamples: 3 });

@@ -15,16 +15,16 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { catalogTaxonomy } from "./catalog-taxonomy.js";
 
-// Resolved inside loadCatalog(), not at module scope: `import.meta.url` is not
-// a usable URL in Next's bundled page runtime, and an eager read there threw on
-// import alone. See the same note in cx-identity.js.
-const CATALOG_FILE = "../data/catalog-poe2.json";
+// A thunk, not a constant: the specifier has to stay a literal for the bundler
+// to rewrite it to the emitted asset, and the call has to stay out of module
+// scope so importing this file cannot throw. See the long note in
+// cx-identity.js.
+const catalogUrl = () => new URL("../data/catalog-poe2.json", import.meta.url);
 
 /** @returns {Promise<{game:string, items:{id:string,name:string,category:string,image:string|null}[]}>} */
 export async function loadCatalog() {
   try {
-    const path = fileURLToPath(new URL(CATALOG_FILE, import.meta.url).href);
-    return JSON.parse(await readFile(path, "utf8"));
+    return JSON.parse(await readFile(fileURLToPath(catalogUrl().href), "utf8"));
   } catch {
     return { game: "poe2", items: [] };
   }

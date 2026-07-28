@@ -132,3 +132,18 @@ test("no data file is resolved at module scope, and humanize needs no data at al
   const radar = readFileSync(new URL("../src/domain/market-radar.js", import.meta.url), "utf8");
   assert.doesNotMatch(radar, /from "\.\/cx-identity\.js"/, "market-radar must not import the identity reader");
 });
+
+test("data-file specifiers stay literal so the bundler can rewrite them", () => {
+  // A bundler recognises `new URL("<literal>", import.meta.url)` as an asset
+  // reference and points it at the file it emitted. Building the specifier from
+  // a variable defeats that analysis silently: the read resolves to nothing,
+  // the map loads empty, and every name and icon on the radar disappears.
+  for (const file of ["src/domain/cx-identity.js", "src/domain/catalog.js"]) {
+    const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    for (const call of source.match(/new URL\([^)]*\)/g) ?? []) {
+      assert.match(call, /new URL\("[^"]+", import\.meta\.url\)/, `${file}: ${call} is not statically analysable`);
+    }
+  }
+});

@@ -17,15 +17,24 @@ import { humanize } from "./humanize.js";
 
 export { humanize };
 
-// Resolved inside load(), not at module scope. Next's bundled page runtime
-// gives `import.meta.url` a value the URL constructor rejects outright
-// (ERR_INVALID_URL), so doing this eagerly meant merely *importing* this module
-// threw there — and the failure surfaced far from here, as pages that silently
-// lost their data. Behind the read's own try/catch, the same environment now
-// degrades to an empty map instead.
-const IDENTITY_FILES = Object.freeze({
-  poe1: "../data/cx-identity-poe1.json",
-  poe2: "../data/cx-identity-poe2.json",
+// Two constraints pull in opposite directions here.
+//
+// The specifier must stay a LITERAL inside `new URL(..., import.meta.url)`:
+// that exact shape is what a bundler recognises as an asset reference and
+// rewrites to wherever it emitted the file. Build it from a variable and the
+// analysis silently fails, the path resolves to nothing, and every name and
+// icon in the radar quietly disappears.
+//
+// It also must not run at module scope: in Next's bundled page runtime
+// `import.meta.url` is not a URL the constructor accepts (ERR_INVALID_URL), so
+// evaluating it eagerly made merely *importing* this module throw, which took
+// down the data on pages that only wanted a string helper.
+//
+// A thunk satisfies both — literal for the bundler, deferred to the read, where
+// the existing try/catch degrades to an empty map.
+const IDENTITY_URLS = Object.freeze({
+  poe1: () => new URL("../data/cx-identity-poe1.json", import.meta.url),
+  poe2: () => new URL("../data/cx-identity-poe2.json", import.meta.url),
 });
 
 const stores = new Map();
@@ -40,8 +49,7 @@ function load(game = "poe2") {
   if (cached) return cached;
   let items;
   try {
-    const path = fileURLToPath(new URL(IDENTITY_FILES[resolvedGame], import.meta.url).href);
-    items = JSON.parse(readFileSync(path, "utf8")).items ?? {};
+    items = JSON.parse(readFileSync(fileURLToPath(IDENTITY_URLS[resolvedGame]().href), "utf8")).items ?? {};
   } catch {
     items = {};
   }

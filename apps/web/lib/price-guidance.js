@@ -107,6 +107,12 @@ function normalizeRates(ratesOrDivineInExalted) {
   };
 }
 
+// How deep into a window's hours the buy and sell targets sit. A quarter of the
+// hours dipped at least to the buy, a quarter reached at least the sell — so
+// both are prices the market visited repeatedly rather than once.
+const ENTRY_QUANTILE = 0.25;
+const EXIT_QUANTILE = 0.75;
+
 /**
  * Rebase recent hourly low/high envelopes onto a user-observed current price.
  * History contributes only relative moves, not a fake real-time prediction.
@@ -123,15 +129,21 @@ export function currentPriceGuidance(points, currentPrice, { maxSamples = 25, mi
   if (ratios.length < minSamples) return { status: "insufficient-history", samples: ratios.length };
 
   const horizon = horizonWindows(candles, { maxSamples, minSamples, horizonHours });
-  const expansion = horizon.status === "ok" ? horizonExpansion(ratios, horizonHours) : { entry: 0, exit: 0 };
-  const entryFactor = horizon.status === "ok"
+  // The horizon is already inside these numbers: futureLowFactor is the lowest
+  // low over the NEXT horizonHours, futureHighFactor the highest high. Widening
+  // them again by a sqrt(hours) multiplier counted the horizon twice, and on a
+  // market with the occasional collapsing hour the buy target fell through the
+  // 1%-of-price floor: Chaos Orb was quoting "buy at 0.485" against a market of
+  // 48.5, with a 12,061% margin printed beside it.
+  const adjustedEntryFactor = horizon.status === "ok"
     ? median(horizon.windows.map((point) => point.futureLowFactor))
     : median(ratios.map((point) => point.entry));
-  const exitFactor = horizon.status === "ok"
+  const adjustedExitFactor = horizon.status === "ok"
     ? median(horizon.windows.map((point) => point.futureHighFactor))
     : median(ratios.map((point) => point.exit));
-  const adjustedEntryFactor = Math.max(0.01, entryFactor - expansion.entry);
-  const adjustedExitFactor = exitFactor + expansion.exit;
+  if (!(adjustedEntryFactor > 0) || !(adjustedExitFactor > adjustedEntryFactor)) {
+    return { status: "insufficient-history", samples: ratios.length };
+  }
   const entry = currentPrice * adjustedEntryFactor;
   const exit = currentPrice * adjustedExitFactor;
   const replay = horizon.status === "ok"
@@ -254,8 +266,10 @@ function horizonWindows(points, { maxSamples, minSamples, horizonHours }) {
       return Number.isFinite(t) && t > startTime && t <= startTime + horizonMs;
     });
     if (!future.length) continue;
-    const high = Math.max(...future.map((point) => point.high).filter(Number.isFinite));
-    const low = Math.min(...future.map((point) => point.low).filter(Number.isFinite));
+    // A quarter of the hours reached at least this low, three quarters at least
+    // this high — rather than the single most extreme print in either direction.
+    const low = quantile(future.map((point) => point.low).filter(positive), ENTRY_QUANTILE);
+    const high = quantile(future.map((point) => point.high).filter(positive), EXIT_QUANTILE);
     if (!positive(high) || !positive(low)) continue;
     windows.push({
       start,
@@ -268,22 +282,30 @@ function horizonWindows(points, { maxSamples, minSamples, horizonHours }) {
   return recent.length >= minSamples ? { status: "ok", windows: recent } : { status: "insufficient-history", windows: recent };
 }
 
-function horizonExpansion(ratios, horizonHours) {
-  const hours = Math.max(1, Number(horizonHours) || 1);
-  const multiplier = Math.max(0, Math.sqrt(hours) - 1) * 0.15;
-  if (!multiplier) return { entry: 0, exit: 0 };
-  const entryMoves = ratios.map((point) => 1 - point.entry).filter((value) => value >= 0);
-  const exitMoves = ratios.map((point) => point.exit - 1).filter((value) => value >= 0);
-  return {
-    entry: median(entryMoves) * multiplier,
-    exit: median(exitMoves) * multiplier,
-  };
-}
-
 function pointTime(point) {
   if (Number.isFinite(point?.completedHour)) return point.completedHour;
   if (Number.isFinite(point?.t)) return point.t;
   return NaN;
+}
+
+/**
+ * Linear-interpolated quantile.
+ *
+ * Used instead of the min/max of a window because those are single prints. In a
+ * thin market one trade at a tenth of the going rate drags the buy target down
+ * with it, and a median across windows does not save you when nearly every
+ * window contains such a print — Chaos Orb quoted "buy at 0.485" against a
+ * market of 48.5. A low quantile asks a question a trader can act on: a price
+ * the market kept coming back to, not the worst thing that ever happened in it.
+ */
+function quantile(values, q) {
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!sorted.length) return null;
+  const position = (sorted.length - 1) * q;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  if (lower === upper) return sorted[lower];
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
 }
 
 function median(values) {

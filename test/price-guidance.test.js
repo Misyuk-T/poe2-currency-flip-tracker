@@ -86,3 +86,39 @@ test("workingPrice uses direct market rates when the anchor is not exalted", () 
   assert.equal(result.unit, "chaos");
   assert.equal(result.anchorValue, 0.2222222222222222);
 });
+
+test("one collapsing hour cannot drag the buy target through the floor", () => {
+  // Chaos Orb on production: a market trading around 48.5 quoted "buy at 0.485,
+  // 99% below market" with a 12,061% margin beside it. Two causes, both here:
+  // the window's absolute minimum let a single outlier print define the target,
+  // and a sqrt(hours) widening on top of already horizon-aware factors counted
+  // the horizon twice, pushing the result into the 1%-of-price clamp.
+  const series = Array.from({ length: 40 }, (_, hour) => {
+    const reference = 48 + (hour % 5);
+    return point(hour, reference, hour % 7 === 0 ? reference * 0.12 : reference * 0.9, reference * 1.25);
+  });
+
+  for (const horizonHours of [1, 6, 24]) {
+    const guidance = currentPriceGuidance(series, 48.5, { horizonHours });
+    assert.equal(guidance.status, "ok");
+    assert.ok(
+      guidance.entry > 48.5 * 0.5,
+      `${horizonHours}h buy target ${guidance.entry} collapsed toward the outlier print`,
+    );
+    assert.ok(guidance.exit > guidance.entry);
+    assert.ok(
+      guidance.rangePotential < 2,
+      `${horizonHours}h margin ${guidance.rangePotential} is not a tradeable number`,
+    );
+  }
+});
+
+test("a longer horizon still reaches further, just not absurdly", () => {
+  const series = Array.from({ length: 40 }, (_, hour) =>
+    point(hour, 100, 99 - (hour % 8) * 0.5, 101 + (hour % 8) * 0.5),
+  );
+  const short = currentPriceGuidance(series, 100, { horizonHours: 2 });
+  const long = currentPriceGuidance(series, 100, { horizonHours: 12 });
+  assert.ok(long.entry <= short.entry, "a longer horizon should not raise the buy target");
+  assert.ok(long.exit >= short.exit, "a longer horizon should not lower the sell target");
+});

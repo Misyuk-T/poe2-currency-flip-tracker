@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { CandlestickSeries, HistogramSeries, LineStyle, createChart } from "lightweight-charts";
+import { CandlestickSeries, HistogramSeries, LineStyle, PriceScaleMode, createChart } from "lightweight-charts";
 import { buildTrendRows } from "../lib/chart-series.js";
 
 function precisionFor(rows) {
@@ -47,6 +47,13 @@ export default function SpotChart({ points, height = 420, bucketHours: bucketHou
       rightPriceScale: {
         borderColor: "rgba(132, 142, 156, 0.24)",
         scaleMargins: { top: 0.08, bottom: 0.24 },
+        // A single outlier print — one hour that traded at a tenth of the going
+        // rate — stretched a linear axis so far that every ordinary candle
+        // collapsed into a band a few pixels tall. The extremes are real and
+        // stay on the chart; a log scale just stops them from flattening
+        // everything else. It also cannot render zero, so the axis can no longer
+        // wander into negative prices.
+        mode: PriceScaleMode.Logarithmic,
       },
       timeScale: {
         borderColor: "rgba(132, 142, 156, 0.24)",
@@ -64,21 +71,6 @@ export default function SpotChart({ points, height = 420, bucketHours: bucketHou
       lastValueVisible: false,
     });
     range.setData(rows.map((row) => row.range));
-
-    // A price is never negative, yet the axis printed -1000 for a currency whose
-    // low was 500. The cause is not the autoscale — clamping that changes
-    // nothing — it is the bottom scale margin that reserves room for the volume
-    // histogram, which is applied AFTER the data range and drags the visible
-    // floor below it. Shrink the margin to whatever still lands on zero.
-    //   visible span S = (max - min) / (1 - top - bottom)
-    //   floor         = min - S * bottom  >= 0
-    const dataMin = Math.min(...rows.map((row) => row.range.low));
-    const dataMax = Math.max(...rows.map((row) => row.range.high));
-    const topMargin = 0.08;
-    const maxBottom = dataMax > 0 ? (dataMin * (1 - topMargin)) / dataMax : 0;
-    chart.priceScale("right").applyOptions({
-      scaleMargins: { top: topMargin, bottom: Math.max(0, Math.min(0.24, maxBottom)) },
-    });
 
     for (const level of levels) {
       if (!Number.isFinite(level?.price)) continue;

@@ -16,7 +16,12 @@ export default async function sitemap() {
     const { getCurrencyIndex, currencySitemapUrls } = await import("../lib/currency-summary.js");
     index = await getCurrencyIndex();
     entries = currencySitemapUrls(index, { popularIds: popularCurrencies.map((c) => c.id) });
-  } catch {
+  } catch (error) {
+    console.error("[sitemap] currency index read failed; listing popular only", {
+      errorName: error?.name ?? "Error",
+      errorCode: error?.code ?? null,
+      errorMessage: error?.message ?? String(error),
+    });
     index = null;
     entries = popularCurrencies.map((c) => ({ id: c.id, lastModifiedMs: null }));
   }

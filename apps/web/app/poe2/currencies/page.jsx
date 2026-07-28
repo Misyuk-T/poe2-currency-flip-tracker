@@ -24,7 +24,13 @@ export default async function CurrenciesPage() {
   try {
     const { getCurrencyIndex } = await import("../../../lib/currency-summary.js");
     index = await getCurrencyIndex();
-  } catch {
+    if (!index) console.warn("[currency-index] no index; rendering the static list");
+  } catch (error) {
+    console.error("[currency-index] index read failed", {
+      errorName: error?.name ?? "Error",
+      errorCode: error?.code ?? null,
+      errorMessage: error?.message ?? String(error),
+    });
     index = null;
   }
 

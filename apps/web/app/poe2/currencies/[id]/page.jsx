@@ -36,7 +36,18 @@ export default async function CurrencyPage({ params }) {
   try {
     const { getCurrencySummary } = await import("../../../../lib/currency-summary.js");
     summary = await getCurrencySummary(id);
-  } catch {
+    // Every one of these pages renders without market data in production while
+    // /api/radar serves the same markets fine. The bare catch is why nobody
+    // noticed: it turned a failure and a legitimate no-data read into the same
+    // silent fallback. Say which one happened.
+    if (!summary) console.warn("[currency-page] no summary for", id);
+  } catch (error) {
+    console.error("[currency-page] summary read failed", {
+      id,
+      errorName: error?.name ?? "Error",
+      errorCode: error?.code ?? null,
+      errorMessage: error?.message ?? String(error),
+    });
     summary = null;
   }
   const price = priceLine(summary);

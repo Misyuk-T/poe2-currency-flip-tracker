@@ -1709,7 +1709,9 @@ body:has(.home-page) {
 }
 .data-source-badge.official { color: #8ce7c1; border-color: rgba(14, 203, 129, 0.42); background: rgba(14, 203, 129, 0.1); }
 .data-source-badge.fixture { color: var(--rl-gold-bright); background: rgba(240, 169, 59, 0.1); }
-.radar-head h2 { margin: 4px 0 6px; color: var(--rl-ink); font-size: clamp(1.7rem, 3vw, 2.35rem); }
+/* Overrides the global h1 (hero-sized, width-capped) so the dashboard heading
+   keeps the size it had as an h2 — the change was semantic, not visual. */
+.radar-head h1 { margin: 4px 0 6px; max-width: none; color: var(--rl-ink); font-size: clamp(1.7rem, 3vw, 2.35rem); font-weight: 600; }
 .radar-sub { margin: 0; color: var(--rl-ink-soft); max-width: 68ch; font-size: 1rem; line-height: 1.35; }
 
 .radar-head-actions {

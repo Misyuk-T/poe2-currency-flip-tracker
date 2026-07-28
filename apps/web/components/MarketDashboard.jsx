@@ -947,7 +947,9 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                 )}
                 <LeagueMetaChip league={league} />
               </div>
-              <h2>What is moving today</h2>
+              {/* The page's only top-level heading. It was an h2, which left
+                  every dashboard route with no h1 at all. */}
+              <h1>What is moving today</h1>
             </div>
             <div className="radar-head-actions">
               {gameOptions.length > 1 && (

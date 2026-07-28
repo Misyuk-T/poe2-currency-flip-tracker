@@ -1,4 +1,4 @@
-import { iconUrl, popularCurrencies, formatNumber, formatPercent, displayDigits } from "../../../lib/market.js";
+import { iconUrl, popularCurrencies, siteUrl, formatNumber, formatPercent, displayDigits } from "../../../lib/market.js";
 
 // Incremental Static Regeneration: a crawlable static index that still tracks
 // the latest stored hour. Refreshes hourly alongside the per-currency pages.
@@ -8,6 +8,7 @@ export const metadata = {
   title: "PoE2 Currency Prices and Market Pages",
   description:
     "Browse Path of Exile 2 currency markets with hourly prices and 24h moves for Divine Orb, Exalted Orb, Chaos Orb and more.",
+  alternates: { canonical: `${siteUrl}/poe2/currencies` },
 };
 
 function priceLabel(stat, anchor) {

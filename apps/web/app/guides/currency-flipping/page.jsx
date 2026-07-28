@@ -1,9 +1,11 @@
 import GuideLayout from "../../../components/GuideLayout.jsx";
+import { siteUrl } from "../../../lib/market.js";
 
 export const metadata = {
   title: "PoE2 Currency Flipping Guide",
   description:
     "A practical Path of Exile 2 currency flipping guide focused on hourly market ranges, manual price checks and realistic risk.",
+  alternates: { canonical: `${siteUrl}/guides/currency-flipping` },
 };
 
 export default function CurrencyFlippingGuidePage() {

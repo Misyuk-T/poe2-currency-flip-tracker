@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildCxapiFixtures } from "../src/data/fixtures/cxapi-fixtures.js";
 import { normalizeCxDigest } from "../src/domain/cx-market.js";
-import { buildCurrencyIndex, currencySitemapUrls } from "../apps/web/lib/currency-summary.js";
+import { buildCurrencyIndex, currencyIndexFromSnapshot, currencySitemapUrls } from "../apps/web/lib/currency-summary.js";
 
 function fixtureCandles() {
   const all = {};
@@ -78,4 +78,65 @@ test("currencySitemapUrls degrades to popular-only (no lastmod) when there is no
     { id: "divine", lastModifiedMs: null },
     { id: "exalted", lastModifiedMs: null },
   ]);
+});
+
+test("currencyIndexFromSnapshot projects a precomputed snapshot into the index", () => {
+  const index = currencyIndexFromSnapshot(
+    {
+      anchor: "exalted",
+      rows: [
+        {
+          target: "chaos",
+          reference: 47.75,
+          referenceKind: "range-midpoint",
+          low: 40,
+          high: 55,
+          rangePct: 0.3,
+          movement: { h24: -3.5 },
+          samples: 183,
+          stale: false,
+          latestCompletedHour: 1785200400000,
+        },
+      ],
+    },
+    { sourceMode: "official" },
+  );
+  assert.equal(index.anchor, "exalted");
+  assert.equal(index.sourceMode, "official");
+  assert.equal(index.byId.chaos.reference, 47.75);
+  assert.equal(index.byId.chaos.samples, 183);
+  assert.equal(index.byId.chaos.latestCompletedHourMs, 1785200400000);
+  assert.equal(index.latestCompletedHour, new Date(1785200400000).toISOString());
+});
+
+test("markets with no priced hour stay out of the index, and so out of the sitemap", () => {
+  const index = currencyIndexFromSnapshot({
+    anchor: "exalted",
+    rows: [
+      { target: "chaos", reference: 47.75, latestCompletedHour: 1785200400000 },
+      { target: "never-traded", reference: null, samples: 0, latestCompletedHour: null },
+    ],
+  });
+  assert.deepEqual(Object.keys(index.byId), ["chaos"]);
+});
+
+test("an empty or malformed snapshot yields null so the caller can fall back", () => {
+  assert.equal(currencyIndexFromSnapshot(null), null);
+  assert.equal(currencyIndexFromSnapshot({ anchor: "exalted", rows: [] }), null);
+  assert.equal(currencyIndexFromSnapshot({ rows: [{ target: "chaos", reference: 1 }] }), null);
+  assert.equal(currencyIndexFromSnapshot({ anchor: "exalted", rows: [{ target: "x", reference: null }] }), null);
+});
+
+test("a snapshot-backed index still drives the sitemap url set", () => {
+  const index = currencyIndexFromSnapshot({
+    anchor: "exalted",
+    rows: [
+      { target: "chaos", reference: 47.75, latestCompletedHour: 1785200400000 },
+      { target: "fracturing-orb", reference: 3301, latestCompletedHour: 1785196800000 },
+    ],
+  });
+  const urls = currencySitemapUrls(index, { popularIds: ["divine"] });
+  assert.deepEqual(urls.map((u) => u.id).sort(), ["chaos", "divine", "fracturing-orb"]);
+  assert.equal(urls.find((u) => u.id === "divine").lastModifiedMs, null);
+  assert.equal(urls.find((u) => u.id === "chaos").lastModifiedMs, 1785200400000);
 });

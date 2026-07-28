@@ -1,16 +1,13 @@
-Subject: Re: OAuth application request — PoE2 Flip Helper (service:leagues, service:leagues:ladder)
+Subject: Re: OAuth application request — PoE2 Flip Helper
 
 Hi Grinding Gear Games team,
 
-Thanks again for the reply about the Currency Exchange API. Moving to the public
-CDN worked well, and it meant the OAuth application I had applied for was no
-longer needed at the time — so as far as I can tell it was never created, and I
-have no client credentials.
+Thanks for letting me know the Currency Exchange API went public through the CDN.
+That covered what I needed at the time, so the OAuth application never ended up
+being created and I don't have any credentials.
 
-The site has since grown and now has two features that do need OAuth, so I would
-like to pick that application back up. It runs here:
-
-https://exileradar.com/poe2
+The site has grown since then and two new features do need OAuth, so I'd like to
+pick the application back up.
 
 Here are the OAuth details for the application:
 
@@ -20,49 +17,35 @@ Client type: Confidential Client
 Grant type: Client Credentials
 Requested scope: service:leagues, service:leagues:ladder
 
-Both are service scopes used with client_credentials — no account scope, and no
-player sign-in anywhere in the application.
+The site is now live on real Currency Exchange data here:
 
-What I would use them for:
+https://exileradar.com/poe2
 
-  service:leagues — the league list is currently hardcoded in my configuration,
-  so a new league doesn't appear in the tool until I redeploy. This scope lets me
-  pick leagues up automatically along with their start and end dates, and show
-  players how far into the league they are.
+I need service:leagues because my league list is hardcoded in config right now,
+so a new league doesn't show up until I redeploy. With it I can pick up leagues
+and their start and end dates automatically, and show players how far into the
+league they are.
 
-  service:leagues:ladder — I'd like to show aggregate top-1000 ladder progression
-  (median level and levelling pace) next to the currency data, as context for how
-  mature the league's economy is. Snapshots would be stored server-side, but only
-  aggregate metrics would be exposed in the UI or my public API — no character
-  names, account names or individual entries.
+service:leagues:ladder is for a small panel showing aggregate top-1000
+progression, median level and levelling pace, as context for how mature the
+league economy is. I'd store the snapshots server-side but only show aggregates.
+No character names, account names, or individual entries.
 
-To be clear about status: neither integration is built yet — credentials are the
-prerequisite. Once enabled, both would run as scheduled backend jobs.
-`GET /league?realm=poe2&type=main` roughly once a day. For each supported PoE2
-league, the top 1,000 ladder entries roughly every six hours, which is two
-requests of up to 500 entries. Results would be written to my own database and
-the site would read that cache, so visitor traffic would never reach your API.
+Neither feature is built yet, credentials are the blocker. When they are, both
+would run as backend jobs on a schedule: the league list about once a day, and
+the ladder about every six hours per league, which is two requests of 500
+entries. Everything gets cached in my own database and the site reads from that,
+so visitor traffic won't hit your API.
 
-On compliance:
-  - Rate-limit headers are already parsed and followed in the existing API
-    client: it reads X-Rate-Limit-{rule} and -State on every response and
-    honours Retry-After, falling back to the largest remaining penalty when that
-    header is absent.
-  - The User-Agent will follow the documented format,
-    OAuth {client_id}/0.1.0 (contact: misyuktaras@gmail.com), using the client
-    id you issue.
-  - The required notice — "This product isn't affiliated with or endorsed by
-    Grinding Gear Games in any way." — is displayed in the site footer on every
-    page.
-  - The client secret and service token would live server-side only and never
-    reach the browser.
+Same commitments as before. The integration is read-only, with no gameplay
+automation, no game client interaction, and no market actions. It stays a
+non-commercial hobby project with no subscription or paywall. My API client
+already parses the rate-limit headers and honours Retry-After, the required
+third-party notice is in the site footer, and the User-Agent will use whatever
+client id you issue. The secret would stay server-side.
 
-This remains a read-only, non-commercial web application with no subscription or
-paywall, and no interaction with the game client.
-
-I realise the developer documentation currently says new applications aren't
-being processed. If that still applies, I'm happy to wait — I'd just like the
-request on record.
+I saw the docs say new applications aren't being processed at the moment. If
+that's still the case I'm happy to wait, I'd just like the request on record.
 
 Best regards,
 Taras Misyuk

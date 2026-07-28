@@ -46,7 +46,7 @@ function banded(hour, reference, low, high, targetVolume = 1) {
   return { ...point(hour, reference, targetVolume), low, high };
 }
 
-test("buildTrendRows exposes the real observed band, not a fabricated open/close", () => {
+test("the wick is every price touched; the body is the net move inside the window", () => {
   const { rows } = buildTrendRows([
     banded(1, 5, 4, 6),
     banded(2, 7, 3, 9),
@@ -54,24 +54,49 @@ test("buildTrendRows exposes the real observed band, not a fabricated open/close
 
   assert.equal(rows.length, 1);
   const { range } = rows[0];
-  // Widest low and highest high actually seen in the window.
+  // Wick: the widest low and highest high actually seen in the window.
   assert.equal(range.low, 3);
   assert.equal(range.high, 9);
-  // The box spans exactly that band: no invented open/close, so no wick.
-  assert.equal(range.open, range.low);
-  assert.equal(range.close, range.high);
+  // Body: first and last hourly midpoint. Both observed values — not GGG's
+  // opening and closing trades, which the feed does not carry. Previously the
+  // body spanned the whole band, so a wide market drew one enormous block and
+  // the wick was invisible inside it.
+  assert.equal(range.open, 5);
+  assert.equal(range.close, 7);
+  assert.ok(range.open > range.low && range.close < range.high, "the body sits inside the wick");
 });
 
-test("range bars colour by the median's direction against the previous window", () => {
+test("a body edge can never escape the wick it is drawn inside", () => {
+  // An hour whose midpoint sits outside the band it reports (a partial or
+  // inconsistent record) must not draw a body sticking out of its own range.
+  const { rows } = buildTrendRows([
+    banded(1, 50, 4, 6),
+    banded(2, 1, 3, 9),
+  ], 6);
+  const { range } = rows[0];
+  assert.ok(range.open <= range.high && range.open >= range.low);
+  assert.ok(range.close <= range.high && range.close >= range.low);
+});
+
+test("candles colour by their own body, not against the previous window", () => {
   const { rows } = buildTrendRows([
     banded(1, 10, 9, 11),
-    banded(2, 4, 3, 5),
-    banded(3, 20, 19, 21),
-  ], 1);
+    banded(2, 12, 3, 13),
+    banded(3, 8, 7, 21),
+    banded(4, 6, 5, 9),
+  ], 2);
 
-  assert.equal(rows[0].range.color, UP_COLOR); // first window has no prior -> treated as up
-  assert.equal(rows[1].range.color, DOWN_COLOR); // 10 -> 4
-  assert.equal(rows[2].range.color, UP_COLOR); // 4 -> 20
+  // Bucket one: 10 -> 12 rose. Bucket two: 8 -> 6 fell. Colour now describes
+  // what happened inside the candle, which is what its shape already shows.
+  assert.equal(rows[0].range.color, UP_COLOR);
+  assert.equal(rows[1].range.color, DOWN_COLOR);
+});
+
+test("a single-hour bucket collapses the body to a line, having no move to show", () => {
+  const { rows } = buildTrendRows([banded(1, 10, 9, 11)], 1);
+  assert.equal(rows[0].range.open, rows[0].range.close);
+  assert.equal(rows[0].range.low, 9);
+  assert.equal(rows[0].range.high, 11);
 });
 
 test("an hour with no usable band falls back to its midpoint rather than vanishing", () => {

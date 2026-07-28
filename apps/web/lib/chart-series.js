@@ -25,18 +25,27 @@ export const DOWN_COLOR = "#f6465d";
 /**
  * Build a trend series from official hourly records.
  *
- * GGG publishes a low/high range per hour and NO open/close, so this emits two
- * things and is careful about which is which:
+ * GGG publishes a low/high range per hour and NO open or close, so a true OHLC
+ * candle is impossible. A bucket spanning several hours, however, does contain
+ * a first and a last hourly midpoint — both observed values — and that is
+ * enough for a candle whose parts all mean something:
  *
- * - `range`: the real traded band — the lowest low and highest high actually
- *   observed in the bucket. Drawn as a plain box (a candlestick body spanning
- *   low->high with no wick), NOT as an OHLC candle: an OHLC body would have to
- *   invent an open and a close, which is exactly the fabrication this replaced.
- * - `line`: the median of the hourly midpoints, as an indicative trend. Median
- *   rather than last, so one extreme fill can't yank the whole bucket.
+ * - wick (`low`..`high`): every price the market actually touched in the bucket.
+ * - body (`open`..`close`): the first and last hourly midpoints inside it, i.e.
+ *   the net move across the bucket. NOT GGG's opening and closing trades, which
+ *   do not exist in the feed — the naming is lightweight-charts', the meaning is
+ *   ours, and the label under the chart says so.
+ * - `line`: the median of the hourly midpoints, so one extreme hour cannot yank
+ *   the trend the way first/last can.
  *
- * Direction colouring compares this bucket's median against the previous
- * bucket's — a real comparison between two observed values.
+ * Previously the body spanned the whole low..high band with the wick hidden
+ * inside it, which made a wide market render as one enormous block and threw
+ * away the shape the bucket actually had. Colour follows the body — a real
+ * comparison of two observed midpoints — not the previous bucket.
+ *
+ * At a 1-hour bucket there is no sub-structure to summarise: first and last are
+ * the same midpoint, so the body collapses to a line across the wick. That is
+ * the honest rendering of "one observation, no measurable move within it".
  */
 export function buildTrendRows(points, explicitBucketHours) {
   const usable = (points ?? [])
@@ -58,6 +67,7 @@ export function buildTrendRows(points, explicitBucketHours) {
     const bucket = buckets.at(-1);
     if (bucket?.completedHour === bucketEnd) {
       bucket.references.push(point.reference);
+      bucket.last = point.reference;
       bucket.volume += pointVolume(point);
       bucket.low = Math.min(bucket.low, low);
       bucket.high = Math.max(bucket.high, high);
@@ -65,6 +75,8 @@ export function buildTrendRows(points, explicitBucketHours) {
       buckets.push({
         completedHour: bucketEnd,
         references: [point.reference],
+        first: point.reference,
+        last: point.reference,
         volume: pointVolume(point),
         low,
         high,
@@ -72,24 +84,24 @@ export function buildTrendRows(points, explicitBucketHours) {
     }
   }
 
-  const rows = buckets.map((bucket, index) => {
+  const rows = buckets.map((bucket) => {
     const reference = median(bucket.references);
-    const prior = median(buckets[index - 1]?.references ?? []) ?? reference;
     const time = Math.floor(bucket.completedHour / 1000);
-    const up = reference >= prior;
+    const up = bucket.last >= bucket.first;
     const color = up ? UP_COLOR : DOWN_COLOR;
     return {
-      // open/close are the band edges, not a fabricated open/close: this draws
-      // a box covering exactly the observed low..high, with no wick.
       range: {
         time,
-        open: bucket.low,
-        close: bucket.high,
+        // Body: first and last observed midpoint in the bucket. Wick: the full
+        // touched range. Clamped so a body edge can never sit outside the range
+        // it is drawn inside.
+        open: Math.min(Math.max(bucket.first, bucket.low), bucket.high),
+        close: Math.min(Math.max(bucket.last, bucket.low), bucket.high),
         low: bucket.low,
         high: bucket.high,
         color,
         borderColor: color,
-        wickColor: color,
+        wickColor: "rgba(160, 170, 184, 0.85)",
       },
       line: { time, value: reference },
       volume: {

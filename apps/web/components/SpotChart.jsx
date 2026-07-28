@@ -63,12 +63,26 @@ export default function SpotChart({ points, height = 420, bucketHours: bucketHou
       },
     });
 
-    // The observed low..high band, drawn as a body-only box. Added before the
-    // midpoint line so the line reads on top of its own range.
+    // Body = first/last hourly midpoint in the bucket, wick = the full touched
+    // range (see buildTrendRows). Added before the midpoint line so the line
+    // reads on top of its own candles.
     const range = chart.addSeries(CandlestickSeries, {
       priceFormat: { type: "price", precision, minMove },
       priceLineVisible: false,
       lastValueVisible: false,
+      // A price is never negative, but the bottom scale margin that makes room
+      // for the volume histogram was extending the axis past zero on markets
+      // with a wide range — the scale printed -1000 for a currency whose low was
+      // 500. Clamp the autoscale floor at zero instead of reserving space below
+      // the data.
+      autoscaleInfoProvider: (original) => {
+        const info = original();
+        if (!info?.priceRange) return info;
+        return {
+          ...info,
+          priceRange: { ...info.priceRange, minValue: Math.max(0, info.priceRange.minValue) },
+        };
+      },
     });
     range.setData(rows.map((row) => row.range));
 

@@ -1275,10 +1275,19 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                   </div>
                 </div>
                 <SpotChart points={chartHistory} bucketHours={horizon} loading={historyLoading} />
-                <p className="rt-note">
-                  Bars are the real traded range (lowest to highest official price in each window), green when the
-                  midpoint rose against the previous window. The gold line is the median midpoint. These are not
-                  OHLC candles — GGG publishes no open or close price, so none is drawn.
+                {/* Was a three-line paragraph in prime space. The disclosure has
+                    to stay — GGG publishes no open or close — but it belongs in
+                    a line you can skip, with the detail on hover/focus. */}
+                <p
+                  className="rt-note"
+                  title={
+                    "GGG publishes each completed hour's lowest and highest traded price, plus volume — no open, " +
+                    "no close, no tick order. The wick is every price the hour touched; the body is the first and " +
+                    "last hourly midpoint in the window, so it shows the net move, not an opening and closing trade. " +
+                    "The gold line is the median midpoint."
+                  }
+                >
+                  Wick = prices touched · body = first→last midpoint · <abbr title="GGG publishes no open or close price, so no true OHLC candle is possible.">not OHLC</abbr>
                 </p>
               </div>
 

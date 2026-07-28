@@ -77,8 +77,26 @@ export const popularCurrencies = [
   { id: "fracturing-orb", name: "Fracturing Orb", summary: "Expensive market where stale prices can be costly." },
 ];
 
+// GGG's own display names, keyed by trade short id. Built once from the catalog
+// this module already imports.
+const catalogNames = new Map((catalog.items ?? []).map((item) => [item.id, item.name]));
+
+/**
+ * The item's real name, falling back to a title-cased id only for something the
+ * catalog has never heard of.
+ *
+ * The fallback used to be the whole answer beyond the six popular currencies,
+ * which is fine in passing but not in a page title: it capitalises every dash-
+ * separated word and cannot restore punctuation, so 600+ indexable pages read
+ * "Perfect Orb Of Transmutation" and "Perfect Jewellers Orb" — wrong case, no
+ * apostrophe — in the <title>, the h1 and the structured data.
+ */
 export function currencyName(id) {
-  return popularCurrencies.find((currency) => currency.id === id)?.name ?? titleize(id);
+  return (
+    popularCurrencies.find((currency) => currency.id === id)?.name ??
+    catalogNames.get(id) ??
+    titleize(id)
+  );
 }
 
 export function titleize(id) {

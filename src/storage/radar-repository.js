@@ -9,6 +9,8 @@
  * in tests with no real database.
  */
 
+import { canonicalizeCandle } from "../domain/cx-market.js";
+
 const WINDOW_DAYS = 30;
 // Per-pair cap on the radar read: the UI needs a 25-point sparkline and 24h
 // metrics, so the latest ~48 completed hours per pair is ample. This bounds a
@@ -71,10 +73,13 @@ export function candleFromRow(r, { league } = {}) {
   };
 }
 
-/** Group flat candles into { [pairId]: candles[] } sorted by hour (radar input). */
-export function groupCandlesByPair(candles) {
+/** Group flat candles into { [pairId]: candles[] } sorted by hour (radar input).
+ *  Pass `canonicalId` to fold history stored under a superseded currency id into
+ *  the market it actually belongs to (see canonicalizeCandle). */
+export function groupCandlesByPair(candles, { canonicalId } = {}) {
   const byPair = {};
-  for (const candle of candles) {
+  for (const stored of candles) {
+    const candle = canonicalizeCandle(stored, canonicalId);
     (byPair[candle.pairId] ??= []).push(candle);
   }
   for (const arr of Object.values(byPair)) arr.sort((a, b) => a.completedHour - b.completedHour);

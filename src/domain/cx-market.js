@@ -87,6 +87,40 @@ export function normalizeCxDigest(payload, { digestId, league = null, leagues = 
 }
 
 /** Return target price in anchor units; inverse orientation is handled exactly. */
+/**
+ * Rewrite a stored candle's currency ids through a resolver.
+ *
+ * Ingest canonicalises ids as it writes, so a market's history splits the day
+ * we learn a better id for it: rows written before the change keep the raw
+ * Metadata path and show up as a second, phantom market alongside the real one
+ * until they age out of the retention window. Applying the current mapping on
+ * read merges the two halves immediately, and makes any future correction to
+ * the identity map apply retroactively instead of needing a migration.
+ *
+ * `volume` and `stock` are keyed by currency id too, so they move with it.
+ */
+export function canonicalizeCandle(candle, canonicalId) {
+  if (typeof canonicalId !== "function" || !candle) return candle;
+  const base = canonicalId(candle.base);
+  const quote = canonicalId(candle.quote);
+  if (base === candle.base && quote === candle.quote) return candle;
+  return {
+    ...candle,
+    base,
+    quote,
+    pairId: canonicalPairId(base, quote),
+    volume: remapCurrencyKeys(candle.volume, canonicalId),
+    stock: remapCurrencyKeys(candle.stock, canonicalId),
+  };
+}
+
+function remapCurrencyKeys(record, canonicalId) {
+  if (!record || typeof record !== "object") return record;
+  const out = {};
+  for (const [id, value] of Object.entries(record)) out[canonicalId(id)] = value;
+  return out;
+}
+
 export function candleForAnchor(candle, target, anchor) {
   if (!candle || target === anchor) return null;
   const direct = candle.base === target && candle.quote === anchor;

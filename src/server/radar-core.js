@@ -25,11 +25,15 @@ async function computeRadar({
   names = {},
   icons = {},
   categories = {},
+  canonicalId,
   now = Date.now(),
   radarMaxHotTargets = 8,
 }) {
   const candles = await repo.readCandleWindow();
-  const byPair = groupCandlesByPair(candles);
+  // Fold history stored under a superseded currency id into the market it
+  // belongs to, so a correction to the identity map takes effect on the next
+  // read rather than after the old rows age out of the window.
+  const byPair = groupCandlesByPair(candles, { canonicalId });
   const rowsByAnchor = Object.fromEntries(
     anchors.map((anchor) => [anchor, buildMarketRadar(byPair, { anchor, names, icons, categories, now })]),
   );
@@ -96,6 +100,7 @@ export async function buildRadarPayloads({
   names = {},
   icons = {},
   categories = {},
+  canonicalId,
   catalogManifest = [],
   catalogById = new Map(),
   source = null,
@@ -109,6 +114,7 @@ export async function buildRadarPayloads({
     names,
     icons,
     categories,
+    canonicalId,
     now,
     radarMaxHotTargets,
   });
@@ -140,10 +146,11 @@ export async function buildHotlistPayload({
   anchors,
   shortlist = [],
   names = {},
+  canonicalId,
   now = Date.now(),
   radarMaxHotTargets = 8,
 }) {
-  const { hotlist } = await computeRadar({ repo, anchors, shortlist, names, now, radarMaxHotTargets });
+  const { hotlist } = await computeRadar({ repo, anchors, shortlist, names, canonicalId, now, radarMaxHotTargets });
   return { entries: hotlist, scheduler: { enabled: false } };
 }
 

@@ -24,7 +24,7 @@ import {
   buildHistoryPayload,
   buildHotlistPayload,
 } from "../../../src/server/radar-core.js";
-import { CORE_CURRENCY_IDS, ingestFixtures, ingestFixtureIncrement, ingestLiveStreams } from "../../../src/server/radar-ingest.js";
+import { CORE_CURRENCY_IDS, ingestFixtures, ingestFixtureIncrement, ingestLiveStreams, translatorForGame } from "../../../src/server/radar-ingest.js";
 import { createCxapiProvider } from "../../../src/providers/create-cxapi-provider.js";
 import { getSql, resetSql, withDbRetry } from "./db.js";
 import { createMemoryRepository } from "./memory-repo.js";
@@ -268,6 +268,7 @@ function radarBuildInput(ctx, game, repo, now = Date.now()) {
     names: identity.names,
     icons: identity.icons,
     categories: identity.categories,
+    canonicalId: translatorForGame(game.id),
     catalogManifest: isPoe2 ? ctx.catalogManifest : [],
     catalogById: isPoe2 ? ctx.catalogById : new Map(),
     source: { sourceMode: sourceMode(ctx.config), providerMode: ctx.config.providerMode },

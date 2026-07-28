@@ -1,5 +1,5 @@
 import { candleForAnchor } from "./cx-market.js";
-import { humanize } from "./cx-identity.js";
+import { humanize } from "./humanize.js";
 
 const HOUR = 3600_000;
 

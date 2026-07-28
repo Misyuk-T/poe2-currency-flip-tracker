@@ -13,14 +13,19 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-// `fileURLToPath` is given the URL's href, not the URL object. Next bundles this
-// module into a runtime whose `URL` global is a different realm's class, so the
-// `instanceof URL` check inside node:url fails on an object that is a perfectly
-// good URL — "The path argument must be of type string or an instance of URL.
-// Received an instance of URL". A string sidesteps the identity check entirely.
-const IDENTITY_PATHS = Object.freeze({
-  poe1: fileURLToPath(new URL("../data/cx-identity-poe1.json", import.meta.url).href),
-  poe2: fileURLToPath(new URL("../data/cx-identity-poe2.json", import.meta.url).href),
+import { humanize } from "./humanize.js";
+
+export { humanize };
+
+// Resolved inside load(), not at module scope. Next's bundled page runtime
+// gives `import.meta.url` a value the URL constructor rejects outright
+// (ERR_INVALID_URL), so doing this eagerly meant merely *importing* this module
+// threw there — and the failure surfaced far from here, as pages that silently
+// lost their data. Behind the read's own try/catch, the same environment now
+// degrades to an empty map instead.
+const IDENTITY_FILES = Object.freeze({
+  poe1: "../data/cx-identity-poe1.json",
+  poe2: "../data/cx-identity-poe2.json",
 });
 
 const stores = new Map();
@@ -35,7 +40,8 @@ function load(game = "poe2") {
   if (cached) return cached;
   let items;
   try {
-    items = JSON.parse(readFileSync(IDENTITY_PATHS[resolvedGame], "utf8")).items ?? {};
+    const path = fileURLToPath(new URL(IDENTITY_FILES[resolvedGame], import.meta.url).href);
+    items = JSON.parse(readFileSync(path, "utf8")).items ?? {};
   } catch {
     items = {};
   }
@@ -125,16 +131,4 @@ export function identityCategories(game = "poe2") {
     if (e.shortId) out[e.shortId] = category;
   }
   return out;
-}
-
-/** "Metadata/Items/Currency/CurrencyRerollRare" -> "Currency Reroll Rare". */
-export function humanize(metadataId) {
-  const leaf = String(metadataId).split("/").pop() ?? "";
-  const words = leaf
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
-    .replace(/([A-Za-z])(\d)/g, "$1 $2")
-    .split(/[\s_]+/)
-    .filter(Boolean);
-  return words.join(" ") || String(metadataId);
 }

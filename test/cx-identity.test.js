@@ -116,19 +116,19 @@ test("no trade short id is claimed by two Metadata ids", () => {
   }
 });
 
-test("data files are resolved from a URL string, never a URL object", () => {
-  // Production proof that this matters: every /poe2/currencies/<id> page
-  // rendered without market data because importing this chain threw
-  // ERR_INVALID_ARG_TYPE — "must be ... an instance of URL. Received an
-  // instance of URL" — under Next's bundled runtime, where the URL global is a
-  // different realm's class than the one node:url brand-checks against. Passing
-  // the href sidesteps the identity check, so guard the shape at the source.
+test("no data file is resolved at module scope, and humanize needs no data at all", () => {
+  // Both halves of the production failure. Importing cx-identity.js threw in
+  // Next's bundled page runtime, where `import.meta.url` is not a URL the
+  // constructor accepts — and market-radar.js dragged that import in for
+  // humanize(), a pure string function, so every currency page lost its data.
   for (const file of ["src/domain/cx-identity.js", "src/domain/catalog.js"]) {
     const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
     assert.doesNotMatch(
       source,
-      /fileURLToPath\(new URL\([^;]*\)\)/,
-      `${file} passes a URL object to fileURLToPath; pass .href instead`,
+      /^(?:const|let|var)\s+\w+\s*=\s*fileURLToPath/m,
+      `${file} resolves a path at module scope; resolve it inside the reader instead`,
     );
   }
+  const radar = readFileSync(new URL("../src/domain/market-radar.js", import.meta.url), "utf8");
+  assert.doesNotMatch(radar, /from "\.\/cx-identity\.js"/, "market-radar must not import the identity reader");
 });

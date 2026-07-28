@@ -15,17 +15,16 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { catalogTaxonomy } from "./catalog-taxonomy.js";
 
-// `fileURLToPath` is given the URL's href, not the URL object. Next bundles this
-// module into a runtime whose `URL` global is a different realm's class, so the
-// `instanceof URL` check inside node:url fails on an object that is a perfectly
-// good URL — "The path argument must be of type string or an instance of URL.
-// Received an instance of URL". A string sidesteps the identity check entirely.
-const CATALOG_PATH = fileURLToPath(new URL("../data/catalog-poe2.json", import.meta.url).href);
+// Resolved inside loadCatalog(), not at module scope: `import.meta.url` is not
+// a usable URL in Next's bundled page runtime, and an eager read there threw on
+// import alone. See the same note in cx-identity.js.
+const CATALOG_FILE = "../data/catalog-poe2.json";
 
 /** @returns {Promise<{game:string, items:{id:string,name:string,category:string,image:string|null}[]}>} */
 export async function loadCatalog() {
   try {
-    return JSON.parse(await readFile(CATALOG_PATH, "utf8"));
+    const path = fileURLToPath(new URL(CATALOG_FILE, import.meta.url).href);
+    return JSON.parse(await readFile(path, "utf8"));
   } catch {
     return { game: "poe2", items: [] };
   }

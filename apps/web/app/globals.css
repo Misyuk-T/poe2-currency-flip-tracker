@@ -2840,7 +2840,20 @@ body:has(.home-page) {
 }
 .radar-light .guidance-grid span, .radar-light .guidance-grid small { color: var(--rl-muted); font-size: 0.8rem; }
 .radar-light .guidance-grid strong { color: var(--rl-ink); font-size: 1.16rem; }
-.radar-light .guidance-empty { color: var(--rl-muted); padding: 12px; }
+.radar-light .guidance-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px;
+  border: 1px solid var(--rl-border);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--rl-ink-soft);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+.radar-light .guidance-empty strong { color: var(--rl-ink); font-size: 0.95rem; }
+.radar-light .guidance-empty-note { color: var(--rl-muted); font-size: 0.78rem; }
 
 /* Burger + off-canvas drawer. The sidebar is a 258px column that, together
    with the header controls, stops fitting well before the old 920px cut — at

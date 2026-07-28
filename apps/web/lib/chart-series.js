@@ -125,3 +125,30 @@ export function buildTrendRows(points, explicitBucketHours) {
 
   return { rows, bucketHours };
 }
+
+/**
+ * The price band the market actually lives in, ignoring a thin tail at each end.
+ *
+ * Some hours report a low two orders of magnitude under the going rate — one
+ * odd print, not a level. Autoscaling to those left every ordinary candle
+ * squeezed into the top fifth of the pane, even on a log axis. Scaling to the
+ * bulk instead keeps the chart legible; the outlier wicks are still drawn, they
+ * simply run past the edge rather than dictating the whole view.
+ *
+ * Returns null when trimming would change nothing, so a well-behaved market
+ * keeps plain autoscaling.
+ */
+export function bulkPriceRange(rows, { tail = 0.02 } = {}) {
+  const lows = rows.map((row) => row.range.low).filter((value) => Number.isFinite(value) && value > 0).sort((a, b) => a - b);
+  const highs = rows.map((row) => row.range.high).filter((value) => Number.isFinite(value) && value > 0).sort((a, b) => a - b);
+  if (lows.length < 8 || highs.length < 8) return null;
+  const at = (sorted, q) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * q)))];
+  const minValue = at(lows, tail);
+  const maxValue = at(highs, 1 - tail);
+  if (!(minValue > 0) || !(maxValue > minValue)) return null;
+  // Only worth trimming when the tail is genuinely distorting the view.
+  const full = at(highs, 1) / at(lows, 0);
+  const trimmed = maxValue / minValue;
+  if (!(full > trimmed * 2)) return null;
+  return { minValue, maxValue };
+}

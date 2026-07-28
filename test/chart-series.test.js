@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildTrendRows, UP_COLOR, DOWN_COLOR } from "../apps/web/lib/chart-series.js";
+import { buildTrendRows, bulkPriceRange, UP_COLOR, DOWN_COLOR } from "../apps/web/lib/chart-series.js";
 
 const HOUR = 3_600_000;
 
@@ -103,4 +103,30 @@ test("an hour with no usable band falls back to its midpoint rather than vanishi
   const { rows } = buildTrendRows([point(1, 8), point(2, 12)], 6);
   assert.equal(rows[0].range.low, 8);
   assert.equal(rows[0].range.high, 12);
+});
+
+test("the axis scales to where the market trades, not to a single odd print", () => {
+  // Chaos Orb on production: hours reporting a low of 0.24 against a price of
+  // 48 pushed every real candle into a sliver at the top of the pane, even on a
+  // log axis.
+  const rows = Array.from({ length: 30 }, (_, i) => banded(i, 48, 47, 49));
+  rows[7] = banded(7, 48, 0.24, 49);
+  const { rows: built } = buildTrendRows(rows, 1);
+  const range = bulkPriceRange(built);
+  assert.ok(range, "a two-orders-of-magnitude tail should be trimmed");
+  assert.ok(range.minValue > 1, `min ${range.minValue} still follows the outlier`);
+  assert.ok(range.maxValue >= 49);
+});
+
+test("a well-behaved market keeps plain autoscaling", () => {
+  const { rows } = buildTrendRows(
+    Array.from({ length: 30 }, (_, i) => banded(i, 48, 46 + (i % 3), 50 + (i % 3))),
+    1,
+  );
+  assert.equal(bulkPriceRange(rows), null);
+});
+
+test("too few points to judge a tail leaves the scale alone", () => {
+  const { rows } = buildTrendRows([banded(1, 48, 1, 49), banded(2, 48, 47, 49)], 1);
+  assert.equal(bulkPriceRange(rows), null);
 });

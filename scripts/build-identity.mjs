@@ -17,9 +17,38 @@
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import catalog from "../src/data/catalog-poe2.json" with { type: "json" };
+import { chooseShortIdOwner, tradedIdsFromDigest } from "../src/domain/identity-collision.js";
 
 const REPOE_URL = "https://repoe-fork.github.io/poe2/base_items.min.json";
+const CX_DIGEST_URL = "https://web.poecdn.com/api/currency-exchange/poe2";
 const OUT = fileURLToPath(new URL("../src/data/cx-identity-poe2.json", import.meta.url));
+
+/**
+ * Metadata ids GGG currently lists markets for, used to settle name collisions.
+ * The live edge may not be published yet, so walk back a few completed hours.
+ * Best-effort: an empty set just means collisions fall back to a stable sort.
+ */
+async function fetchTradedIds({ hoursBack = 6 } = {}) {
+  const currentHour = Math.floor(Date.now() / 3600_000) * 3600;
+  for (let back = 2; back <= hoursBack; back += 1) {
+    const hour = currentHour - back * 3600;
+    try {
+      const res = await fetch(`${CX_DIGEST_URL}/${hour}`, {
+        headers: { Accept: "application/json", "User-Agent": "exileradar.com identity build" },
+      });
+      if (!res.ok) continue;
+      const ids = tradedIdsFromDigest(await res.json());
+      if (ids.size > 0) {
+        console.log(`traded ids from hour ${hour}: ${ids.size}`);
+        return ids;
+      }
+    } catch (err) {
+      console.warn(`digest hour ${hour} failed: ${err.message}`);
+    }
+  }
+  console.warn("no CX digest available — name collisions will fall back to a stable sort");
+  return new Set();
+}
 
 /** RePoE visual_identity.dds_file "Art/2DItems/.../X.dds" -> "2DItems/.../X". */
 function artFromDds(dds) {
@@ -45,18 +74,33 @@ async function main() {
   if (!res.ok) throw new Error(`RePoE returned ${res.status}`);
   const base = await res.json();
 
+  // Names are NOT unique across Metadata ids (quest/bench/legacy copies), so
+  // decide who owns each short id up front from the live exchange rather than
+  // letting RePoE's key order decide it. See src/domain/identity-collision.js.
+  const tradedIds = await fetchTradedIds();
+  const byName = new Map();
+  for (const [metaId, entry] of Object.entries(base)) {
+    if (!entry?.name) continue;
+    const key = nameKey(entry.name);
+    if (!catalogByName.has(key)) continue;
+    if (!byName.has(key)) byName.set(key, []);
+    byName.get(key).push(metaId);
+  }
+  const shortIdOwner = new Map(); // metaId -> shortId, one owner per short id
+  let contested = 0;
+  for (const [key, metaIds] of byName) {
+    const owner = chooseShortIdOwner(metaIds, tradedIds);
+    if (owner) shortIdOwner.set(owner, catalogByName.get(key).id);
+    if (metaIds.length > 1) contested += 1;
+  }
+
   const items = {};
-  const shortIdOwner = new Map(); // shortId -> metaId, to keep the bridge unique
   let named = 0;
   let iconed = 0;
   for (const [metaId, entry] of Object.entries(base)) {
     if (!entry?.name) continue;
     const cat = catalogByName.get(nameKey(entry.name));
-    // Only claim a short id if no earlier metadata already owns it (defensive;
-    // exact-name joins should already be 1:1).
-    let shortId = cat?.id ?? null;
-    if (shortId && shortIdOwner.has(shortId)) shortId = null;
-    else if (shortId) shortIdOwner.set(shortId, metaId);
+    const shortId = shortIdOwner.get(metaId) ?? null;
     items[metaId] = {
       name: entry.name,
       class: entry.item_class ?? null,
@@ -77,7 +121,7 @@ async function main() {
     items,
   };
   writeFileSync(OUT, JSON.stringify(out, null, 0));
-  console.log(`wrote ${named} items (${iconed} with catalog icons) -> ${OUT}`);
+  console.log(`wrote ${named} items (${iconed} with catalog icons, ${contested} contested names) -> ${OUT}`);
 }
 
 main().catch((err) => {

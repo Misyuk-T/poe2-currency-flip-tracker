@@ -93,3 +93,25 @@ test("PoE1 core currencies keep the canonical short-id bridge", () => {
   assert.equal(identityNames("poe1").exalted, "Exalted Orb");
   assert.ok(identityIcons("poe1").exalted);
 });
+
+test("the level-1 uncut skill gem the exchange trades carries the catalog short id", () => {
+  // Its quest twin shares the display name and used to win the name join, which
+  // left the traded item uncanonicalised and stranded in a one-item category
+  // called "Uncut Skill Gem Stackable" instead of joining levels 2-20.
+  assert.equal(resolveCurrency("Metadata/Items/Gems/SkillGemUncut1").shortId, "uncut-skill-gem-1");
+  assert.equal(resolveCurrency("Metadata/Items/Gems/SkillGemUncutQuest1").shortId, null);
+  assert.equal(metadataForShortId("uncut-skill-gem-1"), "Metadata/Items/Gems/SkillGemUncut1");
+});
+
+test("no trade short id is claimed by two Metadata ids", () => {
+  for (const game of ["poe1", "poe2"]) {
+    const owners = new Map();
+    const items = JSON.parse(readFileSync(new URL(`../src/data/cx-identity-${game}.json`, import.meta.url), "utf8")).items;
+    for (const [meta, entry] of Object.entries(items)) {
+      if (!entry.shortId) continue;
+      const existing = owners.get(entry.shortId);
+      assert.equal(existing, undefined, `${entry.shortId} claimed by ${existing} and ${meta}`);
+      owners.set(entry.shortId, meta);
+    }
+  }
+});

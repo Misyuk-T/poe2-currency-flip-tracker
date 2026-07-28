@@ -1362,19 +1362,39 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                         )}
                       </div>
 
-                      <p className="rt-section-label">Historical evidence</p>
+                      {/* Replayed in order: the buy has to be touched before the
+                          sell counts. The old version asked only whether some
+                          later high reached the sell price, so windows where the
+                          buy never filled counted in the plan's favour. */}
+                      <p className="rt-section-label">If you had run this plan</p>
                       <div className="guidance-grid compact">
                         <article>
-                          <span>Reached sell price</span>
-                          <strong>{formatPercent(guidance.hitRate, { signed: false, maximumFractionDigits: 0 })}</strong>
-                          <small>over {guidance.horizonSamples || guidance.samples} past {horizon}h windows</small>
+                          <span>Buy price touched</span>
+                          <strong>{formatPercent(guidance.entryFillRate, { signed: false, maximumFractionDigits: 0 })}</strong>
+                          <small>of {guidance.replaySamples || guidance.samples} past {horizon}h windows</small>
                         </article>
                         <article>
-                          <span>Usual wait</span>
-                          <strong>{formatDurationHours(guidance.medianTimeToHitHours)}</strong>
-                          <small>when it did</small>
+                          <span>Then sell price</span>
+                          <strong>{formatPercent(guidance.exitAfterEntryRate, { signed: false, maximumFractionDigits: 0 })}</strong>
+                          <small>of the {guidance.filledSamples} that bought</small>
+                        </article>
+                        <article>
+                          <span>Held for</span>
+                          <strong>{formatDurationHours(guidance.medianHoursHeld)}</strong>
+                          <small>median, buy to sell</small>
+                        </article>
+                        <article>
+                          <span>Worst dip after buying</span>
+                          <strong className={(guidance.medianAdverseMove ?? 0) < 0 ? "down" : ""}>
+                            {formatPercent(guidance.medianAdverseMove, { maximumFractionDigits: 1 })}
+                          </strong>
+                          <small>median</small>
                         </article>
                       </div>
+                      <p className="rt-fineprint">
+                        Touched, not filled — an hourly low reaching your price means the market traded there, not
+                        that your order cleared at that size.
+                      </p>
                     </>
                   ) : (
                     <p className="guidance-empty">

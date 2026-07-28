@@ -3022,3 +3022,7 @@ body:has(.radar-page) {
   background: rgba(214, 179, 122, .08);
   box-shadow: inset 0 0 0 7px rgba(214, 179, 122, .04);
 }
+
+/* Caveat that has to travel with the replayed numbers above it: small, quiet,
+   and never separated from them. */
+.rt-fineprint { margin: 6px 0 0; color: var(--rl-ink-soft); font-size: 0.72rem; line-height: 1.35; }

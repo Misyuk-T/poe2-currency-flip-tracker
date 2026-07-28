@@ -134,15 +134,9 @@ export function currentPriceGuidance(points, currentPrice, { maxSamples = 25, mi
   const adjustedExitFactor = exitFactor + expansion.exit;
   const entry = currentPrice * adjustedEntryFactor;
   const exit = currentPrice * adjustedExitFactor;
-  const hitRate = horizon.status === "ok"
-    ? horizon.windows.filter((point) => point.futureHighFactor >= adjustedExitFactor).length / horizon.windows.length
+  const replay = horizon.status === "ok"
+    ? replayPlan(horizon.windows, { entryFactor: adjustedEntryFactor, exitFactor: adjustedExitFactor })
     : null;
-  const hitTimes = horizon.status === "ok"
-    ? horizon.windows.map((point) => timeToHit(point, adjustedExitFactor)).filter(Number.isFinite)
-    : [];
-  const adverseMoves = horizon.status === "ok"
-    ? horizon.windows.map((point) => point.futureLowFactor - 1).filter(Number.isFinite)
-    : [];
   return {
     status: "ok",
     samples: ratios.length,
@@ -154,10 +148,75 @@ export function currentPriceGuidance(points, currentPrice, { maxSamples = 25, mi
     entryDiscount: adjustedEntryFactor - 1,
     exitPremium: adjustedExitFactor - 1,
     rangePotential: entry > 0 ? exit / entry - 1 : null,
-    hitRate,
-    medianTimeToHitHours: hitTimes.length ? median(hitTimes) : null,
-    medianAdverseMove: adverseMoves.length ? median(adverseMoves) : null,
+    entryFillRate: replay?.entryFillRate ?? null,
+    exitAfterEntryRate: replay?.exitAfterEntryRate ?? null,
+    medianHoursHeld: replay?.medianHoursHeld ?? null,
+    medianAdverseMove: replay?.medianAdverseMove ?? null,
+    replaySamples: replay?.samples ?? 0,
+    filledSamples: replay?.filled ?? 0,
   };
+}
+
+/**
+ * Replay the displayed buy -> sell plan over past windows, in order.
+ *
+ * The previous version counted a window as evidence whenever some future high
+ * reached the sell price. It never asked whether the buy would have filled, so a
+ * window where the high came and went before the price ever fell to the entry
+ * counted in favour of the plan. The wait was measured from the moment of the
+ * decision rather than from the fill, for the same reason.
+ *
+ * Two deliberate conservative choices:
+ *  - The sell must land in a LATER hour than the buy. GGG publishes an hour's
+ *    low and high with no ordering between them, so a sell in the same hour
+ *    cannot be shown to have followed the buy.
+ *  - "Touched", never "filled": an hourly low reaching our price says the market
+ *    traded there, not that our order cleared the queue at that size.
+ */
+export function replayPlan(windows, { entryFactor, exitFactor }) {
+  const results = (windows ?? []).map((window) => replayWindow(window, entryFactor, exitFactor));
+  const filled = results.filter((result) => result.filled);
+  const held = filled.map((result) => result.hoursHeld).filter(Number.isFinite);
+  const adverse = filled.map((result) => result.worstAfterEntry).filter(Number.isFinite);
+  return {
+    samples: results.length,
+    filled: filled.length,
+    entryFillRate: results.length ? filled.length / results.length : null,
+    // Conditional on the buy having filled — the only population for which
+    // "did it then reach the target" is a meaningful question.
+    exitAfterEntryRate: filled.length ? filled.filter((result) => result.reachedExit).length / filled.length : null,
+    medianHoursHeld: held.length ? median(held) : null,
+    medianAdverseMove: adverse.length ? median(adverse) : null,
+  };
+}
+
+function replayWindow(window, entryFactor, exitFactor) {
+  const base = window?.start?.reference;
+  if (!positive(base)) return { filled: false };
+  const entryPrice = base * entryFactor;
+  const exitPrice = base * exitFactor;
+  const future = window.future ?? [];
+
+  const entryIndex = future.findIndex((point) => positive(point.low) && point.low <= entryPrice);
+  if (entryIndex === -1) return { filled: false };
+  const entryTime = pointTime(future[entryIndex]);
+
+  let worstAfterEntry = 0;
+  for (let i = entryIndex + 1; i < future.length; i++) {
+    const point = future[i];
+    if (positive(point.low)) worstAfterEntry = Math.min(worstAfterEntry, point.low / entryPrice - 1);
+    if (positive(point.high) && point.high >= exitPrice) {
+      const exitTime = pointTime(point);
+      return {
+        filled: true,
+        reachedExit: true,
+        hoursHeld:
+          Number.isFinite(exitTime) && Number.isFinite(entryTime) ? Math.max(0, (exitTime - entryTime) / 3600_000) : null,
+        worstAfterEntry,
+      };
+    }
+  }
+  return { filled: true, reachedExit: false, hoursHeld: null, worstAfterEntry };
 }
 
 function horizonWindows(points, { maxSamples, minSamples, horizonHours }) {
@@ -196,18 +255,6 @@ function horizonExpansion(ratios, horizonHours) {
     entry: median(entryMoves) * multiplier,
     exit: median(exitMoves) * multiplier,
   };
-}
-
-function timeToHit(window, factor) {
-  if (!positive(window?.start?.reference)) return null;
-  const startTime = pointTime(window.start);
-  for (const point of window.future) {
-    if (positive(point.high) && point.high / window.start.reference >= factor) {
-      const t = pointTime(point);
-      return Number.isFinite(t) && Number.isFinite(startTime) ? Math.max(0, (t - startTime) / 3600_000) : null;
-    }
-  }
-  return null;
 }
 
 function pointTime(point) {

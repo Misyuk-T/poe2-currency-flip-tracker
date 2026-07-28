@@ -2645,9 +2645,7 @@ body:has(.home-page) {
    so the two controls in this panel read as the same kind of thing. */
 .qty-segments {
   display: inline-flex;
-  align-self: flex-end;
   gap: 3px;
-  margin-bottom: 10px;
   padding: 3px;
   border: 1px solid var(--rl-border);
   border-radius: 10px;
@@ -2667,6 +2665,18 @@ body:has(.home-page) {
 }
 .qty-segments button[aria-pressed="true"] { background: var(--rl-gold); color: #1c1206; }
 .qty-segments button:focus-visible { outline: 2px solid var(--rl-cyan); outline-offset: 2px; }
+
+/* Qty and the plan horizon sit beside their headings rather than as their own
+   tiers — the aside had four stacked bordered blocks competing as peers. */
+.qty-control, .horizon-control { display: inline-flex; align-items: center; gap: 8px; }
+.qty-control > span, .horizon-control-label {
+  color: var(--rl-muted);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.guidance-header { align-items: center; }
 
 .trade-answer {
   display: grid;

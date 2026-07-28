@@ -190,10 +190,6 @@ function KeyCurrencyCard({ card, emptyLabel = "Waiting for data" }) {
   );
 }
 
-function pricePlaceholder(value) {
-  return Number.isFinite(value) ? formatNumber(value, { maximumFractionDigits: displayDigits(value) }) : "price";
-}
-
 function unitRates(rows, fallbackAnchor = "exalted") {
   const anchor = rows.find((row) => row.anchor)?.anchor ?? fallbackAnchor;
   const rates = { exalted: null, chaos: null, divine: null, [anchor]: 1 };
@@ -1221,18 +1217,21 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
               </header>
               <div className="rt-chart">
                 <div className="chart-title-row">
-                  <h3>{selected.targetName} / {titleize(chartUnit)}</h3>
-                  <div className="horizon-segments" role="group" aria-label="Chart timeframe">
-                    {HORIZON_OPTIONS.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        aria-pressed={horizon === option.value}
-                        onClick={() => setHorizon(option.value)}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
+                  <h3>Price history · {titleize(chartUnit)}</h3>
+                  <div className="horizon-control">
+                    <span className="horizon-control-label">Plan horizon</span>
+                    <div className="horizon-segments" role="group" aria-label="Plan horizon">
+                      {HORIZON_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          aria-pressed={horizon === option.value}
+                          onClick={() => setHorizon(option.value)}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
                 <SpotChart points={chartHistory} bucketHours={horizon} loading={historyLoading} />
@@ -1246,18 +1245,9 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
               {selected && (
                 <aside className="rt-plan" aria-label="Trade guidance">
                   <div className="guidance-header">
-                    <div>
-                      <h3>Trade plan</h3>
-                      <p className="rt-subtle">{currentWorkingPrice.source === "manual" ? "Using your live price" : "Using hourly midpoint"}</p>
-                    </div>
-                  </div>
-
-                  {historyLoading ? (
-                    <div className="rt-plan-loading">
-                      <span className="rt-spinner" aria-label="Loading trade plan" />
-                    </div>
-                  ) : guidance.status === "ok" && entryQuote?.value != null && exitQuote?.value != null ? (
-                    <>
+                    <h3>Trade plan</h3>
+                    <div className="qty-control">
+                      <span>Qty</span>
                       <div className="qty-segments" role="group" aria-label="Quantity">
                         {QUANTITY_OPTIONS.map((option) => (
                           <button
@@ -1270,24 +1260,35 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                           </button>
                         ))}
                       </div>
+                    </div>
+                  </div>
 
+                  {historyLoading ? (
+                    <div className="rt-plan-loading">
+                      <span className="rt-spinner" aria-label="Loading trade plan" />
+                    </div>
+                  ) : guidance.status === "ok" && entryQuote?.value != null && exitQuote?.value != null ? (
+                    <>
                       <div className="trade-answer">
                         <article className="buy">
-                          <span className="ta-head">Buy<i className="ta-arrow" aria-hidden="true">→</i></span>
+                          <span className="ta-head">Buy</span>
                           <strong><QuotePill quote={scaleQuote(entryQuote, quantity)} /></strong>
                           <small>{formatPercent(Math.abs(guidance.entryDiscount), { signed: false })} below market</small>
                         </article>
                         <article className="sell">
-                          <span className="ta-head">Sell<i className="ta-arrow" aria-hidden="true">→</i></span>
+                          <span className="ta-head">Sell</span>
                           <strong><QuotePill quote={scaleQuote(exitQuote, quantity)} /></strong>
                           <small>{formatPercent(guidance.exitPremium, { signed: false })} above market</small>
                         </article>
                       </div>
 
                       <div className="working-price-line">
-                        <span>Market now</span>
+                        <span>Plan basis</span>
                         <strong><QuotePill quote={workingQuote} compact /></strong>
-                        <small>{currentWorkingPrice.ageMs == null ? currentWorkingPrice.sourceLabel : formatAge(currentWorkingPrice.ageMs)}</small>
+                        <small>
+                          {currentWorkingPrice.source === "manual" ? "your in-game price" : "official hourly midpoint"}
+                          {currentWorkingPrice.ageMs == null ? "" : ` · ${formatAge(currentWorkingPrice.ageMs)}`}
+                        </small>
                       </div>
 
                       {Number.isFinite(planSpread) && (
@@ -1309,7 +1310,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                             onKeyDown={(event) => {
                               if (event.key === "Enter") applyManualPrice();
                             }}
-                            placeholder={pricePlaceholder(currentWorkingPrice.value)}
+                            placeholder="e.g. 142.5"
                             type="text"
                             value={draftPrice}
                           />
@@ -1321,7 +1322,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                         )}
                       </div>
 
-                      <p className="rt-section-label">Live stats</p>
+                      <p className="rt-section-label">Historical evidence</p>
                       <div className="guidance-grid compact">
                         <article>
                           <span>Reached sell price</span>

@@ -3060,3 +3060,7 @@ body:has(.radar-page) {
 .rt-view-toggle { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--rl-border); border-radius: 8px; }
 .rt-view-toggle button { padding: 4px 10px; font-size: 0.76rem; border: 0; border-radius: 6px; background: transparent; color: var(--rl-ink-soft); cursor: pointer; }
 .rt-view-toggle button[aria-pressed="true"] { background: var(--rl-gold); color: #1b1200; font-weight: 600; }
+
+/* The basis age is normally just provenance; once it is old enough to change
+   the answer it stops being a footnote. */
+.basis-stale { color: var(--rl-gold-bright); font-weight: 600; }

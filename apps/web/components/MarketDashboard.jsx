@@ -89,6 +89,10 @@ const DISPLAY_CURRENCIES = [
   { id: "chaos", label: "Chaos Orb" },
   { id: "divine", label: "Divine Orb" },
 ];
+// Past this, the basis is old enough that the plan built on it deserves a
+// visible caveat rather than a quiet timestamp. The feed itself is hourly, so
+// anything inside a couple of hours is the system working normally.
+const STALE_BASIS_MS = 3 * 3600_000;
 const CONFIG_CACHE_MS = 5 * 60_000;
 const RADAR_CACHE_MS = 5 * 60_000;
 const HISTORY_CACHE_MS = 10 * 60_000;
@@ -826,6 +830,16 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
       { price: guidance.exit * factor, label: "Sell", color: "#f6465d" },
     ].filter((level) => Number.isFinite(level.price));
   }, [chartUnit, currentWorkingPrice.anchorValue, guidance, rates, selected?.anchor]);
+  // The reported range behind the basis, in whatever unit the panel is showing.
+  const basisRangeLabel = useMemo(() => {
+    if (!selected || !Number.isFinite(selected.low) || !Number.isFinite(selected.high)) return null;
+    const toQuote = (value) => quoteFromAnchor(value, { anchor: selected.anchor, displayCurrency, rates, target: selected.target });
+    const low = toQuote(selected.low);
+    const high = toQuote(selected.high);
+    if (!Number.isFinite(low?.value) || !Number.isFinite(high?.value)) return null;
+    const fmt = (value) => formatNumber(value, { maximumFractionDigits: displayDigits(value) });
+    return `${fmt(low.value)}–${fmt(high.value)}`;
+  }, [displayCurrency, rates, selected]);
   const workingQuote = selected
     ? quoteFromAnchor(currentWorkingPrice.anchorValue, { anchor: selected.anchor, displayCurrency, rates, target: selected.target })
     : null;
@@ -1371,12 +1385,31 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                         </article>
                       </div>
 
+                      {/* This line said "official hourly midpoint", which stopped
+                          being true when the centre became geometric — and read
+                          as an apology for the number above it. Naming the range
+                          it came from is both accurate and more use: on a market
+                          reporting 31 to 68, the width is the single most
+                          important thing to know before trusting any centre. */}
                       <div className="working-price-line">
                         <span>Plan basis</span>
                         <strong><QuotePill quote={workingQuote} compact /></strong>
                         <small>
-                          {currentWorkingPrice.source === "manual" ? "your in-game price" : "official hourly midpoint"}
-                          {currentWorkingPrice.ageMs == null ? "" : ` · ${formatAge(currentWorkingPrice.ageMs)}`}
+                          {currentWorkingPrice.source === "manual"
+                            ? "your in-game price"
+                            : basisRangeLabel
+                              ? `centre of ${basisRangeLabel} · GGG's last completed hour`
+                              : "GGG's last completed hour"}
+                          {currentWorkingPrice.ageMs == null ? null : (
+                            <>
+                              {" · "}
+                              {/* Quiet while the feed is doing its job; loud once
+                                  the basis is old enough to change the answer. */}
+                              <span className={currentWorkingPrice.ageMs > STALE_BASIS_MS ? "basis-stale" : undefined}>
+                                {formatAge(currentWorkingPrice.ageMs)}
+                              </span>
+                            </>
+                          )}
                         </small>
                       </div>
 
@@ -1441,7 +1474,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     <p className="guidance-empty">
                       {guidance.status === "insufficient-history"
                         ? `Not enough completed-hour history yet (${guidance.samples ?? 0}/3).`
-                        : "Enter a current price, or wait for a usable hourly midpoint."}
+                        : "Enter a current price, or wait for a completed hour with trades in it."}
                     </p>
                   )}
                 </aside>

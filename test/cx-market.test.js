@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeCxDigest, candleForAnchor, canonicalPairId } from "../src/domain/cx-market.js";
+import { normalizeCxDigest, candleForAnchor, canonicalPairId, rangeCenter } from "../src/domain/cx-market.js";
 
 const payload = {
   next_change_id: 7200,
@@ -18,7 +18,7 @@ test("cxapi digest filters league and normalizes a range without fake close", ()
   assert.equal(d.candles[0].pairId, canonicalPairId("chaos", "divine"));
   assert.equal(d.candles[0].low, 0.01);
   assert.equal(d.candles[0].high, 0.0125);
-  assert.equal(d.candles[0].referenceKind, "range-midpoint-proxy");
+  assert.equal(d.candles[0].referenceKind, "range-center-geometric");
   assert.equal("close" in d.candles[0], false);
 });
 
@@ -29,6 +29,31 @@ test("anchor projection handles direct and inverse pair orientation", () => {
   const inverse = candleForAnchor(c, "divine", "chaos");
   assert.equal(inverse.low, 80);
   assert.equal(inverse.high, 100);
+});
+
+test("a pair's storage orientation cannot change the price it implies", () => {
+  // The production bug: the stored midpoint was inverted directly, which yields
+  // the harmonic mean of the flipped range, not its centre. 83 of 627 live
+  // markets were quoting a price near the bottom of their own reported band —
+  // Ancient Potent Liquid Melancholy showed 3.64 against a reported 2 to 20.
+  const c = normalizeCxDigest(payload, { digestId: 3600, league: "L" }).candles[0];
+  const direct = candleForAnchor(c, "chaos", "divine");
+  const inverse = candleForAnchor(c, "divine", "chaos");
+
+  assert.ok(Math.abs(inverse.reference - 1 / direct.reference) < 1e-12, "quoting the pair the other way must invert the price exactly");
+  for (const candle of [direct, inverse]) {
+    assert.ok(candle.reference > candle.low && candle.reference < candle.high, "the centre must sit inside its own range");
+    const width = (candle.high - candle.low) / candle.reference;
+    assert.ok(width < 2, `width ${width} exceeds what a centred range can produce`);
+  }
+});
+
+test("the range centre resists one extreme end without leaving the range", () => {
+  assert.ok(Math.abs(rangeCenter(31, 68) - 45.91) < 0.01);
+  // A narrow range is barely touched: 46-50 centres at 47.96, not 48.
+  assert.ok(Math.abs(rangeCenter(46, 50) - 47.96) < 0.01);
+  assert.equal(rangeCenter(0, 10), null);
+  assert.equal(rangeCenter(10, Number.NaN), null);
 });
 
 test("invalid ratios remain null instead of fabricated", () => {

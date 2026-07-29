@@ -61,7 +61,7 @@ const DEFAULT_CATEGORY = "Currency";
 const DEFAULT_SORT = "family:desc";
 const SORT_OPTIONS = [
   { value: "family:desc", label: "Item family" },
-  { value: "spread:desc", label: "Best profit" },
+  { value: "spread:desc", label: "Widest spread" },
   { value: "activity:desc", label: "Activity" },
   { value: "buy:asc", label: "Buy: cheapest first" },
   { value: "sell:desc", label: "Sell: highest first" },
@@ -270,6 +270,17 @@ function scaleQuote(quote, multiplier) {
   return { ...quote, value: quote.value * multiplier };
 }
 
+/**
+ * How wide the latest completed hour's reported range was, as a fraction of its
+ * low.
+ *
+ * This column used to be called "Profit (buy → sell)" and read as a return you
+ * could earn by buying at the low and selling at the high. GGG publishes an
+ * hour's low and high with no ordering between them, so there is no way to know
+ * the low came first — the same reason the modal's replay refuses to count a
+ * sell in the buying hour. It is a spread, and a spread is an opportunity to
+ * look at, not a profit to book.
+ */
 function rowSpread(row) {
   if (!Number.isFinite(row?.low) || !Number.isFinite(row?.high) || row.low <= 0 || row.high <= row.low) return null;
   return row.high / row.low - 1;
@@ -310,7 +321,9 @@ function goldMetrics(row, goldPerAnchor) {
  * when gold data is missing.
  */
 function goldTooltip(row) {
-  const parts = ["Buy at the range low, sell at the range high."];
+  const parts = [
+    "Distance from the hour's lowest reported price to its highest. GGG does not publish which came first, so this is the size of the opportunity, not a completed round trip.",
+  ];
   if (Number.isFinite(row?._profitPer100k)) {
     parts.push(`≈ ${formatNumber(row._profitPer100k, { maximumFractionDigits: 1 })} exalted profit per 100,000 gold of trade tax.`);
   }
@@ -1092,9 +1105,9 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     </th>
                     <th className="right" scope="col">
                       <SortHeader
-                        label="Profit"
-                        sublabel="(buy → sell)"
-                        title="Return on the flip: buy at the range low, sell at the range high. Hover a row for the gold-efficiency detail (exalted profit per 100k gold of trade tax)."
+                        label="Spread"
+                        sublabel="(low → high)"
+                        title="How far the latest completed hour's reported range ran, low to high. GGG publishes no ordering inside an hour, so this is the size of the gap — not a profit anyone booked. Open a market to see how often the two ends were actually reachable in sequence. Hover a row for the gold-efficiency detail."
                         column="spread"
                         activeKey={sortKey}
                         direction={sortDirection}

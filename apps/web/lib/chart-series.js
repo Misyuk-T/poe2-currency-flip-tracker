@@ -19,6 +19,22 @@ function median(values) {
     : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
+/** Matches the quantiles the buy and sell targets are derived from, so the wick
+ *  shows the band the plan comes out of. */
+const WICK_LOW_QUANTILE = 0.25;
+const WICK_HIGH_QUANTILE = 0.75;
+
+/** Linear-interpolated quantile over a copy of the values. */
+function quantile(values, q) {
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!sorted.length) return null;
+  const position = (sorted.length - 1) * q;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  if (lower === upper) return sorted[lower];
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
+}
+
 export const UP_COLOR = "#0ecb81";
 export const DOWN_COLOR = "#f6465d";
 // No measurable move inside the bucket — neither a rise nor a fall.
@@ -32,7 +48,8 @@ export const FLAT_COLOR = "#8b93a1";
  * a first and a last hourly midpoint — both observed values — and that is
  * enough for a candle whose parts all mean something:
  *
- * - wick (`low`..`high`): every price the market actually touched in the bucket.
+ * - wick (`low`..`high`): the band the bucket's hours typically spanned — the
+ *   25th percentile of their lows to the 75th of their highs.
  * - body (`open`..`close`): the first and last hourly midpoints inside it, i.e.
  *   the net move across the bucket. NOT GGG's opening and closing trades, which
  *   do not exist in the feed — the naming is lightweight-charts', the meaning is
@@ -44,6 +61,17 @@ export const FLAT_COLOR = "#8b93a1";
  * inside it, which made a wide market render as one enormous block and threw
  * away the shape the bucket actually had. Colour follows the body — a real
  * comparison of two observed midpoints — not the previous bucket.
+ *
+ * The wick was the minimum of the lows and the maximum of the highs, and on a
+ * market where roughly one hour in seven reports a low near zero, every bucket
+ * of six contained one: every wick ran the full height of the pane, identical
+ * to every other, telling the reader nothing. A quantile band varies per bucket
+ * and answers the question the wick is there for — how wide was this window,
+ * compared with the ones beside it. Those extreme hours are still in the data
+ * and still drive the plan's own numbers; they no longer flatten the picture.
+ *
+ * The quantiles match the ones the buy and sell targets come from, so the wick
+ * shows the band the plan is drawn out of.
  *
  * At a 1-hour bucket there is no sub-structure to summarise: first and last are
  * the same midpoint, so the body collapses to a line across the wick. That is
@@ -71,8 +99,8 @@ export function buildTrendRows(points, explicitBucketHours) {
       bucket.references.push(point.reference);
       bucket.last = point.reference;
       bucket.volume += pointVolume(point);
-      bucket.low = Math.min(bucket.low, low);
-      bucket.high = Math.max(bucket.high, high);
+      bucket.lows.push(low);
+      bucket.highs.push(high);
     } else {
       buckets.push({
         completedHour: bucketEnd,
@@ -80,14 +108,19 @@ export function buildTrendRows(points, explicitBucketHours) {
         first: point.reference,
         last: point.reference,
         volume: pointVolume(point),
-        low,
-        high,
+        lows: [low],
+        highs: [high],
       });
     }
   }
 
   const rows = buckets.map((bucket) => {
     const reference = median(bucket.references);
+    // A quarter of the bucket's hours dipped at least this low, a quarter
+    // reached at least this high. With one hour in a bucket, both collapse to
+    // that hour's own reported band.
+    const wickLow = quantile(bucket.lows, WICK_LOW_QUANTILE);
+    const wickHigh = quantile(bucket.highs, WICK_HIGH_QUANTILE);
     const time = Math.floor(bucket.completedHour / 1000);
     // A single-hour bucket has first === last: no move was measured, so colouring
     // it green claims a rise that was never observed. Neutral is the honest
@@ -101,10 +134,10 @@ export function buildTrendRows(points, explicitBucketHours) {
         // Body: first and last observed midpoint in the bucket. Wick: the full
         // touched range. Clamped so a body edge can never sit outside the range
         // it is drawn inside.
-        open: Math.min(Math.max(bucket.first, bucket.low), bucket.high),
-        close: Math.min(Math.max(bucket.last, bucket.low), bucket.high),
-        low: bucket.low,
-        high: bucket.high,
+        open: Math.min(Math.max(bucket.first, wickLow), wickHigh),
+        close: Math.min(Math.max(bucket.last, wickLow), wickHigh),
+        low: wickLow,
+        high: wickHigh,
         color,
         borderColor: color,
         wickColor: "rgba(160, 170, 184, 0.85)",

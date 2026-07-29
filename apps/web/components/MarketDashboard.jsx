@@ -1280,12 +1280,15 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                   className="rt-note"
                   title={
                     "GGG publishes each completed hour's lowest and highest traded price, plus volume — no open, " +
-                    "no close, no tick order. The wick is every price the hour touched; the body is the first and " +
-                    "last hourly midpoint in the window, so it shows the net move, not an opening and closing trade. " +
-                    "The gold line is the median midpoint."
+                    "no close, no tick order. The wick spans the 25th percentile of the window's hourly lows to the " +
+                    "75th of its highs: the band those hours typically covered. Drawing the outright minimum and " +
+                    "maximum instead made every wick on a wide market run the full height of the chart, identical to " +
+                    "every other. Individual hours did range further, and those hours still drive the plan's numbers. " +
+                    "The body is the first and last hourly midpoint in the window, so it shows the net move, not an " +
+                    "opening and closing trade."
                   }
                 >
-                  Wick = hour's reported low–high · body = first→last midpoint · <abbr title="The midpoint is (low + high) / 2, a derived proxy — not a traded price. GGG publishes no open or close, so no true OHLC candle is possible.">not OHLC</abbr>
+                  Wick = typical hourly range (25–75%) · body = first→last midpoint · <abbr title="The midpoint is (low + high) / 2, a derived proxy — not a traded price. GGG publishes no open or close, so no true OHLC candle is possible.">not OHLC</abbr>
                 </p>
               </div>
 

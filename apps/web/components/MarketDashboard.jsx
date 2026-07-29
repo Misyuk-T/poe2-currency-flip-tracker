@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import SpotChart from "./SpotChart.jsx";
+import ReachLadder from "./ReachLadder.jsx";
 import LeagueMetaChip from "./LeagueMetaChip.jsx";
 import LeaguePulsePanel from "./LeaguePulsePanel.jsx";
 import PocketValuator from "./PocketValuator.jsx";
@@ -451,6 +452,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   const [category, setCategory] = useState(DEFAULT_CATEGORY);
   const [displayCurrency, setDisplayCurrency] = useState(null);
   const [view, setView] = useState("list"); // "list" (table, default) | "chart" (trade view)
+  const [chartView, setChartView] = useState("reach");
   const [horizon, setHorizon] = useState(6);
   const [quantity, setQuantity] = useState(1);
   const [navOpen, setNavOpen] = useState(false);
@@ -1268,7 +1270,17 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
               </header>
               <div className="rt-chart">
                 <div className="chart-title-row">
-                  <h3>Price history · {titleize(chartUnit)}</h3>
+                  {/* The toggle beside it already names the view, so the heading
+                      only has to say what the numbers are denominated in. */}
+                  <h3>Price · {titleize(chartUnit)}</h3>
+                  {/* Reach leads, because it answers the question the panel next
+                      to it is making a claim about. History stays one click away
+                      for regime context — what the market was doing last week is
+                      a different question from where it reliably trades. */}
+                  <div className="rt-view-toggle" role="group" aria-label="Chart view">
+                    <button type="button" aria-pressed={chartView === "reach"} onClick={() => setChartView("reach")}>Reach</button>
+                    <button type="button" aria-pressed={chartView === "history"} onClick={() => setChartView("history")}>History</button>
+                  </div>
                   <div className="horizon-control">
                     <span className="horizon-control-label">Plan horizon</span>
                     <div className="horizon-segments" role="group" aria-label="Plan horizon">
@@ -1285,7 +1297,19 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     </div>
                   </div>
                 </div>
-                <SpotChart points={chartHistory} bucketHours={horizon} loading={historyLoading} levels={chartLevels} />
+                {chartView === "reach" ? (
+                  <ReachLadder
+                    points={chartHistory}
+                    horizonHours={horizon}
+                    basis={chartLevels.find((level) => level.label === "Now")?.price}
+                    buyPrice={chartLevels.find((level) => level.label === "Buy")?.price}
+                    sellPrice={chartLevels.find((level) => level.label === "Sell")?.price}
+                    unit={titleize(chartUnit)}
+                    loading={historyLoading}
+                  />
+                ) : (
+                  <SpotChart points={chartHistory} bucketHours={horizon} loading={historyLoading} levels={chartLevels} />
+                )}
                 {/* Was a three-line paragraph in prime space. The disclosure has
                     to stay — GGG publishes no open or close — but it belongs in
                     a line you can skip, with the detail on hover/focus. */}
@@ -1301,7 +1325,9 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     "opening and closing trade."
                   }
                 >
-                  Wick = typical hourly range (25–75%) · body = first→last midpoint · <abbr title="The midpoint is (low + high) / 2, a derived proxy — not a traded price. GGG publishes no open or close, so no true OHLC candle is possible.">not OHLC</abbr>
+                  {chartView === "reach"
+                    ? "Share of past windows in which the market reached each price — reached, not filled."
+                    : "Wick = typical hourly range (25–75%) · body = first→last midpoint · not OHLC"}
                 </p>
               </div>
 

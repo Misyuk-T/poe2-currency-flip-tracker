@@ -3033,3 +3033,30 @@ body:has(.radar-page) {
 /* Caveat that has to travel with the replayed numbers above it: small, quiet,
    and never separated from them. */
 .rt-fineprint { margin: 6px 0 0; color: var(--rl-ink-soft); font-size: 0.72rem; line-height: 1.35; }
+
+/* Reach ladder — the mirrored empirical curves that replace the candle glyph as
+   the default view in the trade modal. */
+.reach-wrap { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.reach-legend { display: flex; justify-content: space-between; font-size: 0.74rem; color: var(--rl-ink-soft); }
+.reach-key::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.reach-key.buy::before { background: rgba(14, 203, 129, 0.75); }
+.reach-key.sell::before { background: rgba(246, 70, 93, 0.7); }
+/* Letterboxed inside whatever height the card leaves, rather than forcing its
+   own aspect ratio and spilling past the card's bottom edge. */
+.reach-svg { width: 100%; height: 100%; flex: 1; min-height: 0; display: block; }
+.reach-grid line { stroke: rgba(132, 142, 156, 0.16); stroke-width: 1; }
+.reach-axis { fill: var(--rl-ink-soft); font-size: 10px; }
+.reach-bar.buy { fill: rgba(14, 203, 129, 0.55); }
+.reach-bar.sell { fill: rgba(246, 70, 93, 0.5); }
+.reach-mark line { stroke-width: 1; stroke-dasharray: 4 3; }
+.reach-mark text { font-size: 11px; font-weight: 600; }
+.reach-mark.buy line { stroke: #0ecb81; } .reach-mark.buy text { fill: #0ecb81; }
+.reach-mark.sell line { stroke: #f6465d; } .reach-mark.sell text { fill: #f6465d; }
+.reach-mark.now line { stroke: rgba(183, 189, 198, 0.8); } .reach-mark.now text { fill: #b7bdc6; }
+.reach-readout { margin: 0; font-size: 0.82rem; line-height: 1.4; color: var(--rl-ink-soft); }
+.reach-readout strong { color: var(--rl-ink); }
+.reach-empty { display: grid; place-items: center; color: var(--rl-ink-soft); font-size: 0.86rem; text-align: center; padding: 0 24px; }
+/* View switch between the reach ladder and the chronological chart. */
+.rt-view-toggle { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--rl-border); border-radius: 8px; }
+.rt-view-toggle button { padding: 4px 10px; font-size: 0.76rem; border: 0; border-radius: 6px; background: transparent; color: var(--rl-ink-soft); cursor: pointer; }
+.rt-view-toggle button[aria-pressed="true"] { background: var(--rl-gold); color: #1b1200; font-weight: 600; }

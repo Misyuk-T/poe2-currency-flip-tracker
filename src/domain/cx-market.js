@@ -140,7 +140,18 @@ export function candleForAnchor(candle, target, anchor) {
   //
   // Recomputing here also repairs history: every stored candle is re-centred on
   // read, so nothing needs migrating.
-  return { ...candle, target, anchor, low, high, reference: rangeCenter(low, high) };
+  // referenceKind travels with the value: a stored candle written before this
+  // change still says "range-midpoint-proxy", and leaving that label on a
+  // recomputed number would be a smaller version of the same lie.
+  return {
+    ...candle,
+    target,
+    anchor,
+    low,
+    high,
+    reference: rangeCenter(low, high),
+    referenceKind: "range-center-geometric",
+  };
 }
 
 /**
@@ -150,9 +161,16 @@ export function candleForAnchor(candle, target, anchor) {
  * midpoint does not have that property, which is how a pair's orientation ended
  * up changing its price.
  *
- * It also refuses to be dragged by one extreme end the way a mean is: for a
- * reported 31–68 it reads 45.9 rather than 49.5. Narrow ranges are unaffected —
- * 46–50 gives 47.96 against 48.
+ * Narrow ranges barely move: 46–50 gives 47.96 against an arithmetic 48, and a
+ * reported 31–68 reads 45.9 rather than 49.5.
+ *
+ * Be clear about what it does NOT fix. Being multiplicative, it is pulled
+ * HARDER than an arithmetic mean by a low outlier: an hour reporting 1–20 reads
+ * 4.47 where the arithmetic midpoint says 10.5. Neither is robust when a single
+ * print sits an order of magnitude under the rest, because a low and a high are
+ * all the feed gives us — there is no median of the hour to fall back on. The
+ * invariance is the reason to prefer this one; robustness is a separate problem
+ * and not solvable at this layer.
  *
  * It is a CENTRE OF A RANGE, not a traded price. Nothing here observed a trade
  * at this number.

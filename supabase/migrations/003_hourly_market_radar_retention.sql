@@ -1,18 +1,14 @@
 -- Retention for the hourly market radar.
 --
--- The Phase-B storage migration already created public.prune_old_storage(...)
--- and a daily pg_cron job (`prune-old-storage`) that calls it. We extend the
--- SAME function (identical signature) so the existing cron job keeps calling it
--- unchanged and now also prunes hourly_market_candles at the same 30-day horizon
--- as market_points.
+-- Keep the function signature used by the existing daily pg_cron job. This
+-- repository now owns only the hourly radar table, so a clean project must not
+-- depend on the retired Phase-B market_points/snapshot_runs schema.
 create or replace function public.prune_old_storage(market_point_days integer default 30, snapshot_run_days integer default 90)
 returns void
 language sql
 security definer
 set search_path to 'public'
 as $function$
-  delete from public.market_points         where observed_at    < now() - make_interval(days => market_point_days);
-  delete from public.snapshot_runs         where started_at     < now() - make_interval(days => snapshot_run_days);
   delete from public.hourly_market_candles where completed_hour  < now() - make_interval(days => market_point_days);
 $function$;
 

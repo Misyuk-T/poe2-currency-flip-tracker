@@ -10,6 +10,15 @@
 -- (To rotate later: select vault.update_secret(id, '<NEW>') ... )
 
 create extension if not exists pg_net;
+create extension if not exists pg_cron;
+
+-- Daily retention. Named jobs are updated in place when this migration is
+-- replayed, so clean provisioning and existing projects share the same setup.
+select cron.schedule(
+  'prune-old-storage',
+  '17 3 * * *',
+  $$select public.prune_old_storage();$$
+);
 
 -- Hourly, five minutes past the hour, so the upstream completed hour has settled.
 select cron.schedule(

@@ -10,8 +10,6 @@ language sql
 security definer
 set search_path to 'public'
 as $function$
-  delete from public.market_points         where observed_at    < now() - make_interval(days => market_point_days);
-  delete from public.snapshot_runs         where started_at     < now() - make_interval(days => snapshot_run_days);
   delete from public.hourly_market_candles where completed_hour  < now() - interval '7 days';
 $function$;
 

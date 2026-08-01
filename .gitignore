@@ -11,4 +11,5 @@ apps/web/public/icons/*
 .DS_Store
 .idea/
 .vercel
+supabase/.temp/
 .github/workflows/data-refresh.yml

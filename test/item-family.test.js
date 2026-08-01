@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { itemFamily, sortByFamily } from "../apps/web/lib/item-family.js";
+import { itemFamily, sortByExchangeOrder, sortByFamily } from "../apps/web/lib/item-family.js";
 
 test("itemFamily strips the tier prefix and ranks the tiers", () => {
   assert.deepEqual(itemFamily("Regal Orb"), { family: "regal orb", tier: 1 });
@@ -52,4 +52,15 @@ test("rows with no usable price sort last instead of throwing", () => {
 test("sortByFamily is stable for equally-valued rows in one family", () => {
   const rows = [row("Alpha Orb", 5), row("Beta Orb", 5)];
   assert.deepEqual(sortByFamily(rows).map((e) => e.targetName), ["Alpha Orb", "Beta Orb"]);
+});
+
+test("sortByExchangeOrder preserves client category, section and item order", () => {
+  const rows = [
+    { targetName: "second category", categoryOrder: 1, sectionOrder: 0, itemOrder: 0 },
+    { targetName: "second item", categoryOrder: 0, sectionOrder: 0, itemOrder: 1 },
+    { targetName: "first item", categoryOrder: 0, sectionOrder: 0, itemOrder: 0 },
+  ];
+  assert.deepEqual(sortByExchangeOrder(rows).map(({ targetName }) => targetName), [
+    "first item", "second item", "second category",
+  ]);
 });

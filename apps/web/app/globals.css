@@ -1870,6 +1870,8 @@ body:has(.home-page) {
   background: rgba(0, 0, 0, 0.22); color: var(--rl-ink); font: inherit; font-weight: 500;
 }
 .rc-count { margin-left: auto; align-self: center; color: var(--rl-muted); font-size: 0.8rem; font-weight: 700; }
+.rc-sort .custom-select { min-width: 180px; }
+.rc-sort .custom-select-button { min-height: 44px; }
 
 .custom-select {
   position: relative;
@@ -2362,6 +2364,16 @@ body:has(.home-page) {
 .radar-table tbody tr { cursor: pointer; }
 .radar-table tbody tr:hover { background: rgba(240, 169, 59, 0.05); }
 .radar-table tbody tr.active { background: linear-gradient(90deg, rgba(240, 169, 59, 0.12), rgba(240, 169, 59, 0.035)); }
+.radar-table tbody tr.exchange-section-row { cursor: default; background: rgba(240, 169, 59, 0.075); }
+.radar-table tbody tr.exchange-section-row:hover { background: rgba(240, 169, 59, 0.075); }
+.radar-table tbody tr.exchange-section-row td {
+  padding: 9px 14px 8px;
+  color: var(--rl-gold-bright);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .radar-table tbody tr:last-child td { border-bottom: 0; }
 .cell-item { display: flex; align-items: center; gap: 10px; font-weight: 650; color: var(--rl-ink); }
 .cell-item img { width: 31px; height: 31px; flex: none; border-radius: 8px; background: rgba(0, 0, 0, 0.22); border: 1px solid var(--rl-border); padding: 3px; object-fit: contain; }
@@ -2990,7 +3002,9 @@ body:has(.home-page) {
   .key-currencies-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
   .radar-controls label,
   .rc-search,
+  .rc-sort,
   .rc-count { width: 100%; margin-left: 0; }
+  .rc-sort .custom-select { width: 100%; }
   .market-pagination { justify-content: space-between; }
   /* Table → compact on phones: keep Item + Profit + Plan; drop Buy/Sell/Trend/
      Liquidity (tapping a row opens the full plan modal). */

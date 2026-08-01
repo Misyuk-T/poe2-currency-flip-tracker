@@ -15,6 +15,7 @@ import {
   identityIcons,
   identityNames,
 } from "../../../src/domain/cx-identity.js";
+import { applyExchangeLayout, exchangeLayoutCategories } from "../../../src/domain/exchange-layout.js";
 import { createGoldRegistry, createFlatGoldRegistry } from "../../../src/domain/gold-costs.js";
 import { canonicalPairId, isPublicLeague } from "../../../src/domain/cx-market.js";
 import { RADAR_PAYLOAD_VERSION, isCompatibleRadarSnapshot } from "../../../src/domain/radar-snapshot.js";
@@ -298,11 +299,15 @@ function radarBuildInput(ctx, game, repo, now = Date.now()) {
 }
 
 function finalizeRadarBody(body, game, league) {
-  body.rows = tradableRows(body.rows);
+  body.rows = applyExchangeLayout(tradableRows(body.rows), game.id);
   body.payloadVersion = RADAR_PAYLOAD_VERSION;
   body.league = league;
   body.game = game.id;
   body.realm = game.realm;
+  body.exchangeLayout = {
+    source: "game-client-layout",
+    categories: exchangeLayoutCategories(game.id),
+  };
   return body;
 }
 

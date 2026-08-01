@@ -1,0 +1,46 @@
+name: Currency Exchange layout refresh
+
+# The in-game exchange table changes with patches and league launches. This
+# daily probe writes nothing when category/section/item content is unchanged;
+# when it does change, it opens a reviewable PR instead of silently deploying.
+on:
+  schedule:
+    - cron: "37 5 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Refresh PoE 1 and PoE 2 in-game layouts
+        run: npm run layout:build
+
+      - name: Verify generated layouts
+        run: npm test
+
+      - name: Open a PR if the layout changed
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore(data): refresh Currency Exchange layout"
+          title: "chore(data): refresh Currency Exchange layout"
+          body: |
+            Automated snapshot refresh from the client-derived Currency
+            Exchange tables exposed by PoEDB/PoE2DB. This includes category,
+            section, and item order for both games. Review before merging;
+            nothing auto-deploys.
+          branch: automated/exchange-layout-refresh
+          delete-branch: true

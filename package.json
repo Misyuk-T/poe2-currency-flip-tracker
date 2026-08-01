@@ -18,7 +18,8 @@
     "catalog:metadata": "node scripts/build-catalog.mjs --no-icons",
     "catalog:icons:missing": "node scripts/build-catalog.mjs --missing-icons",
     "gold:build": "node scripts/build-gold-costs.mjs",
-    "data:refresh": "npm run catalog:metadata && npm run identity:build && npm run gold:build"
+    "layout:build": "node scripts/build-exchange-layouts.mjs",
+    "data:refresh": "npm run catalog:metadata && npm run identity:build && npm run gold:build && npm run layout:build"
   },
   "license": "UNLICENSED",
   "dependencies": {

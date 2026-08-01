@@ -50,3 +50,16 @@ export function sortByFamily(rows) {
     })
     .map((entry) => entry.row);
 }
+
+/** Preserve the category/section/item order shipped by the game client. */
+export function sortByExchangeOrder(rows) {
+  return (rows ?? [])
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) =>
+      (a.row.categoryOrder ?? Number.MAX_SAFE_INTEGER) - (b.row.categoryOrder ?? Number.MAX_SAFE_INTEGER)
+      || (a.row.sectionOrder ?? Number.MAX_SAFE_INTEGER) - (b.row.sectionOrder ?? Number.MAX_SAFE_INTEGER)
+      || (a.row.itemOrder ?? Number.MAX_SAFE_INTEGER) - (b.row.itemOrder ?? Number.MAX_SAFE_INTEGER)
+      || String(a.row.targetName ?? a.row.target ?? "").localeCompare(String(b.row.targetName ?? b.row.target ?? ""))
+      || a.index - b.index)
+    .map(({ row }) => row);
+}

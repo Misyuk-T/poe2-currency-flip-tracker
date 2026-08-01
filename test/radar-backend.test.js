@@ -173,6 +173,11 @@ test("offline fixture fallback serves a full synthetic radar without a database"
     const radar = await getRadar(new URLSearchParams("anchor=exalted"));
     assert.equal(radar.status, 200);
     assert.equal(radar.body.source.sourceMode, "fixture");
+    assert.equal(radar.body.payloadVersion, 3);
+    assert.deepEqual(radar.body.exchangeLayout.categories.map(({ name }) => name), [
+      "Currency", "Essences", "Delirium", "Breach", "Abyss", "Atziri's Temple", "Fragments",
+      "Runes", "Ritual", "Soul Cores", "Idols", "Uncut Gems", "Expedition", "Gems",
+    ]);
     assert.ok(radar.body.rows.length > 100, "expected the whole catalog as synthetic markets");
     assert.ok(
       radar.body.rows.every((r) => r.pairId && r.status !== "no-trades-this-hour"),

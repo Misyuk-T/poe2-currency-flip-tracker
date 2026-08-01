@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import SpotChart from "./SpotChart.jsx";
 import ReachLadder from "./ReachLadder.jsx";
 import LeagueMetaChip from "./LeagueMetaChip.jsx";
@@ -10,7 +10,7 @@ import { roundTripGold } from "../../../src/domain/gold-costs.js";
 import { keyCurrencyCards, sparklinePoints } from "../lib/key-currencies.js";
 import { currentPriceGuidance, quoteFromAnchor, workingPrice } from "../lib/price-guidance.js";
 import { unitRates } from "../lib/market-units.js";
-import { sortByFamily } from "../lib/item-family.js";
+import { sortByExchangeOrder, sortByFamily } from "../lib/item-family.js";
 import { useScrollLock } from "../lib/use-scroll-lock.js";
 import { preloadIcons } from "../lib/preload-icons.js";
 import {
@@ -38,19 +38,32 @@ const MANUAL_PRICE_KEY = "poe2flip.next.manualPrices.v2";
 // members only have derived art paths that 404 on the CDN, so there is no
 // working icon to borrow from the rows themselves.
 const CATEGORY_ICON_IDS = {
-  "Abyssal Bones": "gnawed-jawbone",
+  Abyss: "gnawed-jawbone",
+  "Atziri's Temple": "architects-orb",
   Breach: "breach-splinter",
   Currency: "exalted",
   Delirium: "simulacrum-splinter",
   Essences: "essence-of-horror",
   Expedition: "expedition-logbook",
   Fragments: "runic-splinter",
-  "Lineage Support Gems": "ataluis-bloodletting",
+  Gems: "ataluis-bloodletting",
+  Idols: "panther-idol",
   Ritual: "omen-of-refreshment",
   Runes: "storm-rune",
-  Vaal: "vaal",
-  Verisium: "verisium",
-  Waystones: "waystone-16",
+  "Soul Cores": "soul-core-of-tacati",
+  "Uncut Gems": "uncut-skill-gem-20",
+  "Needs classification": "exalted",
+  Delve: "primitive-chaotic-resonator",
+  Scarabs: "breach-scarab",
+  "Divination Cards": "the-doctor",
+  Legion: "timeless-karui-emblem",
+  Oils: "golden-oil",
+  Catalysts: "fertile-catalyst",
+  Omens: "omen-of-refreshment",
+  Tattoos: "tattoo-of-the-tawhoa-shaman",
+  Harvest: "wild-crystallised-lifeforce",
+  Runegrafts: "runegraft-of-bellows",
+  Allflame: "allflame-ember-of-kulemak",
   "Map Fragment": "runic-splinter",
   "Soul Core": "soul-core-of-tacati",
   "Stackable Currency": "exalted",
@@ -60,8 +73,9 @@ const CATEGORY_ICON_IDS = {
 // filter rather than the full 750-row catalog — which also means far fewer table
 // rows to render on first paint.
 const DEFAULT_CATEGORY = "Currency";
-const DEFAULT_SORT = "family:desc";
+const DEFAULT_SORT = "game:asc";
 const SORT_OPTIONS = [
+  { value: "game:asc", label: "In-game order" },
   { value: "family:desc", label: "Item family" },
   { value: "spread:desc", label: "Widest spread" },
   { value: "activity:desc", label: "Activity" },
@@ -74,6 +88,12 @@ const SORT_OPTIONS = [
   { value: "liquidity:desc", label: "Liquidity" },
   { value: "name:asc", label: "Name" },
 ];
+
+function sortOptionsFor(value) {
+  return SORT_OPTIONS.some((option) => option.value === value)
+    ? SORT_OPTIONS
+    : [{ value, label: "Column order" }, ...SORT_OPTIONS];
+}
 // You rarely flip a single orb, so the table and plan can be read per-unit or
 // for a realistic bulk size. Purely a display multiplier — it never changes
 // the underlying prices or the historical stats.
@@ -392,25 +412,26 @@ function SortHeader({ label, sublabel, column, activeKey, direction, onSort, ali
 }
 
 /** Group tradable rows into { name, count } category buckets for the sidebar. */
-function categoriesFrom(rows, categoryIcons) {
-  const counts = new Map();
+function categoriesFrom(rows, categoryIcons, layoutCategories = []) {
+  const buckets = new Map();
+  for (const category of layoutCategories) {
+    buckets.set(category.name, { count: 0, order: category.order ?? Number.MAX_SAFE_INTEGER });
+  }
   for (const row of rows) {
     const name = row.category || "Other";
-    counts.set(name, (counts.get(name) ?? 0) + 1);
+    const current = buckets.get(name) ?? { count: 0, order: Number.MAX_SAFE_INTEGER };
+    current.count += 1;
+    current.order = Math.min(current.order, row.categoryOrder ?? Number.MAX_SAFE_INTEGER);
+    buckets.set(name, current);
   }
-  return [...counts.entries()]
-    .map(([name, count]) => ({
+  return [...buckets.entries()]
+    .map(([name, bucket]) => ({
       name,
-      count,
+      count: bucket.count,
+      order: bucket.order,
       icons: iconCandidatesForCategory(name, categoryIcons, CATEGORY_ICON_IDS),
     }))
-    .sort((a, b) => {
-      // Currency is the landing category, so it sits directly under "All
-      // markets" rather than wherever its row count happens to place it.
-      if (a.name === DEFAULT_CATEGORY) return -1;
-      if (b.name === DEFAULT_CATEGORY) return 1;
-      return b.count - a.count || a.name.localeCompare(b.name);
-    });
+    .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
 }
 
 function manualPriceKey(game, league) {
@@ -693,7 +714,10 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   // table never removes a usable fallback.
   const categoryIcons = useMemo(() => categoryIconMap(tradable), [tradable]);
 
-  const categories = useMemo(() => categoriesFrom(searched, categoryIcons), [searched, categoryIcons]);
+  const categories = useMemo(
+    () => categoriesFrom(searched, categoryIcons, radar?.exchangeLayout?.categories),
+    [searched, categoryIcons, radar?.exchangeLayout?.categories],
+  );
 
   // Warm every icon in the payload, not just the visible category. Rows render
   // their icon lazily, so without this a category or league switch paints the
@@ -724,9 +748,11 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
       const { goldPerFlip, profitPer100k } = goldMetrics(row, rowGoldPerAnchor);
       return { ...row, _goldPerFlip: goldPerFlip, _profitPer100k: profitPer100k };
     });
-    const ordered = sort.startsWith("family:")
-      ? sortByFamily(enriched)
-      : enriched.sort((a, b) => compareRows(a, b, sort));
+    const ordered = sort.startsWith("game:")
+      ? sortByExchangeOrder(enriched)
+      : sort.startsWith("family:")
+        ? sortByFamily(enriched)
+        : enriched.sort((a, b) => compareRows(a, b, sort));
     return ordered;
   }, [searched, category, sort, anchorCurrency, defaultGoldPerAnchor]);
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
@@ -977,7 +1003,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
               </button>
             ))}
           </div>
-          <p className="rs-foot">Categories come from the current GGG trade catalog.</p>
+          <p className="rs-foot">Categories follow the current in-game Currency Exchange layout.</p>
         </aside>
 
         <div
@@ -1102,6 +1128,10 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                 <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Currency, rune, essence…" type="search" />
               </span>
             </label>
+            <label className="rc-sort">
+              <span>Order</span>
+              <CustomSelect id="market-order" value={sort} options={sortOptionsFor(sort)} onChange={setSort} />
+            </label>
             <span className="rc-count" aria-live="polite">
               {filteredRows.length} markets{pageCount > 1 ? ` · page ${page}/${pageCount}` : ""}
             </span>
@@ -1166,20 +1196,34 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row) => {
+                  {rows.map((row, index) => {
                     const move = row.movement?.h24;
                     const spread = rowSpread(row);
+                    const previous = rows[index - 1];
+                    const startsSection = sort.startsWith("game:") && (
+                      !previous
+                      || previous.category !== row.category
+                      || previous.subcategory !== row.subcategory
+                    );
+                    const sectionLabel = category === "all"
+                      ? `${row.category} · ${row.subcategory}`
+                      : row.subcategory;
                     return (
-                      <tr
-                        key={row.pairId}
-                        className={row.pairId === selected?.pairId ? "active" : ""}
-                        onClick={() => openMarket(row.pairId)}
-                      >
+                      <Fragment key={row.pairId}>
+                        {startsSection && (
+                          <tr className="exchange-section-row">
+                            <td colSpan="7">{sectionLabel}</td>
+                          </tr>
+                        )}
+                        <tr
+                          className={row.pairId === selected?.pairId ? "active" : ""}
+                          onClick={() => openMarket(row.pairId)}
+                        >
                         <td className="cell-item">
                           <FallbackIcon candidates={iconCandidatesForRow(row, categoryIcons, CATEGORY_ICON_IDS)} />
                           <span>
                             <strong>{row.targetName}</strong>
-                            <small>{row.category || "Other"}</small>
+                            <small>{row.subcategory || row.category || "Other"}</small>
                           </span>
                         </td>
                         <td className="right">
@@ -1223,7 +1267,8 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                             Plan
                           </button>
                         </td>
-                      </tr>
+                        </tr>
+                      </Fragment>
                     );
                   })}
                   {!rows.length && status === "loading" &&

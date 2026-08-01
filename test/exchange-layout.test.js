@@ -49,3 +49,16 @@ test("an unseen item is visible as unclassified with technical provenance preser
   assert.equal(resolved.tradeSubcategory, "Technical");
   assert.equal(resolved.layoutSource, "unmapped-exchange-item");
 });
+
+test("an unseen item inherits a uniquely named in-game section without hardcoding", () => {
+  const resolved = resolveExchangeLayout({
+    target: "Metadata/Items/Deepwater/DeepwaterEldritch",
+    targetName: "Deepwater Eldritch",
+    category: "Ducats",
+    subcategory: "Ducats",
+  }, "poe1");
+  assert.deepEqual(
+    [resolved.category, resolved.subcategory, resolved.layoutSource],
+    ["Allflame", "Ducats", "game-client-section-inference"],
+  );
+});

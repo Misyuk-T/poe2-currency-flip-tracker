@@ -17,6 +17,7 @@ import {
 } from "../../../src/domain/cx-identity.js";
 import { createGoldRegistry, createFlatGoldRegistry } from "../../../src/domain/gold-costs.js";
 import { canonicalPairId, isPublicLeague } from "../../../src/domain/cx-market.js";
+import { RADAR_PAYLOAD_VERSION, isCompatibleRadarSnapshot } from "../../../src/domain/radar-snapshot.js";
 import { POE2_GOLD_COSTS } from "../../../src/data/gold-costs-poe2.js";
 import { createRadarRepository } from "../../../src/storage/radar-repository.js";
 import {
@@ -265,17 +266,6 @@ function scopeFor(ctx, game, league, mode = ctx.config.providerMode) {
 }
 
 const sourceMode = (config) => (config.providerMode === "live" ? "official" : "fixture");
-const SNAPSHOT_MAX_AGE_MS = 6 * 3600_000;
-// Stored radar payloads are a cache of derived data, including item taxonomy.
-// Bump this whenever the payload meaning changes so a deploy cannot keep
-// serving structurally fresh but semantically outdated snapshots.
-export const RADAR_PAYLOAD_VERSION = 2;
-
-export function isCompatibleRadarSnapshot(snapshot, now = Date.now()) {
-  return snapshot?.payload?.payloadVersion === RADAR_PAYLOAD_VERSION
-    && Number.isFinite(snapshot.refreshedAt)
-    && now - snapshot.refreshedAt < SNAPSHOT_MAX_AGE_MS;
-}
 
 /**
  * Drop no-trade placeholder rows from a radar payload's `rows`. Every browser

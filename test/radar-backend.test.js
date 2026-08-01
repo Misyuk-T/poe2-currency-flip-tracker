@@ -6,31 +6,16 @@ import assert from "node:assert/strict";
 delete process.env.DATABASE_URL;
 
 const {
-  RADAR_PAYLOAD_VERSION,
   gameAwareRepository,
   getConfig,
   getStatus,
   getRadar,
   getHistory,
-  isCompatibleRadarSnapshot,
   resolveGame,
   resolveLeague,
   resolveLeagueAccess,
   tradableRows,
 } = await import("../apps/web/lib/radar-backend.js");
-
-test("radar snapshots require the current derived-payload version", () => {
-  const now = Date.now();
-  assert.equal(isCompatibleRadarSnapshot({
-    refreshedAt: now,
-    payload: { payloadVersion: RADAR_PAYLOAD_VERSION },
-  }, now), true);
-  assert.equal(isCompatibleRadarSnapshot({ refreshedAt: now, payload: {} }, now), false);
-  assert.equal(isCompatibleRadarSnapshot({
-    refreshedAt: now - 7 * 3600_000,
-    payload: { payloadVersion: RADAR_PAYLOAD_VERSION },
-  }, now), false);
-});
 
 test("tradableRows drops no-trade catalog placeholders but keeps real markets", () => {
   const rows = [

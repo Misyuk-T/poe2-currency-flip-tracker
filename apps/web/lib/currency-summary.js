@@ -12,6 +12,7 @@ import { loadConfig } from "../../../src/server/config.js";
 import { canonicalPairId, candleForAnchor } from "../../../src/domain/cx-market.js";
 import { buildMarketRadar } from "../../../src/domain/market-radar.js";
 import { backtestRecommendations } from "../../../src/domain/paper-trade.js";
+import { isCompatibleRadarSnapshot } from "../../../src/domain/radar-snapshot.js";
 import { createRadarRepository, groupCandlesByPair } from "../../../src/storage/radar-repository.js";
 import { getSql } from "./db.js";
 
@@ -175,6 +176,12 @@ export function currencyIndexFromSnapshot(payload, { sourceMode = "fixture" } = 
   };
 }
 
+/** Only project stored payloads produced by the current compatible radar code. */
+export function currencyIndexFromStoredSnapshot(snapshot, options) {
+  if (!isCompatibleRadarSnapshot(snapshot)) return null;
+  return currencyIndexFromSnapshot(snapshot.payload, options);
+}
+
 /**
  * Slim multi-currency read for the list page + sitemap: the latest stored price
  * and 24h movement for every target vs the configured anchor. Returns null when
@@ -200,7 +207,7 @@ export async function getCurrencyIndex() {
 
   try {
     const snapshot = await repo.readRadarSnapshot(config.anchorCurrency);
-    const index = currencyIndexFromSnapshot(snapshot?.payload, { sourceMode });
+    const index = currencyIndexFromStoredSnapshot(snapshot, { sourceMode });
     if (index) return index;
   } catch {
     // Fall through to the slower path rather than failing the page.

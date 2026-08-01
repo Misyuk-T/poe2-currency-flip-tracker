@@ -2,7 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildCxapiFixtures } from "../src/data/fixtures/cxapi-fixtures.js";
 import { normalizeCxDigest } from "../src/domain/cx-market.js";
-import { buildCurrencyIndex, currencyIndexFromSnapshot, currencySitemapUrls } from "../apps/web/lib/currency-summary.js";
+import {
+  buildCurrencyIndex,
+  currencyIndexFromSnapshot,
+  currencyIndexFromStoredSnapshot,
+  currencySitemapUrls,
+} from "../apps/web/lib/currency-summary.js";
+import { RADAR_PAYLOAD_VERSION } from "../src/domain/radar-snapshot.js";
 
 function fixtureCandles() {
   const all = {};
@@ -107,6 +113,18 @@ test("currencyIndexFromSnapshot projects a precomputed snapshot into the index",
   assert.equal(index.byId.chaos.samples, 183);
   assert.equal(index.byId.chaos.latestCompletedHourMs, 1785200400000);
   assert.equal(index.latestCompletedHour, new Date(1785200400000).toISOString());
+});
+
+test("stored currency indexes reject old or stale derived radar snapshots", () => {
+  const now = Date.now();
+  const payload = {
+    payloadVersion: RADAR_PAYLOAD_VERSION,
+    anchor: "exalted",
+    rows: [{ target: "chaos", reference: 2, latestCompletedHour: now }],
+  };
+  assert.ok(currencyIndexFromStoredSnapshot({ payload, refreshedAt: now }));
+  assert.equal(currencyIndexFromStoredSnapshot({ payload: { ...payload, payloadVersion: undefined }, refreshedAt: now }), null);
+  assert.equal(currencyIndexFromStoredSnapshot({ payload, refreshedAt: now - 7 * 3600_000 }), null);
 });
 
 test("markets with no priced hour stay out of the index, and so out of the sitemap", () => {

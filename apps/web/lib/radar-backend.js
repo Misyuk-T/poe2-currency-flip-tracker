@@ -266,6 +266,16 @@ function scopeFor(ctx, game, league, mode = ctx.config.providerMode) {
 
 const sourceMode = (config) => (config.providerMode === "live" ? "official" : "fixture");
 const SNAPSHOT_MAX_AGE_MS = 6 * 3600_000;
+// Stored radar payloads are a cache of derived data, including item taxonomy.
+// Bump this whenever the payload meaning changes so a deploy cannot keep
+// serving structurally fresh but semantically outdated snapshots.
+export const RADAR_PAYLOAD_VERSION = 2;
+
+export function isCompatibleRadarSnapshot(snapshot, now = Date.now()) {
+  return snapshot?.payload?.payloadVersion === RADAR_PAYLOAD_VERSION
+    && Number.isFinite(snapshot.refreshedAt)
+    && now - snapshot.refreshedAt < SNAPSHOT_MAX_AGE_MS;
+}
 
 /**
  * Drop no-trade placeholder rows from a radar payload's `rows`. Every browser
@@ -299,6 +309,7 @@ function radarBuildInput(ctx, game, repo, now = Date.now()) {
 
 function finalizeRadarBody(body, game, league) {
   body.rows = tradableRows(body.rows);
+  body.payloadVersion = RADAR_PAYLOAD_VERSION;
   body.league = league;
   body.game = game.id;
   body.realm = game.realm;
@@ -328,9 +339,7 @@ export async function getRadar(searchParams) {
       ]))
     : [];
   const freshPayloads = Object.fromEntries(snapshots
-    .filter(([, snapshot]) => snapshot?.payload
-      && Number.isFinite(snapshot.refreshedAt)
-      && Date.now() - snapshot.refreshedAt < SNAPSHOT_MAX_AGE_MS)
+    .filter(([, snapshot]) => isCompatibleRadarSnapshot(snapshot))
     .map(([snapshotAnchor, snapshot]) => [snapshotAnchor, snapshot.payload]));
   if (Object.keys(freshPayloads).length === requestedAnchors.length) {
     return {

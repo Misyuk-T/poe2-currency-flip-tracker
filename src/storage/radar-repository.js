@@ -11,13 +11,13 @@
 
 import { canonicalizeCandle } from "../domain/cx-market.js";
 
-const WINDOW_DAYS = 30;
-// How far back the RADAR read looks — deliberately much shorter than the 30-day
-// retention above.
+const WINDOW_DAYS = 7;
+// How far back the RADAR read looks. The Free-plan store retains seven days;
+// the radar itself only needs the latest 24 hours plus one boundary sample.
 //
-// The per-pair cap below means the read never consumes more than 48 hours of any
-// one pair, but the query still had to enumerate every pair that traded in 30
-// days to find them. On the busiest league that scan crossed the statement
+// The per-pair cap below means the read never consumes more than 25 hours of any
+// one pair, but the query still had to enumerate every pair in the read window
+// to find them. On the busiest league that scan crossed the statement
 // timeout, and the hourly snapshot rebuild failed with it every single hour —
 // silently, because the caller degrades instead of erroring. Every smaller
 // league rebuilt fine, so the failure looked like a data problem rather than a
@@ -28,9 +28,9 @@ const WINDOW_DAYS = 30;
 // showing a week-old price. It was already flagged stale; now it is absent.
 const READ_WINDOW_DAYS = 7;
 // Per-pair cap on the radar read: the UI needs a 25-point sparkline and 24h
-// metrics, so the latest ~48 completed hours per pair is ample. This bounds a
-// read to ~(pairs × 48) rows instead of every candle in the window.
-const MAX_HOURS_PER_PAIR = 48;
+// metrics, so the latest 25 completed hours per pair is the complete input. This
+// bounds a read to ~(pairs × 25) rows instead of every candle in the window.
+const MAX_HOURS_PER_PAIR = 25;
 // Outer guard in a deliberate cascade, each layer wider than the one inside it:
 //   Postgres statement_timeout (15s, apps/web/lib/db.js)
 //     -> this app-level guard (18s)
@@ -107,6 +107,7 @@ export function groupCandlesByPair(candles, { canonicalId } = {}) {
  *   scope: { game: string, realm: string, league: string, mode: string },
  *   windowDays?: number,                   // retention window for per-pair history
  *   readWindowDays?: number,               // how far back the radar read looks
+ *   anchors?: string[],                     // currencies the radar can price against
  *   opTimeoutMs?: number,
  * }} opts
  */
@@ -116,6 +117,7 @@ export function createRadarRepository({
   windowDays = WINDOW_DAYS,
   readWindowDays = READ_WINDOW_DAYS,
   maxHoursPerPair = MAX_HOURS_PER_PAIR,
+  anchors = [],
   opTimeoutMs = OP_TIMEOUT_MS,
   onPhase = noop,
   onTimeout = null,
@@ -126,13 +128,13 @@ export function createRadarRepository({
   /**
    * The latest `maxHoursPerPair` candles per pair within the window — the
    * radar/hotlist input. Capped per pair so a read stays bounded even with
-   * hundreds of pairs over a 30-day retention.
+   * hundreds of pairs over the retention window.
    */
   async function readCandleWindow() {
     // Top `maxHoursPerPair` completed hours per pair. A window function
     // (row_number over partition by pair_id) forces Postgres to read EVERY
     // in-window row for every pair and sort them — tens of seconds once the
-    // fixture catalog fills the 30-day retention (~500k rows). Instead we
+    // fixture catalog fills a long retention window (~500k rows). Instead we
     // enumerate the distinct pairs, then LATERAL-join the newest N rows of each
     // via an index range scan (see hourly_market_candles_pair_recent_idx:
     // scope + pair_id + completed_hour desc), so each pair reads only ~N rows.
@@ -140,22 +142,28 @@ export function createRadarRepository({
     // the outer sort was pure overhead (a large on-disk sort).
     const rows = await withTimeout(
       sql`
-        select c.completed_hour, c.digest_id, c.pair_id, c.base_currency, c.quote_currency,
-               c.low_ratio, c.high_ratio, c.reference_ratio, c.reference_kind, c.volume, c.stock, c.source
+        select c.completed_hour, c.pair_id, c.base_currency, c.quote_currency,
+               c.low_ratio, c.high_ratio, c.volume
         from (
           select distinct pair_id
           from hourly_market_candles
           where game = ${scope.game} and realm = ${scope.realm} and league = ${scope.league}
             and provider = ${scope.mode}
+            and (${anchors.length} = 0
+              or base_currency = any(${anchors}::text[])
+              or quote_currency = any(${anchors}::text[]))
             and completed_hour >= now() - make_interval(days => ${readWindowDays})
         ) p
         cross join lateral (
           select extract(epoch from h.completed_hour) * 1000 as completed_hour,
-                 h.digest_id, h.pair_id, h.base_currency, h.quote_currency, h.low_ratio,
-                 h.high_ratio, h.reference_ratio, h.reference_kind, h.volume, h.stock, h.source
+                 h.pair_id, h.base_currency, h.quote_currency, h.low_ratio,
+                 h.high_ratio, h.volume
           from hourly_market_candles h
           where h.game = ${scope.game} and h.realm = ${scope.realm} and h.league = ${scope.league}
             and h.provider = ${scope.mode} and h.pair_id = p.pair_id
+            and (${anchors.length} = 0
+              or h.base_currency = any(${anchors}::text[])
+              or h.quote_currency = any(${anchors}::text[]))
             and h.completed_hour >= now() - make_interval(days => ${readWindowDays})
           order by h.completed_hour desc
           limit ${maxHoursPerPair}
@@ -172,8 +180,8 @@ export function createRadarRepository({
     const rows = await withTimeout(
       sql`
         select extract(epoch from completed_hour) * 1000 as completed_hour,
-               digest_id, pair_id, base_currency, quote_currency, low_ratio,
-               high_ratio, reference_ratio, reference_kind, volume, stock, source
+               pair_id, base_currency, quote_currency, low_ratio,
+               high_ratio, reference_ratio, reference_kind, volume
         from hourly_market_candles
         where game = ${scope.game} and realm = ${scope.realm} and league = ${scope.league}
           and provider = ${scope.mode} and pair_id = ${pairId}
@@ -339,7 +347,11 @@ export function createRadarRepository({
               reference_ratio: c.reference,
               reference_kind: c.referenceKind,
               volume: JSON.stringify(c.volume),
-              stock: JSON.stringify(c.stock),
+              // Stock ranges are not consumed by the radar, history chart, or
+              // plan model. Keeping the JSON for every pair/hour added hundreds
+              // of MB to the Free-plan database, so new rows store the schema's
+              // neutral empty value.
+              stock: "{}",
               source: c.source,
             }));
             // Batch the insert. One ~2000-row unnamed (prepare:false) insert is a

@@ -165,12 +165,13 @@ function context() {
 
 const noop = () => {};
 
-function repository(scope, { trace = noop } = {}) {
+function repository(scope, { trace = noop, anchors = [] } = {}) {
   const sql = getSql();
   return sql
     ? createRadarRepository({
         sql,
         scope,
+        anchors,
         onPhase: trace,
         onTimeout: ({ label, ms }) => {
           trace("db.client.reset", { label, timeoutMs: ms });
@@ -214,7 +215,8 @@ function fixtureRepository(ctx, scope = ctx.scope) {
 
 /** Postgres repo when DATABASE_URL is set; else the offline fixture repo (dev). */
 async function resolveRepo(ctx, scope = ctx.scope) {
-  const dbRepo = repository(scope);
+  const anchors = gameConfigs(ctx.config).find((game) => game.id === scope.game)?.anchors ?? [];
+  const dbRepo = repository(scope, { anchors });
   if (dbRepo) return dbRepo;
   if (ctx.config.providerMode === "fixture" && fixtureFallbackEnabled()) return fixtureRepository(ctx, scope);
   return null;
@@ -334,12 +336,16 @@ async function refreshRadarSnapshots(ctx, { now = Date.now(), trace = noop } = {
   const results = [];
   for (const game of gameConfigs(ctx.config)) {
     if (!game.enabled) continue;
-    for (const league of game.leagues) {
+    // Rebuild the two default landing scopes hourly. Alternate leagues keep
+    // their stored snapshot and self-refresh on first use after the six-hour
+    // freshness window. Rebuilding every selector option transferred tens of
+    // millions of raw candle rows from Supabase even when nobody viewed them.
+    for (const league of [game.activeLeague]) {
       const startedAt = Date.now();
       trace("snapshot.scope.start", { game: game.id, league });
       try {
         const repo = gameAwareRepository(
-          repository(scopeFor(ctx, game, league), { trace }),
+          repository(scopeFor(ctx, game, league), { trace, anchors: game.anchors }),
           game.id,
         );
         if (!repo || !(await withDbRetry(() => repo.hasPricedCandles()))) {
@@ -441,7 +447,7 @@ async function leagueAvailability(ctx, games) {
     for (const league of game.leagues) {
       const key = `${game.id}|${league}`;
       try {
-        const repo = repository(scopeFor(ctx, game, league));
+        const repo = repository(scopeFor(ctx, game, league), { anchors: game.anchors });
         const hasData = repo
           ? await withDbRetry(() => repo.hasPricedCandles())
           : true;

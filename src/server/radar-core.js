@@ -46,8 +46,13 @@ async function computeRadar({
     now,
     minTenureMs: 0, // no prior state to retain in a stateless read
   });
+  // Radar reads deliberately omit the stored reference scalar: candleForAnchor
+  // recomputes the orientation-invariant geometric centre from the low/high
+  // range. Count the same valid input here instead of transferring a redundant
+  // column from Supabase for every pair/hour.
   const pricedCandleCount = candles.filter(
-    (candle) => Number.isFinite(candle.reference) && candle.reference > 0,
+    (candle) => Number.isFinite(candle.low) && candle.low > 0
+      && Number.isFinite(candle.high) && candle.high > 0,
   ).length;
   return {
     rowsByAnchor,

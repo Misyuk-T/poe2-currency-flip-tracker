@@ -76,6 +76,20 @@ test("recordCxDigest falls back to scope league when a candle omits its own", as
   assert.equal(rows[0].league, scope.league);
 });
 
+test("recordCxDigest does not persist unused stock payloads", async () => {
+  const { sql, templateCalls } = fakeTxSql();
+  const repo = createRadarRepository({ sql, scope });
+  await repo.recordCxDigest({
+    digestId: 472222,
+    nextChangeId: 475822,
+    candles: [{ ...candle("Standard"), stock: { lowest: { a: 100 }, highest: { b: 200 } } }],
+  });
+  const rows = templateCalls
+    .find((c) => c.text.includes("hourly_market_candles"))
+    .values.find((v) => v.__fragmentRows).__fragmentRows;
+  assert.equal(rows[0].stock, "{}");
+});
+
 test("recordCxDigest emits transaction/batch phases", async () => {
   const { sql } = fakeTxSql();
   const phases = [];

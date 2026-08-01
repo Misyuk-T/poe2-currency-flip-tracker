@@ -134,9 +134,10 @@ test("ingestLiveStreams reuses the stream state instead of reading the cursor tw
   assert.equal(fetches, 1, "one digest per invocation while runtime timing is being proven");
 });
 
-test("ingestLiveStreams stores every public league for the selector", async () => {
+test("ingestLiveStreams stores only the configured public leagues", async () => {
   const config = {
     league: "Runes of Aldur",
+    leagues: ["Runes of Aldur", "HC Runes of Aldur", "Standard"],
     cxapiSource: "cdn",
     cxapiStartId: null,
     cxapiMaxBackfillHours: 48,
@@ -161,13 +162,57 @@ test("ingestLiveStreams stores every public league for the selector", async () =
         digestId: id,
         payload: {
           next_change_id: id + 3600,
-          markets: [market("Runes of Aldur"), market("HC Runes of Aldur"), market("Standard"), market("Private (PL123)")],
+          markets: [
+            market("Runes of Aldur"),
+            market("HC Runes of Aldur"),
+            market("Standard"),
+            market("Allflame"),
+            market("Private (PL123)"),
+          ],
         },
       };
     },
   });
   await ingestLiveStreams({ streams: config.cxapiStreams, config, now: 1_784_600_000_000, makeRepo, makeProvider });
   assert.deepEqual([...new Set(saved.map((c) => c.league))].sort(), ["HC Runes of Aldur", "Runes of Aldur", "Standard"]);
+});
+
+test("ingestLiveStreams stores only pairs used by configured radar anchors", async () => {
+  const config = {
+    league: "Runes of Aldur",
+    leagues: ["Runes of Aldur"],
+    anchors: ["exalted", "divine"],
+    cxapiSource: "cdn",
+    cxapiStartId: null,
+    cxapiMaxBackfillHours: 48,
+    cxapiDigestsPerRun: 1,
+    cxapiStreams: [{ game: "poe2", realm: "poe2" }],
+  };
+  let saved = [];
+  const makeRepo = () => ({
+    async readCxapiState() { return { cursor: 1000, lastDigestId: null }; },
+    async recordCxDigest(digest) { saved = digest.candles; return saved.length; },
+  });
+  const market = (pair) => ({
+    league: "Runes of Aldur",
+    market_id: pair,
+    lowest_ratio: Object.fromEntries(pair.split("|").map((id, index) => [id, index + 1])),
+    highest_ratio: Object.fromEntries(pair.split("|").map((id, index) => [id, index + 1])),
+  });
+  const makeProvider = () => ({
+    configured: true,
+    async fetchDigest({ id }) {
+      return {
+        digestId: id,
+        payload: {
+          next_change_id: id + 3600,
+          markets: [market("a|exalted"), market("b|divine"), market("c|d")],
+        },
+      };
+    },
+  });
+  await ingestLiveStreams({ streams: config.cxapiStreams, config, now: 1_784_600_000_000, makeRepo, makeProvider });
+  assert.deepEqual(saved.map((candle) => candle.pairId).sort(), ["a|exalted", "b|divine"]);
 });
 
 test("ingestLiveStreams: a null repo (no DB) skips that stream, not the run", async () => {

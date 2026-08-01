@@ -113,9 +113,9 @@ test("readCxapiState parses the cursor, or reports null when absent", async () =
   assert.deepEqual(await absent.readCxapiState(), { cursor: null, lastDigestId: null });
 });
 
-test("the radar read looks back days, not the whole retention window", () => {
-  // The per-pair cap means this read never uses more than 48 hours of any pair,
-  // but the pair-discovery scan used to span the full 30-day retention. On the
+test("the radar read looks back seven days and caps each pair at 25 hours", () => {
+  // The per-pair cap means this read never uses more than 25 hours of any pair,
+  // but the pair-discovery scan used to span a long retention. On the
   // busiest league that crossed the statement timeout and the hourly snapshot
   // rebuild failed every hour — while every smaller league succeeded, so it read
   // as a data problem rather than a query that had outgrown its window.
@@ -124,19 +124,25 @@ test("the radar read looks back days, not the whole retention window", () => {
     calls.push({ text: strings.join("?"), values });
     return Promise.resolve([]);
   };
-  const repo = createRadarRepository({ sql, scope });
+  const repo = createRadarRepository({ sql, scope, anchors: ["exalted", "divine"] });
   return repo.readCandleWindow().then(() => {
     const { text, values } = calls[0];
     const days = values.filter((value) => value === 7 || value === 30);
     assert.equal(days.length, 2, "both the discovery scan and the lateral take a window");
     assert.deepEqual(days, [7, 7], "the radar read must not scan the retention window");
+    assert.ok(values.includes(25), "the radar read keeps only the 25 points used by 24h metrics");
+    assert.equal(
+      values.filter((value) => Array.isArray(value) && value.join(",") === "exalted,divine").length,
+      2,
+      "pair discovery and row reads both stay on configured anchors",
+    );
     assert.match(text, /cross join lateral/i);
+    assert.doesNotMatch(text, /\bstock\b/i, "unused stock JSON must not leave Supabase");
+    assert.doesNotMatch(text, /reference_ratio/i, "the geometric centre is recomputed from low/high");
   });
 });
 
-test("per-pair history still spans the full retention window", () => {
-  // Only the radar's fan-out read was the problem. A single pair is an index
-  // range scan, and the chart wants more than a week of it.
+test("per-pair history spans the seven-day Free-plan retention window", () => {
   const calls = [];
   const sql = (strings, ...values) => {
     calls.push(values);
@@ -144,6 +150,6 @@ test("per-pair history still spans the full retention window", () => {
   };
   const repo = createRadarRepository({ sql, scope });
   return repo.readPairCandles("divine|exalted").then(() => {
-    assert.ok(calls[0].includes(30), "readPairCandles should keep the 30-day window");
+    assert.ok(calls[0].includes(7), "readPairCandles should match the seven-day retention");
   });
 });

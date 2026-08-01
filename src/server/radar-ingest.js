@@ -120,7 +120,7 @@ export async function ingestFixtureIncrement({
  * latest completed digest (never requests into the future).
  * @param {{ repo: any, provider: any, league: string, startId?: number|null, maxDigests?: number }} input
  */
-export async function ingestLive({ repo, provider, league = null, leagues = null, startId = null, maxDigests = 1, translate = (id) => id, deadline = () => false, state = null, trace = noop }) {
+export async function ingestLive({ repo, provider, league = null, leagues = null, anchors = null, startId = null, maxDigests = 1, translate = (id) => id, deadline = () => false, state = null, trace = noop }) {
   if (!provider?.configured) return { mode: "live", configured: false, digests: 0, inserted: 0 };
   if (!state) trace("live.state.read.start");
   const resolvedState = state ?? await repo.readCxapiState();
@@ -143,6 +143,12 @@ export async function ingestLive({ repo, provider, league = null, leagues = null
     // translate => canonicalize Metadata ids to short ids where known.
     trace("live.normalize.start", { digestId: raw.digestId });
     const normalized = normalizeCxDigest(raw.payload, { digestId: raw.digestId, league, leagues, translate });
+    if (anchors?.length) {
+      const allowedAnchors = new Set(anchors);
+      normalized.candles = normalized.candles.filter(
+        (candle) => allowedAnchors.has(candle.base) || allowedAnchors.has(candle.quote),
+      );
+    }
     trace("live.normalize.end", { digestId: normalized.digestId, candles: normalized.candles.length });
     const nextId = normalized.nextChangeId;
     // In-progress / terminal hour: an explicit request whose cursor does not
@@ -190,11 +196,12 @@ export function rotateStreams(streams, now) {
 
 /**
  * Ingest every configured live stream — one CDN stream per (game, realm), each
- * carrying all public leagues and its own per-(game,realm) cursor. Dependencies
- * (makeRepo/makeProvider) are injected so the orchestration is testable without a
- * database. Streams run sequentially: one active ingester per (game, realm) at a
- * time. A fresh stream with no cursor/start id defaults to a recent window so the
- * CDN's no-id "first hour of history" crawl is never triggered.
+ * carrying the configured public leagues and its own per-(game,realm) cursor.
+ * Dependencies (makeRepo/makeProvider) are injected so the orchestration is
+ * testable without a database. Streams run sequentially: one active ingester per
+ * (game, realm) at a time. A fresh stream with no cursor/start id defaults to a
+ * recent window so the CDN's no-id "first hour of history" crawl is never
+ * triggered.
  */
 export async function ingestLiveStreams({ streams, config, now, makeRepo, makeProvider, budgetMs = 55_000, reserveMs = null, clock = () => Date.now(), trace = noop }) {
   const started = clock();
@@ -232,12 +239,20 @@ export async function ingestLiveStreams({ streams, config, now, makeRepo, makePr
       config.cxapiStartId ??
       (config.cxapiSource === "cdn" && cursor == null ? recentStartHour(now, config.cxapiMaxBackfillHours) : null);
     const catchingUp = cursor != null || startId != null;
+    const configuredLeagues = stream.game === "poe1"
+      ? (config.poe1Leagues ?? [config.poe1League ?? config.league].filter(Boolean))
+      : (config.leagues ?? [config.league].filter(Boolean));
+    const configuredAnchors = stream.game === "poe1"
+      ? ["chaos", "divine", "exalted"]
+      : config.anchors;
     const summary = await ingestLive({
       repo,
-      // One CDN digest carries every league. Keep every public league now that
-      // the product exposes a league selector; private (PLxxxxx) leagues are
-      // rejected by normalizeCxDigest.
+      // One CDN digest carries current and historical public leagues. Persist
+      // only the league selector's configured surface: storing retired leagues
+      // grew the candle table without creating a route that could read them.
       league: null,
+      leagues: configuredLeagues,
+      anchors: configuredAnchors,
       provider,
       startId,
       // Small per-invocation cap while write timings are being proven in prod (the

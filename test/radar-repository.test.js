@@ -133,8 +133,8 @@ test("the radar read looks back seven days and caps each pair at 25 hours", () =
     assert.ok(values.includes(25), "the radar read keeps only the 25 points used by 24h metrics");
     assert.equal(
       values.filter((value) => Array.isArray(value) && value.join(",") === "exalted,divine").length,
-      2,
-      "pair discovery and row reads both stay on configured anchors",
+      4,
+      "pair discovery and row reads both filter base and quote to configured anchors",
     );
     assert.match(text, /cross join lateral/i);
     assert.doesNotMatch(text, /\bstock\b/i, "unused stock JSON must not leave Supabase");

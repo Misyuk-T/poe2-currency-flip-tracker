@@ -136,8 +136,9 @@ export function createRadarRepository({
     // in-window row for every pair and sort them — tens of seconds once the
     // fixture catalog fills a long retention window (~500k rows). Instead we
     // enumerate the distinct pairs, then LATERAL-join the newest N rows of each
-    // via an index range scan (see hourly_market_candles_pair_recent_idx:
-    // scope + pair_id + completed_hour desc), so each pair reads only ~N rows.
+    // via an index range scan on the primary key (scope + pair_id +
+    // completed_hour; Postgres scans the final key backwards), so each pair
+    // reads only ~N rows.
     // No global ORDER BY: groupCandlesByPair re-sorts per pair downstream, so
     // the outer sort was pure overhead (a large on-disk sort).
     const rows = await withTimeout(

@@ -16,13 +16,14 @@ import {
   identityNames,
 } from "../../../src/domain/cx-identity.js";
 import { createGoldRegistry, createFlatGoldRegistry } from "../../../src/domain/gold-costs.js";
+import { canonicalPairId, isPublicLeague } from "../../../src/domain/cx-market.js";
 import { POE2_GOLD_COSTS } from "../../../src/data/gold-costs-poe2.js";
 import { createRadarRepository } from "../../../src/storage/radar-repository.js";
 import {
-  buildRadarPayload,
   buildRadarPayloads,
   buildHistoryPayload,
   buildHotlistPayload,
+  mergeRadarPayloads,
 } from "../../../src/server/radar-core.js";
 import { CORE_CURRENCY_IDS, ingestFixtures, ingestFixtureIncrement, ingestLiveStreams, translatorForGame } from "../../../src/server/radar-ingest.js";
 import { createCxapiProvider } from "../../../src/providers/create-cxapi-provider.js";
@@ -50,7 +51,7 @@ function canonicalizePoe1Candle(candle) {
     ...candle,
     base,
     quote,
-    pairId: `${base}|${quote}`,
+    pairId: canonicalPairId(base, quote),
     volume: remapObjectKeys(candle.volume, translate),
     ...(candle.stock
       ? {
@@ -77,8 +78,16 @@ export function gameAwareRepository(repo, game) {
       return dedupeCandles((await repo.readCandleWindow()).map(canonicalizePoe1Candle));
     },
     async readPairCandles(pairId) {
-      const legacyPair = pairId.split("|").map((id) => CORE_TO_METADATA[id] ?? id).join("|");
-      const variants = legacyPair === pairId ? [pairId] : [legacyPair, pairId];
+      const currentParts = pairId.split("|");
+      const legacyParts = currentParts.map((id) => CORE_TO_METADATA[id] ?? id);
+      const variants = [...new Set([
+        canonicalPairId(...currentParts),
+        currentParts.join("|"),
+        currentParts.slice().reverse().join("|"),
+        canonicalPairId(...legacyParts),
+        legacyParts.join("|"),
+        legacyParts.slice().reverse().join("|"),
+      ])];
       const batches = await Promise.all(variants.map((variant) => repo.readPairCandles(variant)));
       return dedupeCandles(batches.flat().map(canonicalizePoe1Candle))
         .sort((a, b) => a.completedHour - b.completedHour);
@@ -242,6 +251,15 @@ export function resolveLeague(searchParams, config) {
   return { league: requested };
 }
 
+/** Configured leagues are immediate; a new public league needs recent DB data. */
+export async function resolveLeagueAccess(searchParams, config, hasRecentData = async () => false) {
+  const configured = resolveLeague(searchParams, config);
+  if (!configured.error) return configured;
+  const requested = searchParams.get("league");
+  if (isPublicLeague(requested) && await hasRecentData(requested)) return { league: requested };
+  return configured;
+}
+
 function scopeFor(ctx, game, league, mode = ctx.config.providerMode) {
   return { game: game.id, realm: game.realm, league, mode };
 }
@@ -293,38 +311,54 @@ export async function getRadar(searchParams) {
   const selectedGame = resolveGame(searchParams, config);
   if (selectedGame.error) return selectedGame.error;
   const { game } = selectedGame;
-  const selected = resolveLeague(searchParams, game);
+  const selected = await resolveLeagueAccess(searchParams, game, async (requestedLeague) => {
+    const candidate = repository(scopeFor(ctx, game, requestedLeague), { anchors: game.anchors });
+    return candidate ? withDbRetry(() => candidate.hasPricedCandles()) : false;
+  });
   if (selected.error) return selected.error;
   const repo = gameAwareRepository(await resolveRepo(ctx, scopeFor(ctx, game, selected.league)), game.id);
   if (!repo) return NO_DB;
   const anchor = resolveAnchor(searchParams, game);
-  const snapshot = repo.readRadarSnapshot
-    ? await withDbRetry(() => repo.readRadarSnapshot(anchor))
-    : null;
-  if (
-    snapshot?.payload &&
-    Number.isFinite(snapshot.refreshedAt) &&
-    Date.now() - snapshot.refreshedAt < SNAPSHOT_MAX_AGE_MS
-  ) {
-    return { status: 200, body: snapshot.payload };
+  const bestView = searchParams.get("view") === "best";
+  const requestedAnchors = bestView ? game.anchors : [anchor];
+  const snapshots = repo.readRadarSnapshot
+    ? await Promise.all(requestedAnchors.map(async (snapshotAnchor) => [
+        snapshotAnchor,
+        await withDbRetry(() => repo.readRadarSnapshot(snapshotAnchor)),
+      ]))
+    : [];
+  const freshPayloads = Object.fromEntries(snapshots
+    .filter(([, snapshot]) => snapshot?.payload
+      && Number.isFinite(snapshot.refreshedAt)
+      && Date.now() - snapshot.refreshedAt < SNAPSHOT_MAX_AGE_MS)
+    .map(([snapshotAnchor, snapshot]) => [snapshotAnchor, snapshot.payload]));
+  if (Object.keys(freshPayloads).length === requestedAnchors.length) {
+    return {
+      status: 200,
+      body: bestView ? mergeRadarPayloads(freshPayloads, { preferredAnchor: anchor }) : freshPayloads[anchor],
+    };
   }
 
   // Backward-compatible/self-healing fallback for the first request after the
   // migration or if the hourly snapshot refresh failed. It is deliberately not
   // the normal path anymore.
-  const body = finalizeRadarBody(
-    await withDbRetry(() => buildRadarPayload({ ...radarBuildInput(ctx, game, repo), anchor })),
-    game,
-    selected.league,
-  );
+  const built = await withDbRetry(() => buildRadarPayloads(radarBuildInput(ctx, game, repo)));
+  const payloads = Object.fromEntries(Object.entries(built).map(([payloadAnchor, payload]) => [
+    payloadAnchor,
+    finalizeRadarBody(payload, game, selected.league),
+  ]));
+  const body = bestView ? mergeRadarPayloads(payloads, { preferredAnchor: anchor }) : payloads[anchor];
   if (repo.writeRadarSnapshots) {
     try {
-      await withDbRetry(() => repo.writeRadarSnapshots([{ anchor, payload: body }]));
+      await withDbRetry(() => repo.writeRadarSnapshots(Object.entries(payloads).map(([payloadAnchor, payload]) => ({
+        anchor: payloadAnchor,
+        payload,
+      }))));
     } catch (error) {
       console.error("[radar-snapshot] on-demand upsert failed", {
         game: game.id,
         league: selected.league,
-        anchor,
+        anchor: bestView ? "best" : anchor,
         error: error?.message ?? String(error),
       });
     }
@@ -394,13 +428,16 @@ export async function getHistory(searchParams) {
   // Two canonical ids joined by "|". An id is a catalog short id (letters/digits/
   // hyphen) OR — for the unmapped long tail — a Metadata path (adds "/"). Bounded
   // length; the value is only ever used as a parameterized SQL literal downstream.
-  if (!/^[\p{L}\p{N}\-/]{1,128}\|[\p{L}\p{N}\-/]{1,128}$/u.test(pair)) {
+  if (!/^[\p{L}\p{N}_\-/]{1,128}\|[\p{L}\p{N}_\-/]{1,128}$/u.test(pair)) {
     return { status: 400, body: { error: { code: "invalid-pair", message: "invalid market pair" } } };
   }
   const selectedGame = resolveGame(searchParams, config);
   if (selectedGame.error) return selectedGame.error;
   const { game } = selectedGame;
-  const selected = resolveLeague(searchParams, game);
+  const selected = await resolveLeagueAccess(searchParams, game, async (requestedLeague) => {
+    const candidate = repository(scopeFor(ctx, game, requestedLeague), { anchors: game.anchors });
+    return candidate ? withDbRetry(() => candidate.hasPricedCandles()) : false;
+  });
   if (selected.error) return selected.error;
   const repo = gameAwareRepository(await resolveRepo(ctx, scopeFor(ctx, game, selected.league)), game.id);
   if (!repo) return NO_DB;
@@ -417,7 +454,10 @@ export async function getHotlist(searchParams = new URLSearchParams()) {
   const selectedGame = resolveGame(searchParams, config);
   if (selectedGame.error) return selectedGame.error;
   const { game } = selectedGame;
-  const selected = resolveLeague(searchParams, game);
+  const selected = await resolveLeagueAccess(searchParams, game, async (requestedLeague) => {
+    const candidate = repository(scopeFor(ctx, game, requestedLeague), { anchors: game.anchors });
+    return candidate ? withDbRetry(() => candidate.hasPricedCandles()) : false;
+  });
   if (selected.error) return selected.error;
   const repo = gameAwareRepository(await resolveRepo(ctx, scopeFor(ctx, game, selected.league)), game.id);
   if (!repo) return NO_DB;
@@ -442,10 +482,23 @@ async function leagueAvailability(ctx, games) {
   // expensive full radar computation.
   if (!getSql()) return null;
   const available = new Map();
+  const discovered = new Map();
   for (const game of games) {
     if (!game.enabled) continue;
+    try {
+      const discoveryRepo = repository(scopeFor(ctx, game, game.activeLeague), { anchors: game.anchors });
+      const rows = discoveryRepo?.listPricedLeagues
+        ? await withDbRetry(() => discoveryRepo.listPricedLeagues())
+        : [];
+      discovered.set(game.id, rows.map((row) => row.league));
+      for (const row of rows) available.set(`${game.id}|${row.league}`, true);
+    } catch {
+      // Keep configured fallbacks if discovery has a transient DB failure.
+      discovered.set(game.id, []);
+    }
     for (const league of game.leagues) {
       const key = `${game.id}|${league}`;
+      if (available.get(key) === true) continue;
       try {
         const repo = repository(scopeFor(ctx, game, league), { anchors: game.anchors });
         const hasData = repo
@@ -459,19 +512,23 @@ async function leagueAvailability(ctx, games) {
       }
     }
   }
-  return available;
+  return { available, discovered };
 }
 
 export async function getConfig() {
   const ctx = await context();
   const { config } = ctx;
   const definitions = gameConfigs(config);
-  const availability = await leagueAvailability(ctx, definitions);
+  const leagueState = await leagueAvailability(ctx, definitions);
   const games = definitions.map((game) => {
-    const leagues = game.leagues.map((league) => ({
+    const allLeagues = [...new Set([
+      ...game.leagues,
+      ...(leagueState?.discovered.get(game.id) ?? []),
+    ])];
+    const leagues = allLeagues.map((league) => ({
       id: league,
       label: league,
-      enabled: availability?.get(`${game.id}|${league}`) !== false,
+      enabled: leagueState?.available.get(`${game.id}|${league}`) !== false,
     }));
     const enabledLeagueIds = leagues.filter((entry) => entry.enabled).map((entry) => entry.id);
     return {
@@ -531,7 +588,7 @@ export async function runRadarIngest({ now = Date.now(), trace = noop } = {}) {
   const repo = repository(ingestScope, { trace });
   if (!repo) return NO_DB;
   if (config.ingestProviderMode === "live") {
-    // One CDN stream per configured (game, realm), carrying the active league and
+    // One CDN stream per configured (game, realm), carrying every public league and
     // its own per-(game,realm) cursor. Streams run serially under a
     // shared wall-clock budget (cxapiIngestBudgetMs) so one invocation always
     // returns under the 60s function/pg_net limit; cursors persist, so catch-up

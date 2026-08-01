@@ -30,7 +30,7 @@ function directCard(row, currency) {
  */
 export function keyCurrencyCards(rows = [], fallbackAnchor = "exalted") {
   const byTarget = new Map(rows.map((row) => [row.target, row]));
-  const anchor = rows.find((row) => row.anchor)?.anchor ?? fallbackAnchor;
+  const anchor = fallbackAnchor;
   const inverseOrder = anchor === "chaos" ? ["exalted", "divine"] : ["chaos", "divine"];
   const inverseSource = inverseOrder.map((id) => byTarget.get(id)).find(Boolean) ?? null;
   return CORE.map((currency) => {

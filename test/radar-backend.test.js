@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 // cleanly (never throw, never fabricate). Unset before importing the module.
 delete process.env.DATABASE_URL;
 
-const { gameAwareRepository, getConfig, getStatus, getRadar, getHistory, resolveGame, resolveLeague, tradableRows } = await import("../apps/web/lib/radar-backend.js");
+const { gameAwareRepository, getConfig, getStatus, getRadar, getHistory, resolveGame, resolveLeague, resolveLeagueAccess, tradableRows } = await import("../apps/web/lib/radar-backend.js");
 
 test("tradableRows drops no-trade catalog placeholders but keeps real markets", () => {
   const rows = [
@@ -68,13 +68,39 @@ test("PoE1 read compatibility canonicalizes legacy core Metadata ids", async () 
   }, "poe1");
   assert.deepEqual((await repo.readCandleWindow())[0], {
     ...legacy,
-    pairId: "exalted|chaos",
+    pairId: "chaos|exalted",
     base: "exalted",
     quote: "chaos",
     volume: { exalted: 4, chaos: 9 },
   });
-  assert.equal((await repo.readPairCandles("exalted|chaos"))[0].pairId, "exalted|chaos");
-  assert.deepEqual(seen, [legacy.pairId, "exalted|chaos"]);
+  assert.equal((await repo.readPairCandles("exalted|chaos"))[0].pairId, "chaos|exalted");
+  assert.deepEqual(seen, ["chaos|exalted", "exalted|chaos", legacy.pairId, `${chaos}|${exalted}`]);
+});
+
+test("PoE1 history resolves canonical and old-order pair variants once", async () => {
+  const chaos = "Metadata/Items/Currency/CurrencyRerollRare";
+  const omen = "Metadata/Items/Currency/AncestralOmenOnChromaticAddWhiteSockets";
+  const storedPair = [chaos, omen].sort().join("|");
+  const seen = [];
+  const candle = {
+    completedHour: 1000,
+    pairId: storedPair,
+    base: chaos,
+    quote: omen,
+    volume: { [chaos]: 9, [omen]: 4 },
+  };
+  const repo = gameAwareRepository({
+    async readPairCandles(pair) {
+      seen.push(pair);
+      return pair === storedPair ? [candle, candle] : [];
+    },
+  }, "poe1");
+
+  const rows = await repo.readPairCandles(`chaos|${omen}`);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].pairId, `${omen}|chaos`);
+  assert.ok(seen.includes(storedPair));
+  assert.ok(seen.includes(`${omen}|chaos`));
 });
 
 test("resolveLeague accepts configured leagues and rejects arbitrary scopes", () => {
@@ -84,6 +110,23 @@ test("resolveLeague accepts configured leagues and rejects arbitrary scopes", ()
   const rejected = resolveLeague(new URLSearchParams("league=Private%20(PL123)"), config);
   assert.equal(rejected.error.status, 400);
   assert.equal(rejected.error.body.error.code, "invalid-league");
+});
+
+test("resolveLeagueAccess admits a discovered priced public league but never arbitrary/private scopes", async () => {
+  const config = { league: "Runes of Aldur", activeLeague: "Runes of Aldur", leagues: ["Runes of Aldur"] };
+  const hasRecentData = async (league) => league === "Allflame";
+  assert.deepEqual(
+    await resolveLeagueAccess(new URLSearchParams("league=Allflame"), config, hasRecentData),
+    { league: "Allflame" },
+  );
+  assert.equal(
+    (await resolveLeagueAccess(new URLSearchParams("league=Made%20Up"), config, hasRecentData)).error.status,
+    400,
+  );
+  assert.equal(
+    (await resolveLeagueAccess(new URLSearchParams("league=Private%20(PL123)"), config, async () => true)).error.status,
+    400,
+  );
 });
 
 test("data routes degrade to 503 when DATABASE_URL is absent", async () => {
@@ -107,6 +150,10 @@ test("getHistory validates the pair id before infrastructure (400 even with no D
 
   const good = await getHistory(new URLSearchParams("pair=divine|exalted&anchor=exalted"));
   assert.equal(good.status, 503); // valid pair, but no DB
+
+  const realMetadataId = "Metadata/Items/MapFragments/CurrencyVaalFragment1_3";
+  const underscore = await getHistory(new URLSearchParams(`pair=chaos|${realMetadataId}&anchor=chaos&game=poe1`));
+  assert.equal(underscore.status, 503); // valid GGG id, but no DB
 });
 
 test("offline fixture fallback serves a full synthetic radar without a database", async () => {

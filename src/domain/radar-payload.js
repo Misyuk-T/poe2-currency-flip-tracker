@@ -76,6 +76,7 @@ export function buildRadarResponse({
       gold: item
         ? { status: item.status, goldPerUnit: item.goldPerUnit }
         : { status: "unknown-catalog-item", goldPerUnit: null },
+      anchorGoldPerUnit: catalogById.get(row.anchor ?? anchor)?.goldPerUnit ?? null,
     };
   });
   const trackedIds = new Set(tracked.map((row) => row.target));

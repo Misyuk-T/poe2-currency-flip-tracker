@@ -196,7 +196,7 @@ export function rotateStreams(streams, now) {
 
 /**
  * Ingest every configured live stream — one CDN stream per (game, realm), each
- * carrying the configured public leagues and its own per-(game,realm) cursor.
+ * carrying every public league and its own per-(game,realm) cursor.
  * Dependencies (makeRepo/makeProvider) are injected so the orchestration is
  * testable without a database. Streams run sequentially: one active ingester per
  * (game, realm) at a time. A fresh stream with no cursor/start id defaults to a
@@ -239,19 +239,16 @@ export async function ingestLiveStreams({ streams, config, now, makeRepo, makePr
       config.cxapiStartId ??
       (config.cxapiSource === "cdn" && cursor == null ? recentStartHour(now, config.cxapiMaxBackfillHours) : null);
     const catchingUp = cursor != null || startId != null;
-    const configuredLeagues = stream.game === "poe1"
-      ? (config.poe1Leagues ?? [config.poe1League ?? config.league].filter(Boolean))
-      : (config.leagues ?? [config.league].filter(Boolean));
     const configuredAnchors = stream.game === "poe1"
       ? ["chaos", "divine", "exalted"]
       : config.anchors;
     const summary = await ingestLive({
       repo,
-      // One CDN digest carries current and historical public leagues. Persist
-      // only the league selector's configured surface: storing retired leagues
-      // grew the candle table without creating a route that could read them.
+      // One CDN digest carries every public league. Persist all of them and let
+      // /api/config discover only leagues with recent priced candles. Private
+      // league names are excluded by normalizeCxDigest.
       league: null,
-      leagues: configuredLeagues,
+      leagues: null,
       anchors: configuredAnchors,
       provider,
       startId,

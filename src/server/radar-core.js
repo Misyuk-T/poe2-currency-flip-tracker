@@ -145,6 +145,75 @@ export async function buildRadarPayload(input) {
   return payloads[input.anchor];
 }
 
+/**
+ * One target per row across all anchor payloads. Prices stay in the selected
+ * row's native anchor; callers use `sourceAnchor` for history and conversion.
+ */
+export function mergeRadarPayloads(payloads, { preferredAnchor } = {}) {
+  const available = Object.entries(payloads ?? {}).filter(([, payload]) => payload?.rows);
+  const anchors = available.map(([anchor]) => anchor);
+  const preferred = anchors.includes(preferredAnchor) ? preferredAnchor : anchors[0] ?? preferredAnchor;
+  const candidates = new Map();
+  for (const [payloadAnchor, payload] of available) {
+    for (const row of payload.rows ?? []) {
+      if (!row?.pairId || row.status === "no-trades-this-hour") continue;
+      const native = { ...row, anchor: row.anchor ?? payloadAnchor, sourceAnchor: row.anchor ?? payloadAnchor };
+      const list = candidates.get(native.target) ?? [];
+      list.push(native);
+      candidates.set(native.target, list);
+    }
+  }
+
+  const rows = [];
+  for (const [target, targetRows] of candidates) {
+    if (target === preferred) continue;
+    // Core anchor markets define the conversion graph. Keep their direct quote
+    // in the preferred anchor when it exists, avoiding inverse duplicates of
+    // the same pair while retaining every non-anchor target.
+    const preferredRows = anchors.includes(target)
+      ? targetRows.filter((row) => row.anchor === preferred)
+      : [];
+    const pool = preferredRows.length ? preferredRows : targetRows;
+    rows.push(pool.sort((a, b) => compareAnchorRows(a, b, preferred))[0]);
+  }
+  rows.sort((a, b) => (b.activityScore ?? -1) - (a.activityScore ?? -1) || String(a.target).localeCompare(String(b.target)));
+
+  const primary = available.find(([anchor]) => anchor === preferred)?.[1] ?? available[0]?.[1] ?? {};
+  const generatedAt = available
+    .map(([, payload]) => Date.parse(payload.generatedAt))
+    .filter(Number.isFinite)
+    .reduce((latest, value) => Math.max(latest, value), 0);
+  return {
+    ...primary,
+    anchor: preferred,
+    availableAnchors: anchors,
+    generatedAt: generatedAt ? new Date(generatedAt).toISOString() : primary.generatedAt,
+    trackedCount: rows.length,
+    catalogCount: rows.length,
+    rows,
+    marketData: {
+      ...(primary.marketData ?? {}),
+      trackedMarketCount: rows.length,
+      status: rows.length ? "available" : primary.marketData?.status ?? "no-data",
+    },
+  };
+}
+
+function compareAnchorRows(a, b, preferredAnchor) {
+  const values = [
+    [Number(!a.stale), Number(!b.stale)],
+    [Number(a.status === "ok"), Number(b.status === "ok")],
+    [Number(a.samples) || 0, Number(b.samples) || 0],
+    [Number(a.coverage24h) || 0, Number(b.coverage24h) || 0],
+    [Number(a.volume) || 0, Number(b.volume) || 0],
+    [Number(a.anchor === preferredAnchor), Number(b.anchor === preferredAnchor)],
+  ];
+  for (const [left, right] of values) {
+    if (left !== right) return right - left;
+  }
+  return String(a.anchor).localeCompare(String(b.anchor));
+}
+
 /** /api/hotlist payload (the bare hotlist; scheduler is gone in serverless). */
 export async function buildHotlistPayload({
   repo,

@@ -84,7 +84,8 @@ export function resolveCurrency(metadataId, game = "poe2") {
       name: e.name,
       icon: e.icon ?? iconFromArt(e.art, game),
       shortId: e.shortId ?? null,
-      category: e.class ? humanize(e.class) : null,
+      category: e.category ?? (e.class ? humanize(e.class) : null),
+      taxonomySource: e.taxonomySource ?? (e.class ? "repo-class" : "unresolved"),
     };
   }
   return { id: metadataId, name: humanize(metadataId), icon: null, shortId: null, category: null };
@@ -133,8 +134,8 @@ export function identityCategories(game = "poe2") {
   const { items } = load(game);
   const out = {};
   for (const [meta, e] of Object.entries(items)) {
-    if (!e.class) continue;
-    const category = humanize(e.class);
+    const category = e.category ?? (e.class ? humanize(e.class) : null);
+    if (!category) continue;
     out[meta] = category;
     if (e.shortId) out[e.shortId] = category;
   }

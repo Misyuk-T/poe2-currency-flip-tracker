@@ -9,6 +9,7 @@ import PocketValuator from "./PocketValuator.jsx";
 import { roundTripGold } from "../../../src/domain/gold-costs.js";
 import { keyCurrencyCards, sparklinePoints } from "../lib/key-currencies.js";
 import { currentPriceGuidance, quoteFromAnchor, workingPrice } from "../lib/price-guidance.js";
+import { unitRates } from "../lib/market-units.js";
 import { sortByFamily } from "../lib/item-family.js";
 import { useScrollLock } from "../lib/use-scroll-lock.js";
 import { preloadIcons } from "../lib/preload-icons.js";
@@ -96,9 +97,10 @@ const STALE_BASIS_MS = 3 * 3600_000;
 const CONFIG_CACHE_MS = 5 * 60_000;
 const RADAR_CACHE_MS = 5 * 60_000;
 const HISTORY_CACHE_MS = 10 * 60_000;
+const PAGE_SIZE = 100;
 
 function radarUrl(game, league, anchor) {
-  const params = new URLSearchParams({ anchor, game, league });
+  const params = new URLSearchParams({ anchor, game, league, view: "best" });
   return `${apiBaseUrl}/api/radar?${params}`;
 }
 
@@ -199,17 +201,6 @@ function KeyCurrencyCard({ card, emptyLabel = "Waiting for data", quantity = 1 }
       </div>
     </article>
   );
-}
-
-function unitRates(rows, fallbackAnchor = "exalted") {
-  const anchor = rows.find((row) => row.anchor)?.anchor ?? fallbackAnchor;
-  const rates = { exalted: null, chaos: null, divine: null, [anchor]: 1 };
-  for (const row of rows) {
-    if (DISPLAY_CURRENCIES.some((currency) => currency.id === row.target) && Number.isFinite(row.reference) && row.reference > 0) {
-      rates[row.target] = row.reference;
-    }
-  }
-  return rates;
 }
 
 function CustomSelect({ id, value, options, onChange }) {
@@ -464,10 +455,12 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   const [draftPrice, setDraftPrice] = useState("");
   const [draftUnit, setDraftUnit] = useState("exalted");
   const [loadingMinHeight, setLoadingMinHeight] = useState(null);
+  const [page, setPage] = useState(1);
   const radarMainRef = useRef(null);
   const appliedReloadKeyRef = useRef(0);
   const activeGameConfig = marketConfig?.games?.find((entry) => entry.id === game);
   const anchorCurrency = activeGameConfig?.anchorCurrency ?? "exalted";
+  const selectedSourceAnchor = radar?.rows?.find((row) => row.pairId === selectedPair)?.anchor ?? anchorCurrency;
 
   useEffect(() => {
     let cancelled = false;
@@ -594,7 +587,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   useEffect(() => {
     if (!selectedPair || !league) return;
     let cancelled = false;
-    const url = historyUrl(game, league, anchorCurrency, selectedPair);
+    const url = historyUrl(game, league, selectedSourceAnchor, selectedPair);
     const cached = peekCachedJson(url, { ttlMs: HISTORY_CACHE_MS });
     if (cached) {
       setHistory(cached.series ?? []);
@@ -620,7 +613,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     return () => {
       cancelled = true;
     };
-  }, [anchorCurrency, game, selectedPair, league]);
+  }, [game, selectedPair, selectedSourceAnchor, league]);
 
   // Plan modal: Escape closes it and background scroll is locked while it is open.
   useScrollLock(view === "chart");
@@ -661,9 +654,11 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
           id: row.target,
           name: row.targetName,
           icon: iconUrl(row.targetIcon ?? row.target),
-          exaltedEach: row.reference,
+          exaltedEach: rates[row.anchor] && rates.exalted
+            ? (row.reference * rates[row.anchor]) / rates.exalted
+            : null,
         })),
-    [tradable],
+    [rates, tradable],
   );
   // Gold charged per unit RECEIVED of each anchor, for the "best paid in" column.
   const anchorGoldPerUnit = useMemo(() => {
@@ -717,20 +712,36 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     if (category !== "all" && !categories.some((cat) => cat.name === category)) setCategory("all");
   }, [categories, category]);
 
-  const goldPerAnchor = radar?.goldPerAnchor;
-  const rows = useMemo(() => {
+  const defaultGoldPerAnchor = radar?.goldPerAnchor;
+  const filteredRows = useMemo(() => {
     const inCategory = category === "all" ? searched : searched.filter((row) => (row.category || "Other") === category);
     // Attach gold-aware metrics once, so the table cells and the sort read the
     // same computed values (no double computation, no drift).
     const enriched = inCategory.map((row) => {
-      const { goldPerFlip, profitPer100k } = goldMetrics(row, goldPerAnchor);
+      const rowGoldPerAnchor = Number.isFinite(row.anchorGoldPerUnit)
+        ? row.anchorGoldPerUnit
+        : row.anchor === anchorCurrency ? defaultGoldPerAnchor : null;
+      const { goldPerFlip, profitPer100k } = goldMetrics(row, rowGoldPerAnchor);
       return { ...row, _goldPerFlip: goldPerFlip, _profitPer100k: profitPer100k };
     });
     const ordered = sort.startsWith("family:")
       ? sortByFamily(enriched)
       : enriched.sort((a, b) => compareRows(a, b, sort));
-    return ordered.slice(0, 200);
-  }, [searched, category, sort, goldPerAnchor]);
+    return ordered;
+  }, [searched, category, sort, anchorCurrency, defaultGoldPerAnchor]);
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const rows = useMemo(
+    () => filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filteredRows, page],
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [category, game, league, search, sort]);
+
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
 
   const selected = selectedPair
     ? rows.find((row) => row.pairId === selectedPair) ?? tradable.find((row) => row.pairId === selectedPair) ?? null
@@ -806,7 +817,12 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   );
   const planSpread = guidance.status === "ok" ? guidance.rangePotential : null;
   const planMetrics = selected && guidance.status === "ok"
-    ? goldMetrics({ ...selected, low: guidance.entry, high: guidance.exit }, goldPerAnchor)
+    ? goldMetrics(
+      { ...selected, low: guidance.entry, high: guidance.exit },
+      Number.isFinite(selected.anchorGoldPerUnit)
+        ? selected.anchorGoldPerUnit
+        : selected.anchor === anchorCurrency ? defaultGoldPerAnchor : null,
+    )
     : null;
   const chartUnit = displayCurrency && rates[displayCurrency] ? displayCurrency : selected?.anchor ?? "exalted";
   const chartHistory = useMemo(() => {
@@ -1086,8 +1102,17 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                 <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Currency, rune, essence…" type="search" />
               </span>
             </label>
-            <span className="rc-count" aria-live="polite">{rows.length} markets</span>
+            <span className="rc-count" aria-live="polite">
+              {filteredRows.length} markets{pageCount > 1 ? ` · page ${page}/${pageCount}` : ""}
+            </span>
           </div>
+          {pageCount > 1 && (
+            <nav className="market-pagination" aria-label="Market pages">
+              <button type="button" disabled={page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</button>
+              <span>{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filteredRows.length)} of {filteredRows.length}</span>
+              <button type="button" disabled={page === pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))}>Next</button>
+            </nav>
+          )}
 
           <div className="radar-table-wrap">
               <table className="radar-table">

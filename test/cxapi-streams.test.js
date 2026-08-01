@@ -134,7 +134,7 @@ test("ingestLiveStreams reuses the stream state instead of reading the cursor tw
   assert.equal(fetches, 1, "one digest per invocation while runtime timing is being proven");
 });
 
-test("ingestLiveStreams stores only the configured public leagues", async () => {
+test("ingestLiveStreams stores every public league and drops private leagues", async () => {
   const config = {
     league: "Runes of Aldur",
     leagues: ["Runes of Aldur", "HC Runes of Aldur", "Standard"],
@@ -174,7 +174,7 @@ test("ingestLiveStreams stores only the configured public leagues", async () => 
     },
   });
   await ingestLiveStreams({ streams: config.cxapiStreams, config, now: 1_784_600_000_000, makeRepo, makeProvider });
-  assert.deepEqual([...new Set(saved.map((c) => c.league))].sort(), ["HC Runes of Aldur", "Runes of Aldur", "Standard"]);
+  assert.deepEqual([...new Set(saved.map((c) => c.league))].sort(), ["Allflame", "HC Runes of Aldur", "Runes of Aldur", "Standard"]);
 });
 
 test("ingestLiveStreams stores only pairs used by configured radar anchors", async () => {

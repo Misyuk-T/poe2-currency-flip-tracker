@@ -76,6 +76,20 @@ test("hasPricedCandles returns the lightweight league availability flag", async 
   assert.equal(await empty.hasPricedCandles(), false);
 });
 
+test("listPricedLeagues discovers recent priced scopes in freshness order", async () => {
+  const repo = createRadarRepository({
+    sql: fakeSql([[
+      { league: "Runes of Aldur", newest_completed_hour: "1785603600000" },
+      { league: "Standard", newest_completed_hour: "1785600000000" },
+    ]]),
+    scope,
+  });
+  assert.deepEqual(await repo.listPricedLeagues(), [
+    { league: "Runes of Aldur", newestCompletedHour: 1_785_603_600_000 },
+    { league: "Standard", newestCompletedHour: 1_785_600_000_000 },
+  ]);
+});
+
 test("readRadarSnapshot parses a stored JSON payload and refresh time", async () => {
   const repo = createRadarRepository({
     sql: fakeSql([[{ payload: '{"anchor":"exalted","rows":[]}', refreshed_at: "1700000000000" }]]),

@@ -218,6 +218,27 @@ export function createRadarRepository({
     return rows[0]?.available === true;
   }
 
+  /** Recent public league scopes that contain at least one priced candle. */
+  async function listPricedLeagues() {
+    const rows = await withTimeout(
+      sql`
+        select league, extract(epoch from max(completed_hour)) * 1000 as newest_completed_hour
+        from hourly_market_candles
+        where game = ${scope.game} and realm = ${scope.realm} and provider = ${scope.mode}
+          and completed_hour >= now() - make_interval(days => ${windowDays})
+          and reference_ratio is not null and reference_ratio > 0
+        group by league
+        order by max(completed_hour) desc, league asc
+        limit 64`,
+      opTimeoutMs,
+      "priced league discovery",
+      onTimeout,
+    );
+    return rows
+      .filter((row) => typeof row.league === "string" && row.league.length > 0)
+      .map((row) => ({ league: row.league, newestCompletedHour: Number(row.newest_completed_hour) || null }));
+  }
+
   /** Latest precomputed /api/radar response for one anchor, if present. */
   async function readRadarSnapshot(anchor) {
     const rows = await withTimeout(
@@ -408,6 +429,7 @@ export function createRadarRepository({
     readCandleWindow,
     readPairCandles,
     hasPricedCandles,
+    listPricedLeagues,
     readRadarSnapshot,
     writeRadarSnapshots,
     readCxapiState,

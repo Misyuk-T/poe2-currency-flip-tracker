@@ -80,10 +80,10 @@ test("PoE1 identity is game-scoped and resolves long-tail names, classes, and of
   const scarab = "Metadata/Items/Scarabs/ScarabAnarchy2";
   const resolved = resolveCurrency(scarab, "poe1");
   assert.equal(resolved.name, "Anarchy Scarab of Gigantification");
-  assert.equal(resolved.category, "Map Fragment");
+  assert.equal(resolved.category, "Fragments, Scarabs & Mapping");
   assert.match(resolved.icon, /^https:\/\/web\.poecdn\.com\/image\/Art\/2DItems\//);
   assert.equal(identityNames("poe1")[scarab], resolved.name);
-  assert.equal(identityCategories("poe1")[scarab], "Map Fragment");
+  assert.equal(identityCategories("poe1")[scarab], "Fragments, Scarabs & Mapping");
   assert.equal(identityIcons("poe1")[scarab], resolved.icon);
 });
 

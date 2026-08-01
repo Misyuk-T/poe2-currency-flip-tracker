@@ -6,6 +6,7 @@ import {
   buildRadarPayloads,
   buildHistoryPayload,
   buildHotlistPayload,
+  mergeRadarPayloads,
 } from "../src/server/radar-core.js";
 
 const HOUR = 3600_000;
@@ -128,4 +129,22 @@ test("buildHotlistPayload pins the shortlist and reports no scheduler", async ()
   const out = await buildHotlistPayload({ ...base });
   assert.ok(out.entries.some((entry) => entry.id === "divine"));
   assert.equal(out.scheduler.enabled, false);
+});
+
+test("mergeRadarPayloads picks the strongest native anchor row per target", () => {
+  const merged = mergeRadarPayloads({
+    exalted: { anchor: "exalted", generatedAt: new Date(NOW - 1000).toISOString(), rows: [
+      { target: "rune", pairId: "exalted|rune", anchor: "exalted", status: "insufficient-history", samples: 2, coverage24h: 0.04, volume: 100, stale: false },
+      { target: "divine", pairId: "divine|exalted", anchor: "exalted", status: "ok", samples: 20, stale: false },
+    ] },
+    divine: { anchor: "divine", generatedAt: new Date(NOW).toISOString(), rows: [
+      { target: "rune", pairId: "divine|rune", anchor: "divine", status: "ok", samples: 10, coverage24h: 0.5, volume: 5, stale: false },
+      { target: "exalted", pairId: "divine|exalted", anchor: "divine", status: "ok", samples: 20, stale: false },
+    ] },
+  }, { preferredAnchor: "exalted" });
+  assert.equal(merged.rows.find((row) => row.target === "rune").sourceAnchor, "divine");
+  assert.equal(merged.rows.find((row) => row.target === "divine").sourceAnchor, "exalted");
+  assert.equal(merged.rows.some((row) => row.target === "exalted"), false, "inverse preferred-anchor duplicate is omitted");
+  assert.equal(merged.trackedCount, 2);
+  assert.deepEqual(merged.availableAnchors, ["exalted", "divine"]);
 });

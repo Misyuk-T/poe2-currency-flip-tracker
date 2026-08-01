@@ -87,7 +87,7 @@ test("recordCxDigest does not persist unused stock payloads", async () => {
   const rows = templateCalls
     .find((c) => c.text.includes("hourly_market_candles"))
     .values.find((v) => v.__fragmentRows).__fragmentRows;
-  assert.equal(rows[0].stock, "{}");
+  assert.deepEqual(rows[0].stock, {});
 });
 
 test("recordCxDigest emits transaction/batch phases", async () => {

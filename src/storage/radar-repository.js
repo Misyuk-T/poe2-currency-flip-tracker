@@ -352,7 +352,7 @@ export function createRadarRepository({
               // plan model. Keeping the JSON for every pair/hour added hundreds
               // of MB to the Free-plan database, so new rows store the schema's
               // neutral empty value.
-              stock: "{}",
+              stock: {},
               source: c.source,
             }));
             // Batch the insert. One ~2000-row unnamed (prepare:false) insert is a

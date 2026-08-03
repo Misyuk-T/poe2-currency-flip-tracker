@@ -18,6 +18,7 @@ import {
 import { applyExchangeLayout, exchangeLayoutCategories } from "../../../src/domain/exchange-layout.js";
 import { createGoldRegistry, createFlatGoldRegistry } from "../../../src/domain/gold-costs.js";
 import { canonicalPairId, isPublicLeague } from "../../../src/domain/cx-market.js";
+import { selectAutomaticAnchors } from "../../../src/domain/market-anchor.js";
 import { RADAR_PAYLOAD_VERSION, isCompatibleRadarSnapshot } from "../../../src/domain/radar-snapshot.js";
 import { POE2_GOLD_COSTS } from "../../../src/data/gold-costs-poe2.js";
 import { createRadarRepository } from "../../../src/storage/radar-repository.js";
@@ -37,7 +38,7 @@ const NO_DB = {
   body: { error: { code: "no-database", message: "Market storage is not configured." } },
 };
 
-const CORE_NAMES = { chaos: "Chaos Orb", divine: "Divine Orb", exalted: "Exalted Orb" };
+const CORE_NAMES = { chaos: "Chaos Orb", divine: "Divine Orb", exalted: "Exalted Orb", alchemy: "Orb of Alchemy" };
 const CORE_TO_METADATA = Object.fromEntries(Object.entries(CORE_CURRENCY_IDS).map(([metadata, id]) => [id, metadata]));
 
 function remapObjectKeys(value, translate) {
@@ -112,7 +113,7 @@ export function gameConfigs(config) {
   });
   return [
     definition("poe2", "Path of Exile 2", "poe2", config.league, config.leagues, config.anchorCurrency, config.anchors),
-    definition("poe1", "Path of Exile", "poe1", config.poe1League, config.poe1Leagues, "chaos", ["chaos", "divine", "exalted"]),
+    definition("poe1", "Path of Exile", "poe1", config.poe1League, config.poe1Leagues, "chaos", ["chaos", "divine", "exalted", "alchemy"]),
   ];
 }
 
@@ -152,10 +153,22 @@ function context() {
         : createGoldRegistry(POE2_GOLD_COSTS, { game: config.poeGame });
       const catalog = await loadCatalog();
       const manifest = buildManifest(catalog, goldRegistry);
+      const poe1MetadataIcons = identityIcons("poe1");
+      const poe1MetadataCategories = identityCategories("poe1");
+      const poe1CoreIcons = Object.fromEntries(
+        Object.entries(CORE_TO_METADATA)
+          .map(([id, metadata]) => [id, poe1MetadataIcons[metadata]])
+          .filter(([, icon]) => icon),
+      );
+      const poe1CoreCategories = Object.fromEntries(
+        Object.entries(CORE_TO_METADATA)
+          .map(([id, metadata]) => [id, poe1MetadataCategories[metadata]])
+          .filter(([, category]) => category),
+      );
       const poe1Identity = {
         names: { ...identityNames("poe1"), ...CORE_NAMES },
-        icons: identityIcons("poe1"),
-        categories: identityCategories("poe1"),
+        icons: { ...poe1MetadataIcons, ...poe1CoreIcons },
+        categories: { ...poe1MetadataCategories, ...poe1CoreCategories },
       };
       const poe2Identity = {
         names: { ...identityNames("poe2"), ...nameMapFromCatalog(catalog) },
@@ -178,11 +191,14 @@ const noop = () => {};
 
 function repository(scope, { trace = noop, anchors = [] } = {}) {
   const sql = getSql();
+  const storedAnchors = scope.game === "poe1"
+    ? [...new Set(anchors.flatMap((anchor) => [anchor, CORE_TO_METADATA[anchor]].filter(Boolean)))]
+    : anchors;
   return sql
     ? createRadarRepository({
         sql,
         scope,
-        anchors,
+        anchors: storedAnchors,
         onPhase: trace,
         onTimeout: ({ label, ms }) => {
           trace("db.client.reset", { label, timeoutMs: ms });
@@ -225,8 +241,10 @@ function fixtureRepository(ctx, scope = ctx.scope) {
 }
 
 /** Postgres repo when DATABASE_URL is set; else the offline fixture repo (dev). */
-async function resolveRepo(ctx, scope = ctx.scope) {
-  const anchors = gameConfigs(ctx.config).find((game) => game.id === scope.game)?.anchors ?? [];
+async function resolveRepo(ctx, scope = ctx.scope, resolvedAnchors = null) {
+  const anchors = resolvedAnchors
+    ?? gameConfigs(ctx.config).find((game) => game.id === scope.game)?.anchors
+    ?? [];
   const dbRepo = repository(scope, { anchors });
   if (dbRepo) return dbRepo;
   if (ctx.config.providerMode === "fixture" && fixtureFallbackEnabled()) return fixtureRepository(ctx, scope);
@@ -236,6 +254,31 @@ async function resolveRepo(ctx, scope = ctx.scope) {
 function resolveAnchor(searchParams, config) {
   const requested = searchParams.get("anchor");
   return config.anchors.includes(requested) ? requested : config.anchorCurrency;
+}
+
+function normalizeAnchorCandidates(candidates, game) {
+  const translate = translatorForGame(game.id);
+  const combined = new Map();
+  for (const candidate of candidates ?? []) {
+    const currency = translate(candidate.currency);
+    if (!currency) continue;
+    const current = combined.get(currency) ?? { currency, pairCount: 0, sampleCount: 0 };
+    current.pairCount += Number(candidate.pairCount) || 0;
+    current.sampleCount += Number(candidate.sampleCount) || 0;
+    combined.set(currency, current);
+  }
+  return [...combined.values()];
+}
+
+async function automaticAnchorPlan(repo, game, previousAnchor = null) {
+  const candidates = repo?.listAnchorCandidates
+    ? normalizeAnchorCandidates(await withDbRetry(() => repo.listAnchorCandidates()), game)
+    : [];
+  return selectAutomaticAnchors(candidates, {
+    fallbackAnchors: game.anchors,
+    previousAnchor,
+    maxAnchors: 5,
+  });
 }
 
 /** Resolve a public read league without allowing arbitrary cache/query scopes. */
@@ -279,12 +322,12 @@ export function tradableRows(rows) {
   return (rows ?? []).filter((row) => row?.pairId && row.status !== "no-trades-this-hour");
 }
 
-function radarBuildInput(ctx, game, repo, now = Date.now()) {
+function radarBuildInput(ctx, game, repo, now = Date.now(), anchors = game.anchors) {
   const isPoe2 = game.id === "poe2";
   const identity = ctx.identityByGame[game.id] ?? { names: CORE_NAMES, icons: {}, categories: {} };
   return {
     repo,
-    anchors: game.anchors,
+    anchors,
     shortlist: ctx.config.shortlist,
     names: identity.names,
     icons: identity.icons,
@@ -322,11 +365,26 @@ export async function getRadar(searchParams) {
     return candidate ? withDbRetry(() => candidate.hasPricedCandles()) : false;
   });
   if (selected.error) return selected.error;
-  const repo = gameAwareRepository(await resolveRepo(ctx, scopeFor(ctx, game, selected.league)), game.id);
-  if (!repo) return NO_DB;
+  const scope = scopeFor(ctx, game, selected.league);
+  const discoveryRepo = gameAwareRepository(await resolveRepo(ctx, scope), game.id);
+  if (!discoveryRepo) return NO_DB;
+  const autoView = searchParams.get("anchor") === "auto";
   const anchor = resolveAnchor(searchParams, game);
-  const bestView = searchParams.get("view") === "best";
-  const requestedAnchors = bestView ? game.anchors : [anchor];
+  const bestView = autoView || searchParams.get("view") === "best";
+  if (autoView && discoveryRepo.readRadarSnapshot) {
+    const autoSnapshot = await withDbRetry(() => discoveryRepo.readRadarSnapshot("auto"));
+    if (isCompatibleRadarSnapshot(autoSnapshot)) return { status: 200, body: autoSnapshot.payload };
+  }
+  const previousAuto = autoView && discoveryRepo.readRadarSnapshot
+    ? await withDbRetry(() => discoveryRepo.readRadarSnapshot("auto"))
+    : null;
+  const anchorPlan = autoView
+    ? await automaticAnchorPlan(discoveryRepo, game, previousAuto?.payload?.anchor ?? game.anchorCurrency)
+    : { primary: anchor, anchors: game.anchors };
+  const requestedAnchor = autoView ? anchorPlan.primary : anchor;
+  const requestedAnchors = bestView ? anchorPlan.anchors : [requestedAnchor];
+  const repo = gameAwareRepository(await resolveRepo(ctx, scope, requestedAnchors), game.id);
+  if (!repo) return NO_DB;
   const snapshots = repo.readRadarSnapshot
     ? await Promise.all(requestedAnchors.map(async (snapshotAnchor) => [
         snapshotAnchor,
@@ -339,30 +397,36 @@ export async function getRadar(searchParams) {
   if (Object.keys(freshPayloads).length === requestedAnchors.length) {
     return {
       status: 200,
-      body: bestView ? mergeRadarPayloads(freshPayloads, { preferredAnchor: anchor }) : freshPayloads[anchor],
+      body: bestView
+        ? mergeRadarPayloads(freshPayloads, { preferredAnchor: requestedAnchor })
+        : freshPayloads[requestedAnchor],
     };
   }
 
   // Backward-compatible/self-healing fallback for the first request after the
   // migration or if the hourly snapshot refresh failed. It is deliberately not
   // the normal path anymore.
-  const built = await withDbRetry(() => buildRadarPayloads(radarBuildInput(ctx, game, repo)));
+  const built = await withDbRetry(() => buildRadarPayloads(radarBuildInput(ctx, game, repo, Date.now(), requestedAnchors)));
   const payloads = Object.fromEntries(Object.entries(built).map(([payloadAnchor, payload]) => [
     payloadAnchor,
     finalizeRadarBody(payload, game, selected.league),
   ]));
-  const body = bestView ? mergeRadarPayloads(payloads, { preferredAnchor: anchor }) : payloads[anchor];
+  const body = bestView
+    ? mergeRadarPayloads(payloads, { preferredAnchor: requestedAnchor })
+    : payloads[requestedAnchor];
   if (repo.writeRadarSnapshots) {
     try {
-      await withDbRetry(() => repo.writeRadarSnapshots(Object.entries(payloads).map(([payloadAnchor, payload]) => ({
+      const snapshotWrites = Object.entries(payloads).map(([payloadAnchor, payload]) => ({
         anchor: payloadAnchor,
         payload,
-      }))));
+      }));
+      if (autoView) snapshotWrites.push({ anchor: "auto", payload: body });
+      await withDbRetry(() => repo.writeRadarSnapshots(snapshotWrites));
     } catch (error) {
       console.error("[radar-snapshot] on-demand upsert failed", {
         game: game.id,
         league: selected.league,
-        anchor: bestView ? "best" : anchor,
+        anchor: autoView ? "auto" : bestView ? "best" : anchor,
         error: error?.message ?? String(error),
       });
     }
@@ -382,22 +446,41 @@ async function refreshRadarSnapshots(ctx, { now = Date.now(), trace = noop } = {
       const startedAt = Date.now();
       trace("snapshot.scope.start", { game: game.id, league });
       try {
-        const repo = gameAwareRepository(
+        const discoveryRepo = gameAwareRepository(
           repository(scopeFor(ctx, game, league), { trace, anchors: game.anchors }),
           game.id,
         );
-        if (!repo || !(await withDbRetry(() => repo.hasPricedCandles()))) {
+        if (!discoveryRepo || !(await withDbRetry(() => discoveryRepo.hasPricedCandles()))) {
           results.push({ game: game.id, league, skipped: "no-data" });
           trace("snapshot.scope.end", { game: game.id, league, skipped: "no-data" });
           continue;
         }
+        const previousAuto = discoveryRepo.readRadarSnapshot
+          ? await withDbRetry(() => discoveryRepo.readRadarSnapshot("auto"))
+          : null;
+        const anchorPlan = await automaticAnchorPlan(
+          discoveryRepo,
+          game,
+          previousAuto?.payload?.anchor ?? game.anchorCurrency,
+        );
+        const repo = gameAwareRepository(
+          repository(scopeFor(ctx, game, league), { trace, anchors: anchorPlan.anchors }),
+          game.id,
+        );
         const payloads = await withDbRetry(() =>
-          buildRadarPayloads(radarBuildInput(ctx, game, repo, now)),
+          buildRadarPayloads(radarBuildInput(ctx, game, repo, now, anchorPlan.anchors)),
         );
         const snapshots = Object.entries(payloads).map(([anchor, payload]) => ({
           anchor,
           payload: finalizeRadarBody(payload, game, league),
         }));
+        snapshots.push({
+          anchor: "auto",
+          payload: mergeRadarPayloads(
+            Object.fromEntries(snapshots.map((snapshot) => [snapshot.anchor, snapshot.payload])),
+            { preferredAnchor: anchorPlan.primary },
+          ),
+        });
         await withDbRetry(() => repo.writeRadarSnapshots(snapshots));
         const result = {
           game: game.id,
@@ -445,7 +528,9 @@ export async function getHistory(searchParams) {
   if (selected.error) return selected.error;
   const repo = gameAwareRepository(await resolveRepo(ctx, scopeFor(ctx, game, selected.league)), game.id);
   if (!repo) return NO_DB;
-  const anchor = resolveAnchor(searchParams, game);
+  const requestedAnchor = searchParams.get("anchor");
+  const pairCurrencies = pair.split("|");
+  const anchor = pairCurrencies.includes(requestedAnchor) ? requestedAnchor : resolveAnchor(searchParams, game);
   const body = await withDbRetry(() => buildHistoryPayload({ repo, pair, anchor }));
   body.league = selected.league;
   body.game = game.id;

@@ -28,3 +28,13 @@ test("unitRates does not seed a requested anchor absent from sparse best-view ro
     { exalted: 1, chaos: null, divine: null },
   );
 });
+
+test("unitRates supports a league-native non-core anchor", () => {
+  assert.deepEqual(
+    unitRates([
+      { target: "chaos", anchor: "alchemy", reference: 2 },
+      { target: "divine", anchor: "chaos", reference: 100 },
+    ], "alchemy"),
+    { exalted: null, chaos: 2, divine: 200, alchemy: 1 },
+  );
+});

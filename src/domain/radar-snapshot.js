@@ -1,7 +1,7 @@
 // Stored radar payloads are a cache of derived data, including item taxonomy.
 // Bump this whenever the payload meaning changes so a deploy cannot keep
 // serving structurally fresh but semantically outdated snapshots.
-export const RADAR_PAYLOAD_VERSION = 4;
+export const RADAR_PAYLOAD_VERSION = 5;
 export const RADAR_SNAPSHOT_MAX_AGE_MS = 6 * 3600_000;
 
 export function isCompatibleRadarSnapshot(snapshot, now = Date.now()) {

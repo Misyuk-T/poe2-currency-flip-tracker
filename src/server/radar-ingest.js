@@ -28,6 +28,7 @@ export const CORE_CURRENCY_IDS = Object.freeze({
   "Metadata/Items/Currency/CurrencyRerollRare": "chaos",
   "Metadata/Items/Currency/CurrencyModValues": "divine",
   "Metadata/Items/Currency/CurrencyAddModToRare": "exalted",
+  "Metadata/Items/Currency/CurrencyUpgradeToRare": "alchemy",
 });
 
 export const coreCurrencyToCanonicalId = (id) => CORE_CURRENCY_IDS[id] ?? id;

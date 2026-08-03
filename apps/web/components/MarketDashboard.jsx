@@ -90,8 +90,8 @@ const HISTORY_CACHE_MS = 10 * 60_000;
 const PAGE_SIZE = 100;
 const SIDEBAR_SKELETON_ROWS = 14;
 
-function radarUrl(game, league, anchor) {
-  const params = new URLSearchParams({ anchor, game, league, view: "best" });
+function radarUrl(game, league) {
+  const params = new URLSearchParams({ anchor: "auto", game, league, view: "best" });
   return `${apiBaseUrl}/api/radar?${params}`;
 }
 
@@ -419,7 +419,8 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   const radarMainRef = useRef(null);
   const appliedReloadKeyRef = useRef(0);
   const activeGameConfig = marketConfig?.games?.find((entry) => entry.id === game);
-  const anchorCurrency = activeGameConfig?.anchorCurrency ?? "exalted";
+  const configuredAnchorCurrency = activeGameConfig?.anchorCurrency ?? "exalted";
+  const anchorCurrency = radar?.anchor ?? configuredAnchorCurrency;
   const selectedSourceAnchor = radar?.rows?.find((row) => row.pairId === selectedPair)?.anchor ?? anchorCurrency;
 
   useEffect(() => {
@@ -463,7 +464,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     let cancelled = false;
     const currentHeight = radarMainRef.current?.getBoundingClientRect().height;
     if (Number.isFinite(currentHeight) && currentHeight > 0) setLoadingMinHeight(currentHeight);
-    const url = radarUrl(game, league, anchorCurrency);
+    const url = radarUrl(game, league);
     const force = reloadKey !== appliedReloadKeyRef.current;
     appliedReloadKeyRef.current = reloadKey;
     const cached = force ? null : peekCachedJson(url, { ttlMs: RADAR_CACHE_MS });
@@ -503,7 +504,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     return () => {
       cancelled = true;
     };
-  }, [anchorCurrency, game, league, reloadKey]);
+  }, [game, league, reloadKey]);
 
   useEffect(() => {
     if (!marketConfig || !league || status !== "ready") return undefined;
@@ -517,7 +518,6 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
         .map((entry) => ({
           game: entry.id,
           league: entry.activeLeague,
-          anchor: entry.anchorCurrency,
         })),
       // Then warm the remaining leagues for the current game.
       ...(currentGame?.leagues ?? [])
@@ -525,14 +525,13 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
         .map((entry) => ({
           game,
           league: entry.id,
-          anchor: currentGame.anchorCurrency,
         })),
     ].filter((entry) => entry.league);
     const timer = window.setTimeout(async () => {
       if (cancelled) return;
       await Promise.allSettled(
         targets.map((target) =>
-          fetchJsonCached(radarUrl(target.game, target.league, target.anchor), {
+          fetchJsonCached(radarUrl(target.game, target.league), {
             ttlMs: RADAR_CACHE_MS,
           }),
         ),

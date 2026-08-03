@@ -100,6 +100,7 @@ export function currencyName(id) {
 }
 
 export function titleize(id) {
+  if (id === "alchemy") return "Alchemy";
   return String(id ?? "")
     .split("-")
     .filter(Boolean)
@@ -118,6 +119,9 @@ export const fallbackIconUrl = "/icons/_fallback.svg";
 const ICON_URLS = new Map(
   (catalog.items ?? []).filter((item) => item.id && item.image).map((item) => [item.id, item.image]),
 );
+// PoE1 Ruthless uses Orb of Alchemy as its exchange hub. The PoE2 catalog calls
+// the same art `alch`; expose the semantic anchor id without duplicating assets.
+if (ICON_URLS.has("alch")) ICON_URLS.set("alchemy", ICON_URLS.get("alch"));
 
 export function iconUrl(id) {
   if (

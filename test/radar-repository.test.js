@@ -90,6 +90,20 @@ test("listPricedLeagues discovers recent priced scopes in freshness order", asyn
   ]);
 });
 
+test("listAnchorCandidates ranks currencies by distinct priced pair coverage", async () => {
+  const repo = createRadarRepository({
+    sql: fakeSql([[
+      { currency: "alchemy", pair_count: "18", sample_count: "77" },
+      { currency: "chaos", pair_count: "1", sample_count: "13" },
+    ]]),
+    scope,
+  });
+  assert.deepEqual(await repo.listAnchorCandidates(), [
+    { currency: "alchemy", pairCount: 18, sampleCount: 77 },
+    { currency: "chaos", pairCount: 1, sampleCount: 13 },
+  ]);
+});
+
 test("readRadarSnapshot parses a stored JSON payload and refresh time", async () => {
   const repo = createRadarRepository({
     sql: fakeSql([[{ payload: '{"anchor":"exalted","rows":[]}', refreshed_at: "1700000000000" }]]),

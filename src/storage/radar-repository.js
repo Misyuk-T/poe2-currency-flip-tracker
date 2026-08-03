@@ -239,6 +239,46 @@ export function createRadarRepository({
       .map((row) => ({ league: row.league, newestCompletedHour: Number(row.newest_completed_hour) || null }));
   }
 
+  /**
+   * Currencies ranked by how many distinct priced pairs they connect in this
+   * league. This is the data-driven anchor selector: Standard usually resolves
+   * to Chaos/Divine, while Ruthless naturally resolves to Orb of Alchemy.
+   */
+  async function listAnchorCandidates(limit = 12) {
+    const rows = await withTimeout(
+      sql`
+        with priced_pairs as (
+          select pair_id, base_currency, quote_currency, count(*) as sample_count
+          from hourly_market_candles
+          where game = ${scope.game} and realm = ${scope.realm} and league = ${scope.league}
+            and provider = ${scope.mode}
+            and completed_hour >= now() - make_interval(days => ${readWindowDays})
+            and low_ratio is not null and low_ratio > 0
+            and high_ratio is not null and high_ratio > 0
+          group by pair_id, base_currency, quote_currency
+        ), currency_edges as (
+          select base_currency as currency, pair_id, sample_count from priced_pairs
+          union all
+          select quote_currency as currency, pair_id, sample_count from priced_pairs
+        )
+        select currency, count(distinct pair_id) as pair_count, sum(sample_count) as sample_count
+        from currency_edges
+        group by currency
+        order by count(distinct pair_id) desc, sum(sample_count) desc, currency asc
+        limit ${Math.max(1, Math.min(Number(limit) || 12, 64))}`,
+      opTimeoutMs,
+      "anchor discovery",
+      onTimeout,
+    );
+    return rows
+      .filter((row) => typeof row.currency === "string" && row.currency.length > 0)
+      .map((row) => ({
+        currency: row.currency,
+        pairCount: Number(row.pair_count) || 0,
+        sampleCount: Number(row.sample_count) || 0,
+      }));
+  }
+
   /** Latest precomputed /api/radar response for one anchor, if present. */
   async function readRadarSnapshot(anchor) {
     const rows = await withTimeout(
@@ -430,6 +470,7 @@ export function createRadarRepository({
     readPairCandles,
     hasPricedCandles,
     listPricedLeagues,
+    listAnchorCandidates,
     readRadarSnapshot,
     writeRadarSnapshots,
     readCxapiState,

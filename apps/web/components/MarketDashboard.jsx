@@ -1005,7 +1005,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                   </span>
                 )}
                 {!sourceMode && isRadarLoading && <span className="sk radar-source-placeholder" aria-hidden="true" />}
-                {league ? <LeagueMetaChip league={league} /> : <span className="sk league-meta-placeholder" aria-hidden="true" />}
+                {league ? <LeagueMetaChip game={game} league={league} /> : <span className="sk league-meta-placeholder" aria-hidden="true" />}
               </div>
               {/* The page's only top-level heading. It was an h2, which left
                   every dashboard route with no h1 at all. */}

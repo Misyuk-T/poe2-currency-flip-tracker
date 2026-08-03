@@ -1796,6 +1796,7 @@ body:has(.home-page) {
   min-height: 22px;
   border-radius: 999px;
 }
+.league-meta-placeholder.live { width: 162px; }
 .currency-toggle {
   display: inline-flex;
   align-items: center;
@@ -2050,7 +2051,7 @@ body:has(.home-page) {
 .key-currency-empty { color: var(--rl-muted); font-size: 0.78rem; }
 .key-currency-spark-empty { width: 48%; height: 1px; margin-bottom: 24px; background: rgba(255, 255, 255, 0.09); }
 
-/* ----- demo features: T3/T4 league chip, T5-T7 League Pulse, T8/T9 pocket valuator ----- */
+/* ----- live PoE 1 league metadata + demo League Pulse and pocket valuator ----- */
 .demo-badge {
   display: inline-flex;
   align-items: center;
@@ -2077,7 +2078,34 @@ body:has(.home-page) {
   letter-spacing: 0.06em;
   line-height: 1.2;
 }
-.league-meta-chip { font-weight: 700; }
+.league-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  min-width: 162px;
+  min-height: 22px;
+  padding: 3px 9px;
+  border: 1px solid rgba(40, 205, 143, 0.46);
+  border-radius: 999px;
+  color: #8de4bd;
+  background: rgba(40, 205, 143, 0.09);
+  font-size: 0.67rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.league-meta-source {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: #071c14;
+  background: #66d7a7;
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+}
 
 /* League Pulse and the inventory valuator are secondary/demo surfaces: header
    controls opening a modal, so neither competes with the market table for

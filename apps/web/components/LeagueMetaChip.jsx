@@ -1,23 +1,48 @@
 "use client";
 
-import { useMemo } from "react";
-import { mockLeagueMeta } from "../lib/ggg-demo.js";
+import { useEffect, useMemo, useState } from "react";
+import { fetchJsonCached, peekCachedJson } from "../lib/market.js";
 
-/**
- * Demo of BACKLOG.md T3/T4 (league auto-sync via `service:leagues`).
- * All values are mocked — see lib/ggg-demo.js — until T1 (GGG OAuth scope
- * approval) lands.
- */
-export default function LeagueMetaChip({ league }) {
-  const meta = useMemo(() => (league ? mockLeagueMeta(league) : null), [league]);
-  if (!meta) return null;
+const TTL_MS = 6 * 60 * 60_000;
+
+export default function LeagueMetaChip({ game, league }) {
+  const requestUrl = useMemo(() => {
+    if (game !== "poe1" || !league) return null;
+    return `/api/league-meta?game=poe1&league=${encodeURIComponent(league)}`;
+  }, [game, league]);
+  const cached = requestUrl ? peekCachedJson(requestUrl, { ttlMs: TTL_MS }) : null;
+  const [response, setResponse] = useState(null);
+
+  useEffect(() => {
+    if (!requestUrl) return;
+    let cancelled = false;
+    fetchJsonCached(requestUrl, { ttlMs: TTL_MS })
+      .then((data) => {
+        if (!cancelled) setResponse({ requestUrl, data });
+      })
+      .catch(() => {
+        if (!cancelled) setResponse({ requestUrl, data: { available: false } });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [requestUrl]);
+
+  if (!requestUrl) return null;
+  const meta = response?.requestUrl === requestUrl ? response.data : cached;
+  if (!meta) return <span className="sk league-meta-placeholder live" aria-hidden="true" />;
+  if (!meta.available) return null;
+
+  const label = meta.kind === "permanent"
+    ? "Permanent league"
+    : `League day ${meta.dayNumber}${Number.isFinite(meta.daysRemaining) ? ` · ends in ${meta.daysRemaining}d` : ""}`;
   return (
     <span
-      className="demo-badge league-meta-chip"
-      title="Demo of an auto-synced service:leagues read (BACKLOG T3/T4) — mocked, not a live GGG feed"
+      className="league-meta-chip"
+      title="League timing from GGG's PoE 1 leagues feed; cached by Exile Radar"
     >
-      League day {meta.dayNumber} · ends in {meta.daysRemaining}d
-      <b className="demo-tag">DEMO</b>
+      {label}
+      <b className="league-meta-source">GGG</b>
     </span>
   );
 }

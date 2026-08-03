@@ -38,7 +38,47 @@ export const coreCurrencyToCanonicalId = (id) => CORE_CURRENCY_IDS[id] ?? id;
  * stable Metadata id while still gaining names, classes, and icons at read time. */
 export function translatorForGame(game) {
   if (game !== "poe1" && game !== "poe2") return (id) => id;
-  return (id) => resolveCurrency(id, game).shortId ?? id;
+  return game === "poe1"
+    ? (id) => CORE_CURRENCY_IDS[id] ?? resolveCurrency(id, game).shortId ?? id
+    : (id) => resolveCurrency(id, game).shortId ?? id;
+}
+
+/**
+ * Keep storage bounded without assuming every league uses the same quote hub.
+ * Each digest retains the configured core anchors plus a league-native anchor
+ * only when it connects materially more priced pairs than any configured one.
+ */
+export function filterToAdaptiveAnchors(candles, fallbackAnchors = []) {
+  const fallback = new Set(fallbackAnchors);
+  const byLeague = new Map();
+  for (const candle of candles ?? []) {
+    if (!candle?.league || !(candle.low > 0) || !(candle.high > 0)) continue;
+    const state = byLeague.get(candle.league) ?? new Map();
+    for (const currency of [candle.base, candle.quote]) {
+      const pairs = state.get(currency) ?? new Set();
+      pairs.add(candle.pairId);
+      state.set(currency, pairs);
+    }
+    byLeague.set(candle.league, state);
+  }
+
+  const extraByLeague = new Map();
+  for (const [league, currencies] of byLeague) {
+    const ranked = [...currencies.entries()].sort(
+      (a, b) => b[1].size - a[1].size || String(a[0]).localeCompare(String(b[0])),
+    );
+    const strongest = ranked[0];
+    const fallbackCoverage = Math.max(0, ...fallbackAnchors.map((anchor) => currencies.get(anchor)?.size ?? 0));
+    if (strongest && strongest[1].size >= 2 && strongest[1].size > fallbackCoverage * 1.5) {
+      extraByLeague.set(league, strongest[0]);
+    }
+  }
+
+  return (candles ?? []).filter((candle) =>
+    fallback.has(candle.base)
+      || fallback.has(candle.quote)
+      || candle.base === extraByLeague.get(candle.league)
+      || candle.quote === extraByLeague.get(candle.league));
 }
 
 const HOUR = 3600_000;
@@ -145,10 +185,7 @@ export async function ingestLive({ repo, provider, league = null, leagues = null
     trace("live.normalize.start", { digestId: raw.digestId });
     const normalized = normalizeCxDigest(raw.payload, { digestId: raw.digestId, league, leagues, translate });
     if (anchors?.length) {
-      const allowedAnchors = new Set(anchors);
-      normalized.candles = normalized.candles.filter(
-        (candle) => allowedAnchors.has(candle.base) || allowedAnchors.has(candle.quote),
-      );
+      normalized.candles = filterToAdaptiveAnchors(normalized.candles, anchors);
     }
     trace("live.normalize.end", { digestId: normalized.digestId, candles: normalized.candles.length });
     const nextId = normalized.nextChangeId;

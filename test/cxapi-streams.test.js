@@ -177,7 +177,7 @@ test("ingestLiveStreams stores every public league and drops private leagues", a
   assert.deepEqual([...new Set(saved.map((c) => c.league))].sort(), ["Allflame", "HC Runes of Aldur", "Runes of Aldur", "Standard"]);
 });
 
-test("ingestLiveStreams stores only pairs used by configured radar anchors", async () => {
+test("ingestLiveStreams keeps configured anchors without promoting a tied leaf pair", async () => {
   const config = {
     league: "Runes of Aldur",
     leagues: ["Runes of Aldur"],
@@ -213,6 +213,44 @@ test("ingestLiveStreams stores only pairs used by configured radar anchors", asy
   });
   await ingestLiveStreams({ streams: config.cxapiStreams, config, now: 1_784_600_000_000, makeRepo, makeProvider });
   assert.deepEqual(saved.map((candle) => candle.pairId).sort(), ["a|exalted", "b|divine"]);
+});
+
+test("ingestLiveStreams automatically retains a league-native dominant anchor", async () => {
+  const config = {
+    league: "Standard",
+    anchors: ["chaos", "divine", "exalted"],
+    cxapiSource: "cdn",
+    cxapiStartId: null,
+    cxapiMaxBackfillHours: 48,
+    cxapiDigestsPerRun: 1,
+    cxapiStreams: [{ game: "poe1", realm: "poe1" }],
+  };
+  let saved = [];
+  const makeRepo = () => ({
+    async readCxapiState() { return { cursor: 1000, lastDigestId: null }; },
+    async recordCxDigest(digest) { saved = digest.candles; return saved.length; },
+  });
+  const market = (target) => ({
+    league: "Ruthless Allflame",
+    market_id: `${target}|Metadata/Items/Currency/CurrencyUpgradeToRare`,
+    lowest_ratio: { [target]: 1, "Metadata/Items/Currency/CurrencyUpgradeToRare": 2 },
+    highest_ratio: { [target]: 1, "Metadata/Items/Currency/CurrencyUpgradeToRare": 2 },
+  });
+  const makeProvider = () => ({
+    configured: true,
+    async fetchDigest({ id }) {
+      return {
+        digestId: id,
+        payload: {
+          next_change_id: id + 3600,
+          markets: [market("item-a"), market("item-b"), market("item-c")],
+        },
+      };
+    },
+  });
+  await ingestLiveStreams({ streams: config.cxapiStreams, config, now: 1_784_600_000_000, makeRepo, makeProvider });
+  assert.equal(saved.length, 3);
+  assert.ok(saved.every((candle) => candle.base === "alchemy" || candle.quote === "alchemy"));
 });
 
 test("ingestLiveStreams: a null repo (no DB) skips that stream, not the run", async () => {

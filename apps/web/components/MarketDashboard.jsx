@@ -6,6 +6,7 @@ import ReachLadder from "./ReachLadder.jsx";
 import LeagueMetaChip from "./LeagueMetaChip.jsx";
 import LeaguePulsePanel from "./LeaguePulsePanel.jsx";
 import PocketValuator from "./PocketValuator.jsx";
+import CurrencyIcon from "./CurrencyIcon.jsx";
 import { roundTripGold } from "../../../src/domain/gold-costs.js";
 import { keyCurrencyCards, sparklinePoints } from "../lib/key-currencies.js";
 import { convertMarketPrice, currentPriceGuidance, quoteFromAnchor, workingPrice } from "../lib/price-guidance.js";
@@ -149,7 +150,7 @@ function PricePill({ value, unit, game, compact = false }) {
   return (
     <span className={compact ? "price-pill compact" : "price-pill"}>
       <span>{formatNumber(value, { maximumFractionDigits: displayDigits(value) })}</span>
-      <img src={gameIconUrl(game, unit)} onError={onIconError} alt="" title={currencyName(unit)} />
+      <CurrencyIcon src={gameIconUrl(game, unit)} onError={onIconError} label={currencyName(unit)} />
     </span>
   );
 }
@@ -173,7 +174,7 @@ function KeyCurrencyCard({ card, game, emptyLabel = "Waiting for data", quantity
     <article className="key-currency-card">
       <div className="key-currency-card-head">
         <span className="key-currency-name">
-          <img src={gameIconUrl(game, card.id)} onError={onIconError} alt="" title={card.name} />
+          <CurrencyIcon src={gameIconUrl(game, card.id)} onError={onIconError} label={card.name} />
           <span>
             <strong>{card.name}</strong>
             <small>{card.unit ? `${titleize(card.unit)} per ${per}` : "Hourly market rate"}</small>
@@ -963,7 +964,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
               aria-pressed={category === "all"}
               onClick={() => { setCategory("all"); setNavOpen(false); }}
             >
-              <img className="rs-cat-icon" src={gameIconUrl(game, "exalted")} onError={onIconError} alt="" title="Exalted Orb" aria-hidden="true" />
+              <CurrencyIcon className="rs-cat-icon" src={gameIconUrl(game, "exalted")} onError={onIconError} label="Exalted Orb" />
               <span>All markets</span>
               <small>{searched.length}</small>
             </button>
@@ -1063,11 +1064,10 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     type="button"
                     aria-label={currency.label}
                     aria-pressed={displayCurrency === currency.id}
-                    title={currency.label}
                     onClick={() => setDisplayCurrency((current) => (current === currency.id ? null : currency.id))}
                     disabled={currency.id !== "exalted" && !rates[currency.id]}
                   >
-                    <img src={gameIconUrl(game, currency.id)} onError={onIconError} alt="" title={currency.label} />
+                    <CurrencyIcon src={gameIconUrl(game, currency.id)} onError={onIconError} label={currency.label} />
                   </button>
                 ))}
               </div>
@@ -1330,7 +1330,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                 <div className="radar-trade">
               <header className="rt-head">
                 <div className="rt-head-id">
-                  <img src={iconUrl(selected.targetIcon ?? selected.target)} onError={onIconError} alt="" title={selected.targetName} />
+                  <CurrencyIcon src={iconUrl(selected.targetIcon ?? selected.target)} onError={onIconError} label={selected.targetName} />
                   <div>
                     <strong>{selected.targetName}</strong>
                     <span>{selected.category || "Market"}</span>
@@ -1548,11 +1548,10 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                               type="button"
                               aria-label={currency.label}
                               aria-pressed={modalCurrency === currency.id}
-                              title={currency.label}
                               onClick={() => selectModalCurrency(currency.id)}
                               disabled={!rates[currency.id]}
                             >
-                              <img src={gameIconUrl(game, currency.id)} onError={onIconError} alt="" title={currency.label} />
+                              <CurrencyIcon src={gameIconUrl(game, currency.id)} onError={onIconError} label={currency.label} />
                             </button>
                           ))}
                         </div>

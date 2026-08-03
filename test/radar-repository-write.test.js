@@ -90,6 +90,23 @@ test("recordCxDigest does not persist unused stock payloads", async () => {
   assert.deepEqual(rows[0].stock, {});
 });
 
+test("recordCxDigest invalidates cached snapshots only for leagues in the digest", async () => {
+  const { sql, templateCalls } = fakeTxSql();
+  const repo = createRadarRepository({ sql, scope });
+  await repo.recordCxDigest({
+    digestId: 472222,
+    nextChangeId: 475822,
+    candles: [candle("Standard"), candle("Ruthless Allflame"), candle("Standard")],
+  });
+  const invalidation = templateCalls.find((c) => c.text.includes("delete from radar_snapshots"));
+  assert.ok(invalidation, "snapshot invalidation issued");
+  const leagues = invalidation.values.find((v) => v.__fragmentRows).__fragmentRows;
+  assert.deepEqual(leagues, ["Standard", "Ruthless Allflame"]);
+  assert.ok(invalidation.values.includes(scope.game));
+  assert.ok(invalidation.values.includes(scope.realm));
+  assert.ok(invalidation.values.includes(scope.mode));
+});
+
 test("recordCxDigest emits transaction/batch phases", async () => {
   const { sql } = fakeTxSql();
   const phases = [];
@@ -102,6 +119,8 @@ test("recordCxDigest emits transaction/batch phases", async () => {
     "db.transaction.timeouts.end",
     "db.candles.batch.start",
     "db.candles.batch.end",
+    "db.snapshots.invalidate.start",
+    "db.snapshots.invalidate.end",
     "db.cursor.upsert.start",
     "db.cursor.upsert.end",
     "db.transaction.end",

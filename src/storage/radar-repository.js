@@ -429,6 +429,26 @@ export function createRadarRepository({
               inserted += result.count ?? 0;
               onPhase("db.candles.batch.end", { digestId: digest.digestId ?? null, batch, inserted: result.count ?? 0 });
             }
+
+            // A cached snapshot for an inactive/alternate league is otherwise
+            // allowed to live for hours after fresh candles arrive. Invalidate
+            // only the leagues carried by this digest; their next API request
+            // will rebuild the snapshot from the newly committed data.
+            const touchedLeagues = [...new Set(rows.map((row) => row.league))];
+            onPhase("db.snapshots.invalidate.start", {
+              digestId: digest.digestId ?? null,
+              leagues: touchedLeagues.length,
+            });
+            await tx`
+              delete from radar_snapshots
+              where game = ${scope.game}
+                and realm = ${scope.realm}
+                and provider = ${scope.mode}
+                and league in ${tx(touchedLeagues)}`;
+            onPhase("db.snapshots.invalidate.end", {
+              digestId: digest.digestId ?? null,
+              leagues: touchedLeagues.length,
+            });
           }
           // Monotonic cursor: never let a late/overlapping invocation move the
           // cursor backward (e.g. an older digest committing after a newer one).

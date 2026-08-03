@@ -52,14 +52,22 @@ function normalizedCard(currency, unit, rates, timeline) {
  * Chaos row in that case yields "Chaos per Divine" and must never be labelled
  * "Chaos per Exalted".
  */
-export function keyCurrencyCards(rows = [], fallbackAnchor = "exalted") {
+export function keyCurrencyCards(rows = [], fallbackAnchor = "exalted", preferredUnit = null) {
   const anchor = fallbackAnchor;
   const rates = unitRates(rows, anchor);
   const timeline = rateTimeline(rows, anchor);
   const inverseOrder = anchor === "chaos" ? ["exalted", "divine"] : ["chaos", "divine"];
   const inverseUnit = inverseOrder.find((id) => positive(rates[id])) ?? inverseOrder[0];
+  const selectedUnit = positive(rates[preferredUnit]) ? preferredUnit : null;
   return CORE.map((currency) => {
-    const unit = currency.id === anchor ? inverseUnit : anchor;
+    // Honour the dashboard display selector for every meaningful quote. The
+    // selected currency's own card stays reciprocal instead of rendering the
+    // useless identity rate "1 Chaos per Chaos".
+    const unit = selectedUnit && currency.id !== selectedUnit
+      ? selectedUnit
+      : currency.id === anchor
+        ? inverseUnit
+        : anchor;
     return normalizedCard(currency, unit, rates, timeline);
   });
 }

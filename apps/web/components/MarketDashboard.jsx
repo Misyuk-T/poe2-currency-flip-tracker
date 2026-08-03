@@ -903,7 +903,10 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
       ?.find((entry) => entry.id === game)
       ?.leagues?.filter((entry) => entry.enabled)
       .map((entry) => ({ value: entry.id, label: entry.label })) ?? [];
-  const keyCurrencies = useMemo(() => keyCurrencyCards(tradable, anchorCurrency), [anchorCurrency, tradable]);
+  const keyCurrencies = useMemo(
+    () => keyCurrencyCards(tradable, anchorCurrency, mainDisplayUnit),
+    [anchorCurrency, mainDisplayUnit, tradable],
+  );
   const sourceMode = radar?.source?.sourceMode;
   const isBooting = !marketConfig || !league;
   const isRadarLoading = status === "loading" && !radar;

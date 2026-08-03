@@ -64,3 +64,18 @@ test("PoE1 chaos anchor still produces all three key currency cards", () => {
   assert.equal(cards.find((card) => card.id === "divine").value, 190);
   assert.equal(cards.find((card) => card.id === "exalted").value, 8);
 });
+
+test("display selection requotes native Alchemy cards instead of leaving Alchemy everywhere", () => {
+  const rows = [
+    { target: "chaos", anchor: "alchemy", reference: 2, sparkline24h: [1.5, 2] },
+    { target: "divine", anchor: "alchemy", reference: 100, sparkline24h: [90, 100] },
+    { target: "exalted", anchor: "alchemy", reference: 18, sparkline24h: [15, 18] },
+  ];
+  const cards = keyCurrencyCards(rows, "alchemy", "chaos");
+
+  assert.equal(cards.find((card) => card.id === "chaos").unit, "alchemy");
+  assert.equal(cards.find((card) => card.id === "divine").unit, "chaos");
+  assert.equal(cards.find((card) => card.id === "divine").value, 50);
+  assert.equal(cards.find((card) => card.id === "exalted").unit, "chaos");
+  assert.equal(cards.find((card) => card.id === "exalted").value, 9);
+});

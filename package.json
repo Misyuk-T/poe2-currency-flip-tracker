@@ -12,6 +12,7 @@
     "web:build": "next build apps/web",
     "web:start": "next start apps/web",
     "test": "node --test",
+    "canary:live": "node scripts/canary-live.mjs",
     "catalog:build": "node scripts/build-catalog.mjs",
     "identity:build": "node scripts/build-identity.mjs && node scripts/build-identity-poe1.mjs",
     "identity:poe1": "node scripts/build-identity-poe1.mjs",

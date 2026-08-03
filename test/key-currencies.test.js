@@ -17,6 +17,36 @@ test("key currency cards quote chaos/divine in exalted and exalted in chaos", ()
   assert.equal(cards[2].movement, 0.25);
 });
 
+test("mixed native anchors are converted before the Exalted card is inverted", () => {
+  // Production shape: Chaos is quoted in Divine, while Divine is quoted in
+  // Exalted. 1 / 0.125988 is Chaos per DIVINE (~7.94), not Chaos per Exalted.
+  const cards = keyCurrencyCards([
+    {
+      target: "chaos",
+      anchor: "divine",
+      reference: 0.12598815766974242,
+      sparkline24h: [0.12, 0.12598815766974242],
+    },
+    {
+      target: "divine",
+      anchor: "exalted",
+      reference: 381.77873172820927,
+      sparkline24h: [380, 381.77873172820927],
+    },
+  ]);
+
+  const chaos = cards.find((card) => card.id === "chaos");
+  const exalted = cards.find((card) => card.id === "exalted");
+  const exaltedPerChaos = 0.12598815766974242 * 381.77873172820927;
+
+  assert.equal(chaos.unit, "exalted");
+  assert.ok(Math.abs(chaos.value - exaltedPerChaos) < 1e-12);
+  assert.equal(exalted.unit, "chaos");
+  assert.ok(Math.abs(exalted.value - 1 / exaltedPerChaos) < 1e-12);
+  assert.ok(exalted.value < 1, "one Exalted must be a fraction of a Chaos at this rate");
+  assert.notEqual(exalted.value, 1 / 0.12598815766974242, "must not invert the Divine-native row directly");
+});
+
 test("key currency cards and sparkline degrade cleanly when data is absent", () => {
   assert.ok(keyCurrencyCards([]).every((card) => card.available === false));
   assert.equal(sparklinePoints([]), "");

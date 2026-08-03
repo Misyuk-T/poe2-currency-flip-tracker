@@ -16,10 +16,15 @@ import { normalizeCxDigest } from "../src/domain/cx-market.js";
 import { metadataToCanonicalId } from "../src/server/radar-ingest.js";
 import { resolveCurrency, metadataForShortId, identityNames } from "../src/domain/cx-identity.js";
 import { createMemoryRepository } from "../apps/web/lib/memory-repo.js";
-import { buildRadarPayload, buildHistoryPayload } from "../src/server/radar-core.js";
+import { buildRadarPayload, buildHistoryPayload, mergeRadarPayloads } from "../src/server/radar-core.js";
 import { loadCatalog, buildManifest, nameMapFromCatalog } from "../src/domain/catalog.js";
 import { createGoldRegistry } from "../src/domain/gold-costs.js";
 import { POE2_GOLD_COSTS } from "../src/data/gold-costs-poe2.js";
+import { CATEGORY_ICON_IDS } from "../apps/web/lib/category-icons.js";
+import { categoryIconMap, iconCandidatesForCategory } from "../apps/web/lib/icon-candidates.js";
+import { keyCurrencyCards } from "../apps/web/lib/key-currencies.js";
+import { fallbackIconUrl, iconUrl } from "../apps/web/lib/market.js";
+import { unitRates } from "../apps/web/lib/market-units.js";
 
 const REALM = "poe2";
 const LEAGUE = "Runes of Aldur";
@@ -37,6 +42,58 @@ async function fetchHour(id) {
   const res = await fetch(`https://web.poecdn.com/api/currency-exchange/${REALM}/${id}`, { headers: { Accept: "application/json", "User-Agent": UA } });
   if (!res.ok) throw new Error(`CDN ${res.status} for id=${id}`);
   return res.json();
+}
+
+const imageChecks = new Map();
+
+async function checkImageCandidate(candidate) {
+  const url = iconUrl(candidate);
+  if (!url || url === fallbackIconUrl) return { ok: false, url, detail: "catalog fallback" };
+  if (!imageChecks.has(url)) {
+    imageChecks.set(url, (async () => {
+      try {
+        const res = await fetch(url, {
+          headers: { Accept: "image/*", "User-Agent": UA },
+          signal: AbortSignal.timeout(10_000),
+        });
+        const contentType = res.headers.get("content-type") ?? "";
+        if (!res.ok) return { ok: false, url, detail: `HTTP ${res.status}` };
+        if (!contentType.toLowerCase().startsWith("image/")) {
+          return { ok: false, url, detail: `content-type ${contentType || "missing"}` };
+        }
+        const bytes = await res.arrayBuffer();
+        return bytes.byteLength > 0
+          ? { ok: true, url, detail: `${contentType} ${bytes.byteLength}b` }
+          : { ok: false, url, detail: "empty image" };
+      } catch (error) {
+        return { ok: false, url, detail: error?.message ?? String(error) };
+      }
+    })());
+  }
+  return imageChecks.get(url);
+}
+
+async function firstWorkingImage(candidates) {
+  const attempts = [];
+  for (const candidate of candidates) {
+    const result = await checkImageCandidate(candidate);
+    attempts.push(result);
+    if (result.ok) return { ok: true, result, attempts };
+  }
+  return { ok: false, attempts };
+}
+
+async function mapLimit(values, limit, worker) {
+  const results = new Array(values.length);
+  let cursor = 0;
+  async function run() {
+    while (cursor < values.length) {
+      const index = cursor++;
+      results[index] = await worker(values[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, values.length) }, run));
+  return results;
 }
 
 async function main() {
@@ -99,11 +156,12 @@ async function main() {
     // Original orientation (market_id base|quote = rawA|rawB): price = quote per
     // base = ratio[rawB]/ratio[rawA]. Build the candle low/high/reference exactly
     // as normalizeCxDigest, then anchor exactly as candleForAnchor (INVERTING the
-    // reference for the inverse orientation — 1/midpoint, NOT midpoint of inverses).
+    // reference for the inverse orientation. The independent oracle reproduces
+    // the documented geometric range centre, which is invariant under inversion.
     const p = (r) => (r?.[rawA] > 0 && r?.[rawB] > 0 ? r[rawB] / r[rawA] : null);
     const pl = p(lr), ph = p(hr);
     if (pl == null || ph == null) continue;
-    const candLow = Math.min(pl, ph), candHigh = Math.max(pl, ph), candRef = (candLow + candHigh) / 2;
+    const candLow = Math.min(pl, ph), candHigh = Math.max(pl, ph), candRef = Math.sqrt(candLow * candHigh);
     const target = isExA ? rawB : rawA;
     const short = resolveCurrency(target).shortId ?? target;
     const row = byTarget.get(short);
@@ -138,7 +196,7 @@ async function main() {
       const pl = p(rm.lowest_ratio), ph = p(rm.highest_ratio);
       if (pl == null || ph == null) continue;
       const cLow = Math.min(pl, ph), cHigh = Math.max(pl, ph);
-      if (near(pt.low, 1 / cHigh, 1e-4) && near(pt.reference, 1 / ((cLow + cHigh) / 2), 1e-4)) inverseHours++;
+      if (near(pt.low, 1 / cHigh, 1e-4) && near(pt.reference, 1 / Math.sqrt(cLow * cHigh), 1e-4)) inverseHours++;
       else check(false, `inverse history mismatch ${pairId}@${pt.completedHour}`);
     }
   }
@@ -171,6 +229,43 @@ async function main() {
     check(near(payEx.units.divineInExalted, divInEx, 1e-6), `units.divineInExalted ${payEx.units.divineInExalted} != ${divInEx}`);
   }
 
+  // === UI price contract: merged native anchors -> correctly labelled cards ===
+  // This is the production-shaped path that previously rendered ~7.94 Chaos
+  // as the price of one Exalted: the number was a valid inverse, but in Divine
+  // units, while the card labelled it as Chaos.
+  const merged = mergeRadarPayloads({ exalted: payEx, divine: payDiv }, { preferredAnchor: "exalted" });
+  const rates = unitRates(merged.rows, merged.anchor);
+  const cards = keyCurrencyCards(merged.rows, merged.anchor);
+  for (const card of cards) {
+    const expected = rates[card.id] > 0 && rates[card.unit] > 0 ? rates[card.id] / rates[card.unit] : null;
+    check(expected > 0, `UI card ${card.id} has no conversion path to ${card.unit}`);
+    if (expected > 0) {
+      check(card.available && near(card.value, expected, 1e-8), `UI card ${card.id}: ${card.value} ${card.unit}, graph expects ${expected}`);
+    }
+  }
+  const cardById = new Map(cards.map((card) => [card.id, card]));
+  const chaosCard = cardById.get("chaos");
+  const exaltedCard = cardById.get("exalted");
+  if (check(chaosCard?.unit === "exalted" && exaltedCard?.unit === "chaos", "UI core card units are mislabeled")) {
+    check(near(chaosCard.value * exaltedCard.value, 1, 1e-8), `UI reciprocal cards multiply to ${chaosCard.value * exaltedCard.value}`);
+  }
+
+  // === UI icon contract: every visible category has a real working fallback ===
+  // The deterministic suite catches missing catalog ids; this live probe also
+  // catches expired/404 CDN art and exercises the same ordered candidate chain
+  // used by the sidebar. Four workers keep the load on GGG deliberately small.
+  const liveCategoryIcons = categoryIconMap(merged.rows);
+  const iconCategories = [...new Set([...Object.keys(CATEGORY_ICON_IDS), ...liveCategoryIcons.keys()])].sort();
+  const iconResults = await mapLimit(iconCategories, 4, async (category) => {
+    const candidates = iconCandidatesForCategory(category, liveCategoryIcons, CATEGORY_ICON_IDS);
+    return { category, candidates, resolved: await firstWorkingImage(candidates) };
+  });
+  for (const { category, candidates, resolved } of iconResults) {
+    const attempts = resolved.attempts.map((attempt) => `${attempt.url || "(fallback)"}: ${attempt.detail}`).join("; ");
+    check(candidates.length > 0, `icon category ${category} has no fallback candidates`);
+    check(resolved.ok, `icon category ${category} has no working image (${attempts || "no attempts"})`);
+  }
+
   // === Identity ===
   check(metadataForShortId("exalted") === EXALTED, "exalted reverse-bridge wrong");
   check(metadataForShortId("divine") === DIVINE, "divine reverse-bridge wrong");
@@ -198,6 +293,8 @@ async function main() {
   console.log(`tradable rows (@ex):  ${tradable}  — core(short-id): ${known}, tail(Metadata): ${tail}`);
   console.log(`oracle verified:      left-anchor ${oracleLeft}, right-anchor ${oracleRight}`);
   console.log(`divine@exalted:       ${divInEx?.toFixed(4)}   exalted@divine: ${exInDiv?.toExponential?.(3)}   product: ${(divInEx * exInDiv).toFixed(5)}`);
+  console.log(`UI key cards:         ${cards.map((card) => `${card.id}=${card.value?.toPrecision?.(5)} ${card.unit}`).join(", ")}`);
+  console.log(`icon categories:      ${iconResults.filter((entry) => entry.resolved.ok).length}/${iconResults.length} have a working fallback`);
   const top = payEx.rows.filter((r) => r.pairId && r.activityScore != null).sort((a, b) => b.activityScore - a.activityScore).slice(0, 8);
   console.log(`top movers (@exalted, by activity):`);
   for (const r of top) console.log(`  ${r.targetName.padEnd(34)} ${String(r.reference.toPrecision(5)).padStart(12)} ex   act=${r.activityScore}  vol=${r.volume ?? "-"}`);

@@ -1,3 +1,5 @@
+import { unitRates } from "./market-units.js";
+
 const CORE = [
   { id: "chaos", name: "Chaos Orb" },
   { id: "divine", name: "Divine Orb" },
@@ -11,40 +13,54 @@ function movement(values) {
   return values[values.length - 1] / values[0] - 1;
 }
 
-function directCard(row, currency) {
-  const values = (row?.sparkline24h ?? []).filter(positive);
+function rateBetween(rates, currency, unit) {
+  if (!positive(rates?.[currency]) || !positive(rates?.[unit])) return null;
+  return rates[currency] / rates[unit];
+}
+
+/** Build the same core-currency conversion graph for every sparkline hour. */
+function rateTimeline(rows, fallbackAnchor) {
+  const coreRows = rows.filter((row) => CORE.some((currency) => currency.id === row?.target));
+  const length = Math.max(0, ...coreRows.map((row) => row.sparkline24h?.length ?? 0));
+  return Array.from({ length }, (_, index) => {
+    const distanceFromEnd = length - index;
+    const snapshotRows = coreRows.map((row) => {
+      const values = row.sparkline24h ?? [];
+      return { ...row, reference: values[values.length - distanceFromEnd] };
+    });
+    return unitRates(snapshotRows, fallbackAnchor);
+  });
+}
+
+function normalizedCard(currency, unit, rates, timeline) {
+  const value = rateBetween(rates, currency.id, unit);
+  const values = timeline.map((snapshot) => rateBetween(snapshot, currency.id, unit)).filter(positive);
   return {
     ...currency,
-    value: positive(row?.reference) ? row.reference : null,
-    unit: row?.anchor ?? "exalted",
+    value,
+    unit,
     values,
-    movement: Number.isFinite(row?.movement?.h24) ? row.movement.h24 : movement(values),
-    available: Boolean(row && positive(row.reference)),
+    movement: movement(values),
+    available: positive(value),
   };
 }
 
 /**
- * Three dashboard cards from the already-loaded radar payload. Non-anchor
- * currencies use their direct rates; the active anchor is inverted from a
- * traded core pair so its chart remains meaningful instead of a flat 1.0 line.
+ * Three dashboard cards from the already-loaded radar payload. Every card is
+ * converted through one core-currency graph, because the merged radar may keep
+ * Chaos priced in Divine while Divine is priced in Exalted. Inverting the raw
+ * Chaos row in that case yields "Chaos per Divine" and must never be labelled
+ * "Chaos per Exalted".
  */
 export function keyCurrencyCards(rows = [], fallbackAnchor = "exalted") {
-  const byTarget = new Map(rows.map((row) => [row.target, row]));
   const anchor = fallbackAnchor;
+  const rates = unitRates(rows, anchor);
+  const timeline = rateTimeline(rows, anchor);
   const inverseOrder = anchor === "chaos" ? ["exalted", "divine"] : ["chaos", "divine"];
-  const inverseSource = inverseOrder.map((id) => byTarget.get(id)).find(Boolean) ?? null;
+  const inverseUnit = inverseOrder.find((id) => positive(rates[id])) ?? inverseOrder[0];
   return CORE.map((currency) => {
-    if (currency.id !== anchor) return directCard(byTarget.get(currency.id), currency);
-    const inverseValues = (inverseSource?.sparkline24h ?? []).filter(positive).map((value) => 1 / value);
-    const inverseValue = positive(inverseSource?.reference) ? 1 / inverseSource.reference : null;
-    return {
-      ...currency,
-      value: inverseValue,
-      unit: inverseSource?.target ?? (anchor === "chaos" ? "exalted" : "chaos"),
-      values: inverseValues,
-      movement: movement(inverseValues),
-      available: positive(inverseValue),
-    };
+    const unit = currency.id === anchor ? inverseUnit : anchor;
+    return normalizedCard(currency, unit, rates, timeline);
   });
 }
 

@@ -11,6 +11,8 @@ import { keyCurrencyCards, sparklinePoints } from "../lib/key-currencies.js";
 import { currentPriceGuidance, quoteFromAnchor, workingPrice } from "../lib/price-guidance.js";
 import { unitRates } from "../lib/market-units.js";
 import { sortByExchangeOrder, sortByFamily } from "../lib/item-family.js";
+import { compareMarketRows, rowSpread } from "../lib/market-sort.js";
+import { CATEGORY_ICON_IDS } from "../lib/category-icons.js";
 import { useScrollLock } from "../lib/use-scroll-lock.js";
 import { preloadIcons } from "../lib/preload-icons.js";
 import {
@@ -33,42 +35,6 @@ import {
 } from "../lib/market.js";
 
 const MANUAL_PRICE_KEY = "poe2flip.next.manualPrices.v2";
-// Representative glyph per category, using catalog ids whose hashed GGG image
-// URLs always resolve. The lower half covers live item classes whose own
-// members only have derived art paths that 404 on the CDN, so there is no
-// working icon to borrow from the rows themselves.
-const CATEGORY_ICON_IDS = {
-  Abyss: "gnawed-jawbone",
-  "Atziri's Temple": "architects-orb",
-  Breach: "breach-splinter",
-  Currency: "exalted",
-  Delirium: "simulacrum-splinter",
-  Essences: "essence-of-horror",
-  Expedition: "expedition-logbook",
-  Fragments: "runic-splinter",
-  Gems: "ataluis-bloodletting",
-  Idols: "panther-idol",
-  Ritual: "omen-of-refreshment",
-  Runes: "storm-rune",
-  "Soul Cores": "soul-core-of-tacati",
-  "Uncut Gems": "uncut-skill-gem-20",
-  "Needs classification": "exalted",
-  Delve: "primitive-chaotic-resonator",
-  Scarabs: "breach-scarab",
-  "Divination Cards": "the-doctor",
-  Legion: "timeless-karui-emblem",
-  Oils: "golden-oil",
-  Catalysts: "fertile-catalyst",
-  Omens: "omen-of-refreshment",
-  Tattoos: "tattoo-of-the-tawhoa-shaman",
-  Harvest: "wild-crystallised-lifeforce",
-  Runegrafts: "runegraft-of-bellows",
-  Allflame: "allflame-ember-of-kulemak",
-  "Map Fragment": "runic-splinter",
-  "Soul Core": "soul-core-of-tacati",
-  "Stackable Currency": "exalted",
-  "Support Skill Gem": "ataluis-bloodletting",
-};
 // Currency is the market everyone actually comes here for, so it is the landing
 // filter rather than the full 750-row catalog — which also means far fewer table
 // rows to render on first paint.
@@ -297,11 +263,6 @@ function scaleQuote(quote, multiplier) {
  * sell in the buying hour. It is a spread, and a spread is an opportunity to
  * look at, not a profit to book.
  */
-function rowSpread(row) {
-  if (!Number.isFinite(row?.low) || !Number.isFinite(row?.high) || row.low <= 0 || row.high <= row.low) return null;
-  return row.high / row.low - 1;
-}
-
 /**
  * Gold-aware metrics for a one-unit round-trip flip (buy 1 target at the range
  * low, sell it back at the range high). Uses the SAME domain gold model as the
@@ -364,35 +325,6 @@ function liquidityBand(volume, thresholds) {
 function liquidityLabel(volume, thresholds) {
   const band = liquidityBand(volume, thresholds);
   return band === "high" ? "High" : band === "med" ? "Medium" : band === "low" ? "Low" : "—";
-}
-
-function sortValue(row, key) {
-  if (key === "profit100k") return row._profitPer100k;
-  if (key === "activity") return row.activityScore;
-  if (key === "spread") return rowSpread(row);
-  if (key === "buy") return row.low;
-  if (key === "sell") return row.high;
-  if (key === "price") return row.reference;
-  if (key === "movement") return row.movement?.h24;
-  if (key === "liquidity") return row.volume;
-  if (key === "name") return row.targetName ?? row.target ?? "";
-  return row.activityScore;
-}
-
-function compareRows(a, b, sortToken) {
-  const [key, direction = "desc"] = sortToken.split(":");
-  const av = sortValue(a, key);
-  const bv = sortValue(b, key);
-  const multiplier = direction === "asc" ? 1 : -1;
-  if (typeof av === "string" || typeof bv === "string") {
-    return String(av ?? "").localeCompare(String(bv ?? "")) * multiplier;
-  }
-  const aFinite = Number.isFinite(av);
-  const bFinite = Number.isFinite(bv);
-  if (!aFinite && !bFinite) return 0;
-  if (!aFinite) return 1;
-  if (!bFinite) return -1;
-  return (av - bv) * multiplier;
 }
 
 function SortHeader({ label, sublabel, column, activeKey, direction, onSort, align = "left", defaultDirection = "desc", title }) {
@@ -752,9 +684,9 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
       ? sortByExchangeOrder(enriched)
       : sort.startsWith("family:")
         ? sortByFamily(enriched)
-        : enriched.sort((a, b) => compareRows(a, b, sort));
+        : enriched.sort((a, b) => compareMarketRows(a, b, sort, { displayCurrency, rates }));
     return ordered;
-  }, [searched, category, sort, anchorCurrency, defaultGoldPerAnchor]);
+  }, [searched, category, sort, anchorCurrency, defaultGoldPerAnchor, displayCurrency, rates]);
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const rows = useMemo(
     () => filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),

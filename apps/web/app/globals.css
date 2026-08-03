@@ -2844,17 +2844,45 @@ body:has(.home-page) {
   font-size: 0.78rem;
   font-weight: 700;
 }
-.manual-price-unit {
+.manual-currency-toggle {
   display: inline-flex;
   align-items: center;
+  align-self: end;
+  gap: 2px;
   min-height: 38px;
-  padding: 0 10px;
+  padding: 2px;
   border: 1px solid rgba(240, 169, 59, 0.12);
   border-radius: 9px;
-  color: var(--rl-muted);
-  font-size: 0.78rem;
-  font-weight: 800;
-  white-space: nowrap;
+  background: rgba(0, 0, 0, 0.18);
+}
+.radar-light .manual-price-row .manual-currency-toggle button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+}
+.radar-light .manual-price-row .manual-currency-toggle button[aria-pressed="true"] {
+  background: linear-gradient(180deg, rgba(240, 169, 59, 0.3), rgba(240, 169, 59, 0.12));
+  box-shadow: inset 0 0 0 1px rgba(240, 169, 59, 0.32);
+}
+.radar-light .manual-price-row .manual-currency-toggle button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+.radar-light .manual-price-row .manual-currency-toggle button:focus-visible {
+  outline: 2px solid var(--rl-cyan);
+  outline-offset: 1px;
+}
+.manual-currency-toggle img {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  object-fit: contain;
 }
 .radar-light .manual-price-row button {
   min-height: 38px;

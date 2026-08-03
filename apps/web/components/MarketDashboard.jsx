@@ -8,7 +8,7 @@ import LeaguePulsePanel from "./LeaguePulsePanel.jsx";
 import PocketValuator from "./PocketValuator.jsx";
 import { roundTripGold } from "../../../src/domain/gold-costs.js";
 import { keyCurrencyCards, sparklinePoints } from "../lib/key-currencies.js";
-import { currentPriceGuidance, quoteFromAnchor, workingPrice } from "../lib/price-guidance.js";
+import { convertMarketPrice, currentPriceGuidance, quoteFromAnchor, workingPrice } from "../lib/price-guidance.js";
 import { unitRates } from "../lib/market-units.js";
 import { sortByExchangeOrder, sortByFamily } from "../lib/item-family.js";
 import { compareMarketRows, DEFAULT_MARKET_SORT, nextMarketSort, rowSpread } from "../lib/market-sort.js";
@@ -58,6 +58,11 @@ function sortOptionsFor(value) {
   return SORT_OPTIONS.some((option) => option.value === value)
     ? SORT_OPTIONS
     : [{ value, label: "Column order" }, ...SORT_OPTIONS];
+}
+
+function priceInputValue(value) {
+  if (!Number.isFinite(value) || value <= 0) return "";
+  return String(Number.parseFloat(value.toPrecision(10)));
 }
 // You rarely flip a single orb, so the table and plan can be read per-unit or
 // for a realistic bulk size. Purely a display multiplier — it never changes
@@ -406,6 +411,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   const [manualPrices, setManualPrices] = useState({});
   const [draftPrice, setDraftPrice] = useState("");
   const [draftUnit, setDraftUnit] = useState("exalted");
+  const [modalCurrency, setModalCurrency] = useState("exalted");
   const [draftPriceError, setDraftPriceError] = useState(null);
   const [loadingMinHeight, setLoadingMinHeight] = useState(null);
   const [page, setPage] = useState(1);
@@ -623,7 +629,13 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     }
     return out;
   }, [anchorCurrency, radar?.goldPerAnchor, tradable]);
-  const manualUnit = displayCurrency && rates[displayCurrency] ? displayCurrency : anchorCurrency;
+  // Auto uses the same fallback as quoteFromAnchor. The modal copies this
+  // effective table currency when it opens, then owns its selection locally.
+  const mainDisplayUnit = displayCurrency && rates[displayCurrency]
+    ? displayCurrency
+    : rates.exalted
+      ? "exalted"
+      : anchorCurrency;
 
   // Volume terciles across the tradable universe → qualitative liquidity band.
   const liquidityThresholds = useMemo(() => {
@@ -707,6 +719,15 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   const [sortKey, sortDirection = "desc"] = sort.split(":");
 
   function openMarket(pairId) {
+    const row = tradable.find((entry) => entry.pairId === pairId);
+    const saved = manualPrices[pairId];
+    const savedInMainUnit = row && saved
+      ? workingPrice(row, saved, { rates, preferredUnit: mainDisplayUnit })
+      : null;
+    setModalCurrency(mainDisplayUnit);
+    setDraftUnit(mainDisplayUnit);
+    setDraftPrice(priceInputValue(savedInMainUnit?.value));
+    setDraftPriceError(null);
     setSelectedPair(pairId);
     setView("chart");
   }
@@ -762,7 +783,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
       rates,
       divineInExalted: rates.divine && rates.exalted ? rates.divine / rates.exalted : null,
       chaosInExalted: rates.chaos && rates.exalted ? rates.chaos / rates.exalted : null,
-      preferredUnit: manualUnit,
+      preferredUnit: modalCurrency,
     })
     : { status: "missing", value: null, unit: null, anchorValue: null };
   const guidance = useMemo(
@@ -778,7 +799,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
         : selected.anchor === anchorCurrency ? defaultGoldPerAnchor : null,
     )
     : null;
-  const chartUnit = displayCurrency && rates[displayCurrency] ? displayCurrency : selected?.anchor ?? "exalted";
+  const chartUnit = rates[modalCurrency] ? modalCurrency : selected?.anchor ?? "exalted";
   const chartHistory = useMemo(() => {
     if (!rates[selected?.anchor] || !rates[chartUnit]) return history;
     const factor = rates[selected.anchor] / rates[chartUnit];
@@ -803,36 +824,52 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   // The reported range behind the basis, in whatever unit the panel is showing.
   const basisRangeLabel = useMemo(() => {
     if (!selected || !Number.isFinite(selected.low) || !Number.isFinite(selected.high)) return null;
-    const toQuote = (value) => quoteFromAnchor(value, { anchor: selected.anchor, displayCurrency, rates, target: selected.target });
+    const toQuote = (value) => quoteFromAnchor(value, {
+      anchor: selected.anchor,
+      displayCurrency: modalCurrency,
+      rates,
+      target: selected.target,
+    });
     const low = toQuote(selected.low);
     const high = toQuote(selected.high);
     if (!Number.isFinite(low?.value) || !Number.isFinite(high?.value)) return null;
     const fmt = (value) => formatNumber(value, { maximumFractionDigits: displayDigits(value) });
     return `${fmt(low.value)}–${fmt(high.value)}`;
-  }, [displayCurrency, rates, selected]);
+  }, [modalCurrency, rates, selected]);
   const workingQuote = selected
-    ? quoteFromAnchor(currentWorkingPrice.anchorValue, { anchor: selected.anchor, displayCurrency, rates, target: selected.target })
+    ? quoteFromAnchor(currentWorkingPrice.anchorValue, {
+      anchor: selected.anchor,
+      displayCurrency: modalCurrency,
+      rates,
+      target: selected.target,
+    })
     : null;
   const entryQuote = guidance.status === "ok"
-    ? quoteFromAnchor(guidance.entry, { anchor: selected?.anchor, displayCurrency, rates, target: selected?.target })
+    ? quoteFromAnchor(guidance.entry, {
+      anchor: selected?.anchor,
+      displayCurrency: modalCurrency,
+      rates,
+      target: selected?.target,
+    })
     : null;
   const exitQuote = guidance.status === "ok"
-    ? quoteFromAnchor(guidance.exit, { anchor: selected?.anchor, displayCurrency, rates, target: selected?.target })
+    ? quoteFromAnchor(guidance.exit, {
+      anchor: selected?.anchor,
+      displayCurrency: modalCurrency,
+      rates,
+      target: selected?.target,
+    })
     : null;
 
-  useEffect(() => {
-    if (!selected) return;
-    const saved = manualPrices[selected.pairId];
-    if (saved?.value && saved?.unit) {
-      setDraftPrice(String(saved.value));
-      setDraftUnit(saved.unit);
-    } else {
-      const fallbackUnit = manualUnit;
-      setDraftPrice("");
-      setDraftUnit(fallbackUnit);
-    }
+  function selectModalCurrency(nextUnit) {
+    if (nextUnit === modalCurrency || !rates[nextUnit]) return;
+    const value = Number(String(draftPrice).replace(",", "."));
+    const converted = convertMarketPrice(value, draftUnit, nextUnit, rates);
+    setModalCurrency(nextUnit);
+    setDraftUnit(nextUnit);
+    if (converted != null) setDraftPrice(priceInputValue(converted));
     setDraftPriceError(null);
-  }, [manualPrices, manualUnit, selected]);
+  }
 
   function applyManualPrice() {
     if (!selected?.pairId) return;
@@ -854,6 +891,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     if (!selected?.pairId) return;
     const next = { ...manualPrices };
     delete next[selected.pairId];
+    setDraftPrice("");
     setDraftPriceError(null);
     setManualPrices(next);
     saveManualPrices(game, league, next);
@@ -1466,7 +1504,21 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                             value={draftPrice}
                           />
                         </label>
-                        <span className="manual-price-unit">{titleize(draftUnit)}</span>
+                        <div className="manual-currency-toggle" role="group" aria-label="Trade plan currency">
+                          {DISPLAY_CURRENCIES.map((currency) => (
+                            <button
+                              key={currency.id}
+                              type="button"
+                              aria-label={currency.label}
+                              aria-pressed={modalCurrency === currency.id}
+                              title={currency.label}
+                              onClick={() => selectModalCurrency(currency.id)}
+                              disabled={!rates[currency.id]}
+                            >
+                              <img src={iconUrl(currency.id)} onError={onIconError} alt="" />
+                            </button>
+                          ))}
+                        </div>
                         <button type="button" onClick={applyManualPrice}>Update plan</button>
                         {currentWorkingPrice.source === "manual" && (
                           <button className="ghost" type="button" onClick={clearManualPrice}>Reset</button>

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { CATEGORY_ICON_IDS } from "../apps/web/lib/category-icons.js";
 import { keyCurrencyCards } from "../apps/web/lib/key-currencies.js";
-import { fallbackIconUrl, iconUrl } from "../apps/web/lib/market.js";
+import { fallbackIconUrl, gameIconUrl, iconUrl } from "../apps/web/lib/market.js";
 import { compareMarketRows } from "../apps/web/lib/market-sort.js";
 import { quoteFromAnchor } from "../apps/web/lib/price-guidance.js";
 
@@ -24,6 +24,15 @@ test("every curated category icon resolves to real official art", () => {
     const url = iconUrl(source);
     assert.notEqual(url, fallbackIconUrl, `${category} uses missing icon source ${source}`);
     assert.match(url, /^https:\/\/(?:web\.poecdn\.com|(?:www\.)?pathofexile\.com)\//, `${category} has an invalid icon URL`);
+  }
+});
+
+test("core currency icons are scoped to the selected game", () => {
+  for (const id of ["exalted", "chaos", "divine", "alchemy"]) {
+    const poe1 = gameIconUrl("poe1", id);
+    const poe2 = gameIconUrl("poe2", id);
+    assert.match(poe1, /^https:\/\/web\.poecdn\.com\/image\/Art\/2DItems\/Currency\//);
+    assert.notEqual(poe1, poe2, `${id} reused PoE 2 art in PoE 1`);
   }
 });
 

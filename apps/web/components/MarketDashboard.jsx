@@ -29,6 +29,7 @@ import {
   formatDurationHours,
   formatNumber,
   formatPercent,
+  gameIconUrl,
   iconUrl,
   peekCachedJson,
   titleize,
@@ -142,22 +143,22 @@ function FallbackIcon({ candidates, className, lazy = false }) {
   );
 }
 
-function PricePill({ value, unit, compact = false }) {
+function PricePill({ value, unit, game, compact = false }) {
   if (!unit || !Number.isFinite(value)) return <span className="price-pill empty">—</span>;
   return (
     <span className={compact ? "price-pill compact" : "price-pill"}>
       <span>{formatNumber(value, { maximumFractionDigits: displayDigits(value) })}</span>
-      <img src={iconUrl(unit)} onError={onIconError} alt="" title={titleize(unit)} />
+      <img src={gameIconUrl(game, unit)} onError={onIconError} alt="" title={titleize(unit)} />
     </span>
   );
 }
 
-function QuotePill({ quote, compact = false }) {
+function QuotePill({ quote, game, compact = false }) {
   if (!quote || !Number.isFinite(quote.value)) return <span className="price-pill empty">—</span>;
-  return <PricePill value={quote.value} unit={quote.unit} compact={compact} />;
+  return <PricePill value={quote.value} unit={quote.unit} game={game} compact={compact} />;
 }
 
-function KeyCurrencyCard({ card, emptyLabel = "Waiting for data", quantity = 1 }) {
+function KeyCurrencyCard({ card, game, emptyLabel = "Waiting for data", quantity = 1 }) {
   const points = sparklinePoints(card.values);
   const hasSinglePoint = card.values.length === 1;
   const direction = (card.movement ?? 0) >= 0 ? "up" : "down";
@@ -171,7 +172,7 @@ function KeyCurrencyCard({ card, emptyLabel = "Waiting for data", quantity = 1 }
     <article className="key-currency-card">
       <div className="key-currency-card-head">
         <span className="key-currency-name">
-          <img src={iconUrl(card.id)} onError={onIconError} alt="" />
+          <img src={gameIconUrl(game, card.id)} onError={onIconError} alt="" />
           <span>
             <strong>{card.name}</strong>
             <small>{card.unit ? `${titleize(card.unit)} per ${per}` : "Hourly market rate"}</small>
@@ -180,7 +181,7 @@ function KeyCurrencyCard({ card, emptyLabel = "Waiting for data", quantity = 1 }
         <span className={`key-currency-move ${direction}`}>{formatPercent(card.movement)}</span>
       </div>
       <div className="key-currency-card-body">
-        {card.available ? <PricePill value={scaledValue} unit={card.unit} /> : <span className="key-currency-empty">{emptyLabel}</span>}
+        {card.available ? <PricePill value={scaledValue} unit={card.unit} game={game} /> : <span className="key-currency-empty">{emptyLabel}</span>}
         {points || hasSinglePoint ? (
           <svg className={`key-currency-spark ${direction}`} viewBox="0 0 180 54" role="img" aria-label={`${card.name} 24 hour chart`}>
             <path className="key-currency-grid-line" d="M3 14 H177 M3 27 H177 M3 40 H177" />
@@ -961,7 +962,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
               aria-pressed={category === "all"}
               onClick={() => { setCategory("all"); setNavOpen(false); }}
             >
-              <img className="rs-cat-icon" src={iconUrl("exalted")} onError={onIconError} alt="" aria-hidden="true" />
+              <img className="rs-cat-icon" src={gameIconUrl(game, "exalted")} onError={onIconError} alt="" aria-hidden="true" />
               <span>All markets</span>
               <small>{searched.length}</small>
             </button>
@@ -1064,7 +1065,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     onClick={() => setDisplayCurrency((current) => (current === currency.id ? null : currency.id))}
                     disabled={currency.id !== "exalted" && !rates[currency.id]}
                   >
-                    <img src={iconUrl(currency.id)} onError={onIconError} alt="" />
+                    <img src={gameIconUrl(game, currency.id)} onError={onIconError} alt="" />
                   </button>
                 ))}
               </div>
@@ -1090,6 +1091,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                 </div>
               )}
               <PocketValuator
+                game={game}
                 league={league}
                 rates={rates}
                 pool={inventoryPool}
@@ -1111,6 +1113,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                 <KeyCurrencyCard
                   key={card.id}
                   card={card}
+                  game={game}
                   quantity={quantity}
                   emptyLabel={hasUpstreamTrades ? "Waiting for data" : "No executed trades"}
                 />
@@ -1233,6 +1236,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                               quoteFromAnchor(row.low, { anchor: row.anchor, displayCurrency, rates, target: row.target }),
                               quantity,
                             )}
+                            game={game}
                             compact
                           />
                         </td>
@@ -1242,6 +1246,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                               quoteFromAnchor(row.high, { anchor: row.anchor, displayCurrency, rates, target: row.target }),
                               quantity,
                             )}
+                            game={game}
                             compact
                           />
                         </td>
@@ -1455,12 +1460,12 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                           <div className="trade-answer">
                             <article className="buy">
                               <span className="ta-head">Buy</span>
-                              <strong><QuotePill quote={scaleQuote(entryQuote, quantity)} /></strong>
+                              <strong><QuotePill quote={scaleQuote(entryQuote, quantity)} game={game} /></strong>
                               <small>{formatPercent(Math.abs(guidance.entryDiscount), { signed: false })} below market</small>
                             </article>
                             <article className="sell">
                               <span className="ta-head">Sell</span>
-                              <strong><QuotePill quote={scaleQuote(exitQuote, quantity)} /></strong>
+                              <strong><QuotePill quote={scaleQuote(exitQuote, quantity)} game={game} /></strong>
                               <small>{formatPercent(guidance.exitPremium, { signed: false })} above market</small>
                             </article>
                           </div>
@@ -1473,7 +1478,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                               important thing to know before trusting any centre. */}
                           <div className="working-price-line">
                             <span>Plan basis</span>
-                            <strong><QuotePill quote={workingQuote} compact /></strong>
+                            <strong><QuotePill quote={workingQuote} game={game} compact /></strong>
                             <small>
                               {currentWorkingPrice.source === "manual"
                                 ? "your in-game price"
@@ -1545,7 +1550,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                               onClick={() => selectModalCurrency(currency.id)}
                               disabled={!rates[currency.id]}
                             >
-                              <img src={iconUrl(currency.id)} onError={onIconError} alt="" />
+                              <img src={gameIconUrl(game, currency.id)} onError={onIconError} alt="" />
                             </button>
                           ))}
                         </div>

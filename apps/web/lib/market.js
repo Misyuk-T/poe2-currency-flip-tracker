@@ -115,6 +115,17 @@ export function titleize(id) {
 // back to the neutral committed glyph via the <img onError> handler.
 export const fallbackIconUrl = "/icons/_fallback.svg";
 
+// Core currencies share ids between the games but not inventory art.
+// The main catalog is PoE 2-scoped, so id-only lookups would otherwise keep
+// showing PoE 2 icons after the dashboard switches to PoE 1. Keep this tiny map
+// explicit instead of shipping the 4,700-item PoE 1 identity file to clients.
+const POE1_CORE_ICON_URLS = {
+  alchemy: "https://web.poecdn.com/image/Art/2DItems/Currency/CurrencyUpgradeToRare.png?scale=1",
+  chaos: "https://web.poecdn.com/image/Art/2DItems/Currency/CurrencyRerollRare.png?scale=1",
+  divine: "https://web.poecdn.com/image/Art/2DItems/Currency/CurrencyModValues.png?scale=1",
+  exalted: "https://web.poecdn.com/image/Art/2DItems/Currency/CurrencyAddModToRare.png?scale=1",
+};
+
 // id -> official GGG image URL, from the committed catalog metadata.
 const ICON_URLS = new Map(
   (catalog.items ?? []).filter((item) => item.id && item.image).map((item) => [item.id, item.image]),
@@ -131,6 +142,10 @@ export function iconUrl(id) {
     return id;
   }
   return (id && ICON_URLS.get(id)) || fallbackIconUrl;
+}
+
+export function gameIconUrl(game, id) {
+  return iconUrl(game === "poe1" ? (POE1_CORE_ICON_URLS[id] ?? id) : id);
 }
 
 /**

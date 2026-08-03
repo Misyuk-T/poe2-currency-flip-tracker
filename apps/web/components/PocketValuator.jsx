@@ -5,7 +5,7 @@ import { mockCharacterInventory, valueInventoryInExalted } from "../lib/ggg-demo
 import { useScrollLock } from "../lib/use-scroll-lock.js";
 import { bestExitCurrency } from "../lib/exit-currency.js";
 import { convertMarketPrice } from "../lib/price-guidance.js";
-import { displayDigits, fallbackIconUrl, formatNumber, iconUrl, titleize } from "../lib/market.js";
+import { displayDigits, fallbackIconUrl, formatNumber, gameIconUrl, iconUrl, titleize } from "../lib/market.js";
 
 function onIconError(event) {
   const img = event.currentTarget;
@@ -32,7 +32,7 @@ const TOTAL_UNITS = [
  * column (see lib/exit-currency.js — cheapest gold cost among the anchors you
  * can actually be paid in).
  */
-export default function PocketValuator({ league, rates, pool, goldPerUnit }) {
+export default function PocketValuator({ game, league, rates, pool, goldPerUnit }) {
   const [open, setOpen] = useState(false);
   const [character, setCharacter] = useState(null);
   const valuation = character ? valueInventoryInExalted(character.currency, rates) : null;
@@ -115,7 +115,7 @@ export default function PocketValuator({ league, rates, pool, goldPerUnit }) {
                       {best ? (
                         <>
                           <b>
-                            <img src={iconUrl(best.unit)} onError={onIconError} alt="" />
+                            <img src={gameIconUrl(game, best.unit)} onError={onIconError} alt="" />
                             {formatNumber(best.units, { maximumFractionDigits: displayDigits(best.units) })}{" "}
                             {titleize(best.unit)}
                           </b>
@@ -135,7 +135,7 @@ export default function PocketValuator({ league, rates, pool, goldPerUnit }) {
               <div className="pocket-totals-values">
                 {totals.map((unit) => (
                   <strong key={unit.id}>
-                    <img src={iconUrl(unit.id)} onError={onIconError} alt="" />
+                    <img src={gameIconUrl(game, unit.id)} onError={onIconError} alt="" />
                     {unit.value != null ? formatNumber(unit.value, { maximumFractionDigits: unit.id === "exalted" ? 0 : 2 }) : "—"}
                     <small>{unit.label}</small>
                   </strong>

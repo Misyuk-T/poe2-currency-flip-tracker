@@ -2063,9 +2063,11 @@ body:has(.home-page) {
   background: rgba(148, 91, 255, 0.1);
   font-size: 0.67rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 .demo-badge.inline { border-style: solid; padding: 1px 8px 1px 4px; vertical-align: middle; }
 .demo-tag {
+  flex: 0 0 auto;
   padding: 1px 6px;
   border-radius: 999px;
   background: rgba(178, 138, 255, 0.85);
@@ -2073,13 +2075,14 @@ body:has(.home-page) {
   font-size: 0.6rem;
   font-weight: 900;
   letter-spacing: 0.06em;
+  line-height: 1.2;
 }
 .league-meta-chip { font-weight: 700; }
 
 /* League Pulse and the inventory valuator are secondary/demo surfaces: header
    controls opening a modal, so neither competes with the market table for
    page space. */
-.league-pulse-control { display: flex; flex-direction: column; gap: 4px; width: 88px; }
+.league-pulse-control { display: flex; flex-direction: column; gap: 4px; width: 104px; }
 .league-pulse-control > span {
   color: var(--rl-muted);
   font-size: 0.67rem;
@@ -2090,6 +2093,7 @@ body:has(.home-page) {
 .league-pulse-button {
   display: inline-flex;
   align-items: center;
+  justify-content: space-between;
   gap: 7px;
   min-height: 44px;
   border: 1px solid rgba(178, 138, 255, 0.55);
@@ -2122,7 +2126,7 @@ body:has(.home-page) {
 .league-pulse-bars { margin-bottom: 12px; }
 
 /* Header control (sits with the Game / League / view toggles). */
-.pocket-valuator-control { display: flex; flex-direction: column; gap: 4px; width: 162px; }
+.pocket-valuator-control { display: flex; flex-direction: column; gap: 4px; width: 176px; }
 .pocket-valuator-control > span {
   color: var(--rl-muted);
   font-size: 0.67rem;
@@ -2133,6 +2137,7 @@ body:has(.home-page) {
 .pocket-connect-button {
   display: inline-flex;
   align-items: center;
+  justify-content: space-between;
   gap: 7px;
   min-height: 44px;
   border: 1px solid rgba(178, 138, 255, 0.55);

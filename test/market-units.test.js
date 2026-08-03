@@ -15,3 +15,16 @@ test("unitRates connects mixed native-anchor rows into one conversion graph", ()
 test("unitRates leaves disconnected core units unavailable", () => {
   assert.deepEqual(unitRates([], "chaos"), { exalted: null, chaos: 1, divine: null });
 });
+
+test("unitRates does not seed a requested anchor absent from sparse best-view rows", () => {
+  assert.deepEqual(
+    unitRates([
+      {
+        target: "Metadata/Items/Currency/CurrencyUpgradeToRare",
+        anchor: "exalted",
+        reference: 0.09805806756909202,
+      },
+    ], "chaos"),
+    { exalted: 1, chaos: null, divine: null },
+  );
+});

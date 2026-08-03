@@ -27,6 +27,7 @@ html {
   min-height: 100%;
   background: #08090b;
   overscroll-behavior-y: none;
+  scrollbar-gutter: stable;
 }
 
 body {
@@ -1691,7 +1692,7 @@ body:has(.home-page) {
 
 /* ----- main column ----- */
 .radar-main { padding: 24px 26px 26px; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
-.radar-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; flex-wrap: wrap; }
+.radar-head { display: flex; flex-direction: column; align-items: stretch; gap: 18px; }
 .radar-light .eyebrow { color: var(--rl-gold); }
 .radar-title-meta { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 .radar-title-meta .eyebrow { margin: 0; }
@@ -1716,8 +1717,9 @@ body:has(.home-page) {
 
 .radar-head-actions {
   display: flex;
+  width: 100%;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
   align-items: flex-end;
   gap: 10px;
 }
@@ -1727,8 +1729,9 @@ body:has(.home-page) {
   flex-direction: column;
   gap: 4px;
 }
-.game-control { min-width: 150px; }
+.game-control { width: 150px; min-width: 150px; }
 .league-control {
+  width: 190px;
   min-width: 190px;
 }
 .game-control > span,
@@ -1770,7 +1773,29 @@ body:has(.home-page) {
   outline-offset: 2px;
 }
 .league-control .custom-select { min-width: 190px; }
+.league-control .custom-select-button > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .league-control .custom-select-button { min-height: 44px; }
+.header-control-placeholder .header-control-block {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  border-radius: 11px;
+}
+.radar-source-placeholder {
+  width: 112px;
+  min-height: 22px;
+  border-radius: 999px;
+}
+.league-meta-placeholder {
+  width: 218px;
+  max-width: 100%;
+  min-height: 22px;
+  border-radius: 999px;
+}
 .currency-toggle {
   display: inline-flex;
   align-items: center;
@@ -1976,6 +2001,7 @@ body:has(.home-page) {
 }
 .key-currency-card {
   min-width: 0;
+  min-height: 122px;
   border: 1px solid rgba(240, 169, 59, 0.13);
   border-radius: 11px;
   padding: 12px;
@@ -2053,7 +2079,7 @@ body:has(.home-page) {
 /* League Pulse and the inventory valuator are secondary/demo surfaces: header
    controls opening a modal, so neither competes with the market table for
    page space. */
-.league-pulse-control { display: flex; flex-direction: column; gap: 4px; }
+.league-pulse-control { display: flex; flex-direction: column; gap: 4px; width: 88px; }
 .league-pulse-control > span {
   color: var(--rl-muted);
   font-size: 0.67rem;
@@ -2096,7 +2122,7 @@ body:has(.home-page) {
 .league-pulse-bars { margin-bottom: 12px; }
 
 /* Header control (sits with the Game / League / view toggles). */
-.pocket-valuator-control { display: flex; flex-direction: column; gap: 4px; }
+.pocket-valuator-control { display: flex; flex-direction: column; gap: 4px; width: 162px; }
 .pocket-valuator-control > span {
   color: var(--rl-muted);
   font-size: 0.67rem;
@@ -2418,6 +2444,10 @@ body:has(.home-page) {
 .sk-pill { height: 14px; width: 78px; border-radius: 999px; }
 .sk-pill.narrow { width: 52px; }
 .radar-table tbody tr.skeleton-row .cell-item { display: flex; align-items: center; gap: 10px; }
+.rs-cat-skeleton { cursor: default; }
+.rs-cat-skeleton .sk-icon { width: 25px; height: 25px; }
+.rs-cat-skeleton .sk-line { width: 58%; }
+.rs-cat-skeleton .sk-count { width: 22px; height: 11px; margin-left: auto; }
 @keyframes sk-shimmer {
   0% { background-position: 100% 0; }
   100% { background-position: 0 0; }
@@ -3025,13 +3055,16 @@ body:has(.home-page) {
   .radar-main { padding: 18px 12px 20px; }
   .radar-sidebar { padding: 56px 20px 20px 12px; }
   .radar-head { gap: 12px; }
+  .radar-title-meta .eyebrow { min-height: 26px; }
   .radar-head-actions,
   .game-control,
   .game-toggle,
   .league-control,
   .league-control .custom-select,
   .currency-toggle,
-  .radar-quantity-toggle { width: 100%; }
+  .radar-quantity-toggle,
+  .league-pulse-control,
+  .pocket-valuator-control { width: 100%; }
   .radar-quantity-toggle button { flex: 1; min-width: 0; }
   .currency-toggle { justify-content: space-between; }
   .key-currency-grid { grid-template-columns: 1fr; }

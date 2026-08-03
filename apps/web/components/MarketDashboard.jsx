@@ -88,6 +88,7 @@ const CONFIG_CACHE_MS = 5 * 60_000;
 const RADAR_CACHE_MS = 5 * 60_000;
 const HISTORY_CACHE_MS = 10 * 60_000;
 const PAGE_SIZE = 100;
+const SIDEBAR_SKELETON_ROWS = 14;
 
 function radarUrl(game, league, anchor) {
   const params = new URLSearchParams({ anchor, game, league, view: "best" });
@@ -905,6 +906,8 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
       .map((entry) => ({ value: entry.id, label: entry.label })) ?? [];
   const keyCurrencies = useMemo(() => keyCurrencyCards(tradable, anchorCurrency), [anchorCurrency, tradable]);
   const sourceMode = radar?.source?.sourceMode;
+  const isBooting = !marketConfig || !league;
+  const isRadarLoading = status === "loading" && !radar;
   const hasUpstreamTrades = radar?.marketData?.status !== "no-executed-trades";
   const emptyMarketMessage =
     radar?.marketData?.status === "no-executed-trades"
@@ -973,6 +976,13 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                 <small>{cat.count}</small>
               </button>
             ))}
+            {isRadarLoading && Array.from({ length: SIDEBAR_SKELETON_ROWS }).map((_, index) => (
+              <span className="rs-cat rs-cat-skeleton" key={`category-skeleton-${index}`} aria-hidden="true">
+                <span className="sk sk-icon" />
+                <span className="sk sk-line" />
+                <span className="sk sk-count" />
+              </span>
+            ))}
           </div>
           <p className="rs-foot">Categories follow the current in-game Currency Exchange layout.</p>
         </aside>
@@ -992,14 +1002,15 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     {sourceMode === "official" ? "Official GGG data" : "Sample fixture data"}
                   </span>
                 )}
-                <LeagueMetaChip league={league} />
+                {!sourceMode && isRadarLoading && <span className="sk radar-source-placeholder" aria-hidden="true" />}
+                {league ? <LeagueMetaChip league={league} /> : <span className="sk league-meta-placeholder" aria-hidden="true" />}
               </div>
               {/* The page's only top-level heading. It was an h2, which left
                   every dashboard route with no h1 at all. */}
               <h1>What is moving today</h1>
             </div>
             <div className="radar-head-actions">
-              {gameOptions.length > 1 && (
+              {gameOptions.length > 1 ? (
                 <div className="game-control">
                   <span>Game</span>
                   <div className="game-toggle" role="group" aria-label="Game">
@@ -1015,13 +1026,23 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     ))}
                   </div>
                 </div>
-              )}
-              {league && leagueOptions.length > 1 && (
+              ) : isBooting ? (
+                <div className="game-control header-control-placeholder" aria-hidden="true">
+                  <span>Game</span>
+                  <span className="sk header-control-block" />
+                </div>
+              ) : null}
+              {league && leagueOptions.length > 1 ? (
                 <div className="league-control">
                   <span>League</span>
                   <CustomSelect id="league" value={league} options={leagueOptions} onChange={selectLeague} />
                 </div>
-              )}
+              ) : isBooting ? (
+                <div className="league-control header-control-placeholder" aria-hidden="true">
+                  <span>League</span>
+                  <span className="sk header-control-block" />
+                </div>
+              ) : null}
               <div className="currency-toggle" role="group" aria-label="Display currency">
                 <button
                   type="button"
@@ -1058,7 +1079,14 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                   </button>
                 ))}
               </div>
-              <LeaguePulsePanel league={league} />
+              {league ? (
+                <LeaguePulsePanel league={league} />
+              ) : (
+                <div className="league-pulse-control header-control-placeholder" aria-hidden="true">
+                  <span>League</span>
+                  <span className="sk header-control-block" />
+                </div>
+              )}
               <PocketValuator
                 league={league}
                 rates={rates}

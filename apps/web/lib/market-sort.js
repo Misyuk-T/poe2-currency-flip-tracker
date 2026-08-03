@@ -1,5 +1,17 @@
 import { quoteFromAnchor } from "./price-guidance.js";
 
+export const DEFAULT_MARKET_SORT = "game:asc";
+
+/** Column headers cycle primary direction -> reverse -> in-game grouping. */
+export function nextMarketSort(current, column, defaultDirection = "desc") {
+  const [currentKey, currentDirection] = String(current ?? "").split(":");
+  if (currentKey !== column) return `${column}:${defaultDirection}`;
+  if (currentDirection === defaultDirection) {
+    return `${column}:${defaultDirection === "desc" ? "asc" : "desc"}`;
+  }
+  return DEFAULT_MARKET_SORT;
+}
+
 /** Distance between the latest completed hour's low and high. */
 export function rowSpread(row) {
   if (!Number.isFinite(row?.low) || !Number.isFinite(row?.high) || row.low <= 0 || row.high <= row.low) return null;

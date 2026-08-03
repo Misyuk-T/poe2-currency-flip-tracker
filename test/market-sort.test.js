@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { compareMarketRows, rowSpread } from "../apps/web/lib/market-sort.js";
+import {
+  compareMarketRows,
+  DEFAULT_MARKET_SORT,
+  nextMarketSort,
+  rowSpread,
+} from "../apps/web/lib/market-sort.js";
 
 const rates = { exalted: 1, chaos: 0.02, divine: 100 };
 
@@ -62,4 +67,25 @@ test("rowSpread returns a numeric gap only for a valid low-to-high range", () =>
   assert.equal(rowSpread({ low: 80, high: 100 }), 0.25);
   assert.equal(rowSpread({ low: 100, high: 100 }), null);
   assert.equal(rowSpread({ low: null, high: 100 }), null);
+});
+
+test("a column header's third click restores in-game grouping", () => {
+  let buySort = DEFAULT_MARKET_SORT;
+  buySort = nextMarketSort(buySort, "buy", "asc");
+  assert.equal(buySort, "buy:asc");
+  buySort = nextMarketSort(buySort, "buy", "asc");
+  assert.equal(buySort, "buy:desc");
+  buySort = nextMarketSort(buySort, "buy", "asc");
+  assert.equal(buySort, DEFAULT_MARKET_SORT);
+
+  let sellSort = nextMarketSort(DEFAULT_MARKET_SORT, "sell");
+  assert.equal(sellSort, "sell:desc");
+  sellSort = nextMarketSort(sellSort, "sell");
+  assert.equal(sellSort, "sell:asc");
+  assert.equal(nextMarketSort(sellSort, "sell"), DEFAULT_MARKET_SORT);
+});
+
+test("switching columns starts the new column in its primary direction", () => {
+  assert.equal(nextMarketSort("buy:desc", "movement", "desc"), "movement:desc");
+  assert.equal(nextMarketSort("sell:asc", "name", "asc"), "name:asc");
 });

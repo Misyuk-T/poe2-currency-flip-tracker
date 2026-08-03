@@ -11,7 +11,7 @@ import { keyCurrencyCards, sparklinePoints } from "../lib/key-currencies.js";
 import { currentPriceGuidance, quoteFromAnchor, workingPrice } from "../lib/price-guidance.js";
 import { unitRates } from "../lib/market-units.js";
 import { sortByExchangeOrder, sortByFamily } from "../lib/item-family.js";
-import { compareMarketRows, rowSpread } from "../lib/market-sort.js";
+import { compareMarketRows, DEFAULT_MARKET_SORT, nextMarketSort, rowSpread } from "../lib/market-sort.js";
 import { CATEGORY_ICON_IDS } from "../lib/category-icons.js";
 import { useScrollLock } from "../lib/use-scroll-lock.js";
 import { preloadIcons } from "../lib/preload-icons.js";
@@ -39,9 +39,8 @@ const MANUAL_PRICE_KEY = "poe2flip.next.manualPrices.v2";
 // filter rather than the full 750-row catalog — which also means far fewer table
 // rows to render on first paint.
 const DEFAULT_CATEGORY = "Currency";
-const DEFAULT_SORT = "game:asc";
 const SORT_OPTIONS = [
-  { value: "game:asc", label: "In-game order" },
+  { value: DEFAULT_MARKET_SORT, label: "In-game order" },
   { value: "family:desc", label: "Item family" },
   { value: "spread:desc", label: "Widest spread" },
   { value: "activity:desc", label: "Activity" },
@@ -396,7 +395,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   const [status, setStatus] = useState("loading");
   const [reloadKey, setReloadKey] = useState(0);
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState(DEFAULT_SORT);
+  const [sort, setSort] = useState(DEFAULT_MARKET_SORT);
   const [category, setCategory] = useState(DEFAULT_CATEGORY);
   const [displayCurrency, setDisplayCurrency] = useState(null);
   const [view, setView] = useState("list"); // "list" (table, default) | "chart" (trade view)
@@ -716,11 +715,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   }
 
   function sortColumn(column, defaultDirection = "desc") {
-    setSort((current) => {
-      const [currentKey, currentDirection = defaultDirection] = current.split(":");
-      if (currentKey !== column) return `${column}:${defaultDirection}`;
-      return `${column}:${currentDirection === "desc" ? "asc" : "desc"}`;
-    });
+    setSort((current) => nextMarketSort(current, column, defaultDirection));
   }
 
   function selectLeague(nextLeague) {

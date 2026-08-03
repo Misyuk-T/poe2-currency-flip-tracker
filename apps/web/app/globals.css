@@ -2835,6 +2835,15 @@ body:has(.home-page) {
   border-color: var(--rl-cyan);
   outline: 0;
 }
+.radar-light .manual-price-row input[aria-invalid="true"] {
+  border-color: #ef5f6f;
+}
+.manual-price-error {
+  margin: -4px 0 10px;
+  color: #ef7a87;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
 .manual-price-unit {
   display: inline-flex;
   align-items: center;

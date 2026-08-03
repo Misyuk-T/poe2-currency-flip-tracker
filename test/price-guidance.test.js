@@ -32,6 +32,15 @@ test("currentPriceGuidance widens buy/sell targets as the horizon grows", () => 
   assert.ok(long.exit > short.exit, "longer horizon should allow a higher sell target");
 });
 
+test("currentPriceGuidance distinguishes flat history from too little history", () => {
+  const flat = Array.from({ length: 6 }, (_, hour) => point(hour, 100, 100, 100));
+
+  assert.deepEqual(currentPriceGuidance(flat, 100), {
+    status: "no-price-range",
+    samples: 6,
+  });
+});
+
 test("quoteFromAnchor keeps sub-one prices in buy-to-sell order", () => {
   const rates = { exalted: 1, chaos: 0.02, divine: 100 };
   const buy = quoteFromAnchor(0.003156740351369062, { anchor: "exalted", rates });

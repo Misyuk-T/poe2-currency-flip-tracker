@@ -26,7 +26,16 @@ function priceLabel(value) {
   return formatNumber(value, { maximumFractionDigits: displayDigits(value) });
 }
 
-export default function ReachLadder({ points, horizonHours, basis, buyPrice, sellPrice, unit, loading = false }) {
+export default function ReachLadder({
+  points,
+  horizonHours,
+  basis,
+  buyPrice,
+  sellPrice,
+  unit,
+  loading = false,
+  emptyMessage = "Not enough completed hours yet to say how often a price was reached.",
+}) {
   const ladder = useMemo(
     () => buildReachLadder(points, { horizonHours, basis, buyPrice, sellPrice }),
     [basis, buyPrice, horizonHours, points, sellPrice],
@@ -39,7 +48,7 @@ export default function ReachLadder({ points, horizonHours, basis, buyPrice, sel
           {loading ? (
             <span className="rt-spinner" aria-label="Loading" />
           ) : (
-            <p>Not enough completed hours yet to say how often a price was reached.</p>
+            <p>{emptyMessage}</p>
           )}
         </div>
       </div>

@@ -406,6 +406,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   const [manualPrices, setManualPrices] = useState({});
   const [draftPrice, setDraftPrice] = useState("");
   const [draftUnit, setDraftUnit] = useState("exalted");
+  const [draftPriceError, setDraftPriceError] = useState(null);
   const [loadingMinHeight, setLoadingMinHeight] = useState(null);
   const [page, setPage] = useState(1);
   const radarMainRef = useRef(null);
@@ -830,17 +831,21 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
       setDraftPrice("");
       setDraftUnit(fallbackUnit);
     }
+    setDraftPriceError(null);
   }, [manualPrices, manualUnit, selected]);
 
   function applyManualPrice() {
     if (!selected?.pairId) return;
     const value = Number(String(draftPrice).replace(",", "."));
-    const next = { ...manualPrices };
-    if (Number.isFinite(value) && value > 0 && rates[draftUnit]) {
-      next[selected.pairId] = { value, unit: draftUnit, updatedAt: Date.now() };
-    } else {
-      delete next[selected.pairId];
+    if (!Number.isFinite(value) || value <= 0 || !rates[draftUnit]) {
+      setDraftPriceError("Enter a price greater than 0.");
+      return;
     }
+    const next = {
+      ...manualPrices,
+      [selected.pairId]: { value, unit: draftUnit, updatedAt: Date.now() },
+    };
+    setDraftPriceError(null);
     setManualPrices(next);
     saveManualPrices(game, league, next);
   }
@@ -849,6 +854,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     if (!selected?.pairId) return;
     const next = { ...manualPrices };
     delete next[selected.pairId];
+    setDraftPriceError(null);
     setManualPrices(next);
     saveManualPrices(game, league, next);
   }
@@ -1317,6 +1323,13 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     sellPrice={chartLevels.find((level) => level.label === "Sell")?.price}
                     unit={titleize(chartUnit)}
                     loading={historyLoading}
+                    emptyMessage={
+                      guidance.status === "invalid-current-price"
+                        ? "Enter the current in-game price to see its reach history."
+                        : guidance.status === "no-price-range"
+                          ? "Completed-hour history has no usable price range yet."
+                          : undefined
+                    }
                   />
                 ) : (
                   <SpotChart points={chartHistory} bucketHours={horizon} loading={historyLoading} levels={chartLevels} />
@@ -1367,65 +1380,84 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     <div className="rt-plan-loading">
                       <span className="rt-spinner" aria-label="Loading trade plan" />
                     </div>
-                  ) : guidance.status === "ok" && entryQuote?.value != null && exitQuote?.value != null ? (
+                  ) : (
                     <>
-                      <div className="trade-answer">
-                        <article className="buy">
-                          <span className="ta-head">Buy</span>
-                          <strong><QuotePill quote={scaleQuote(entryQuote, quantity)} /></strong>
-                          <small>{formatPercent(Math.abs(guidance.entryDiscount), { signed: false })} below market</small>
-                        </article>
-                        <article className="sell">
-                          <span className="ta-head">Sell</span>
-                          <strong><QuotePill quote={scaleQuote(exitQuote, quantity)} /></strong>
-                          <small>{formatPercent(guidance.exitPremium, { signed: false })} above market</small>
-                        </article>
-                      </div>
+                      {guidance.status === "ok" && entryQuote?.value != null && exitQuote?.value != null ? (
+                        <>
+                          <div className="trade-answer">
+                            <article className="buy">
+                              <span className="ta-head">Buy</span>
+                              <strong><QuotePill quote={scaleQuote(entryQuote, quantity)} /></strong>
+                              <small>{formatPercent(Math.abs(guidance.entryDiscount), { signed: false })} below market</small>
+                            </article>
+                            <article className="sell">
+                              <span className="ta-head">Sell</span>
+                              <strong><QuotePill quote={scaleQuote(exitQuote, quantity)} /></strong>
+                              <small>{formatPercent(guidance.exitPremium, { signed: false })} above market</small>
+                            </article>
+                          </div>
 
-                      {/* This line said "official hourly midpoint", which stopped
-                          being true when the centre became geometric — and read
-                          as an apology for the number above it. Naming the range
-                          it came from is both accurate and more use: on a market
-                          reporting 31 to 68, the width is the single most
-                          important thing to know before trusting any centre. */}
-                      <div className="working-price-line">
-                        <span>Plan basis</span>
-                        <strong><QuotePill quote={workingQuote} compact /></strong>
-                        <small>
-                          {currentWorkingPrice.source === "manual"
-                            ? "your in-game price"
-                            : basisRangeLabel
-                              ? `centre of ${basisRangeLabel} · GGG's last completed hour`
-                              : "GGG's last completed hour"}
-                          {currentWorkingPrice.ageMs == null ? null : (
-                            <>
-                              {" · "}
-                              {/* Quiet while the feed is doing its job; loud once
-                                  the basis is old enough to change the answer. */}
-                              <span className={currentWorkingPrice.ageMs > STALE_BASIS_MS ? "basis-stale" : undefined}>
-                                {formatAge(currentWorkingPrice.ageMs)}
-                              </span>
-                            </>
+                          {/* This line said "official hourly midpoint", which stopped
+                              being true when the centre became geometric — and read
+                              as an apology for the number above it. Naming the range
+                              it came from is both accurate and more use: on a market
+                              reporting 31 to 68, the width is the single most
+                              important thing to know before trusting any centre. */}
+                          <div className="working-price-line">
+                            <span>Plan basis</span>
+                            <strong><QuotePill quote={workingQuote} compact /></strong>
+                            <small>
+                              {currentWorkingPrice.source === "manual"
+                                ? "your in-game price"
+                                : basisRangeLabel
+                                  ? `centre of ${basisRangeLabel} · GGG's last completed hour`
+                                  : "GGG's last completed hour"}
+                              {currentWorkingPrice.ageMs == null ? null : (
+                                <>
+                                  {" · "}
+                                  {/* Quiet while the feed is doing its job; loud once
+                                      the basis is old enough to change the answer. */}
+                                  <span className={currentWorkingPrice.ageMs > STALE_BASIS_MS ? "basis-stale" : undefined}>
+                                    {formatAge(currentWorkingPrice.ageMs)}
+                                  </span>
+                                </>
+                              )}
+                            </small>
+                          </div>
+
+                          {Number.isFinite(planSpread) && (
+                            <p className="rt-gold-caption">
+                              <strong>{formatPercent(planSpread, { signed: false })} margin</strong>
+                              {Number.isFinite(planMetrics?.profitPer100k)
+                                ? ` · ≈ ${formatNumber(planMetrics.profitPer100k, { maximumFractionDigits: 1 })} ex / 100k gold`
+                                : ""}
+                            </p>
                           )}
-                        </small>
-                      </div>
-
-                      {Number.isFinite(planSpread) && (
-                        <p className="rt-gold-caption">
-                          <strong>{formatPercent(planSpread, { signed: false })} margin</strong>
-                          {Number.isFinite(planMetrics?.profitPer100k)
-                            ? ` · ≈ ${formatNumber(planMetrics.profitPer100k, { maximumFractionDigits: 1 })} ex / 100k gold`
-                            : ""}
+                        </>
+                      ) : (
+                        <p className="guidance-empty">
+                          {guidance.status === "insufficient-history"
+                            ? `Not enough completed-hour history yet (${guidance.samples ?? 0}/3).`
+                            : guidance.status === "no-price-range"
+                              ? "Completed-hour history has no usable price range yet."
+                              : "No current price is available. Enter the live price you see in-game."}
                         </p>
                       )}
 
-                      <p className="rt-section-label">Seeing a different price in-game?</p>
+                      <p className="rt-section-label">
+                        {guidance.status === "ok" ? "Seeing a different price in-game?" : "Current in-game price"}
+                      </p>
                       <div className="manual-price-row">
                         <label>
                           Live price
                           <input
+                            aria-describedby={draftPriceError ? "manual-price-error" : undefined}
+                            aria-invalid={draftPriceError ? "true" : undefined}
                             inputMode="decimal"
-                            onChange={(event) => setDraftPrice(event.target.value)}
+                            onChange={(event) => {
+                              setDraftPrice(event.target.value);
+                              setDraftPriceError(null);
+                            }}
                             onKeyDown={(event) => {
                               if (event.key === "Enter") applyManualPrice();
                             }}
@@ -1440,39 +1472,40 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                           <button className="ghost" type="button" onClick={clearManualPrice}>Reset</button>
                         )}
                       </div>
+                      {draftPriceError && (
+                        <p className="manual-price-error" id="manual-price-error" role="alert">{draftPriceError}</p>
+                      )}
 
-                      {/* Replayed in order: the buy has to be touched before the
-                          sell counts. The old version asked only whether some
-                          later high reached the sell price, so windows where the
-                          buy never filled counted in the plan's favour. */}
-                      <p className="rt-section-label">If you had run this plan</p>
-                      <div className="guidance-grid compact">
-                        <article>
-                          <span>Buy price touched</span>
-                          <strong>{formatPercent(guidance.entryFillRate, { signed: false, maximumFractionDigits: 0 })}</strong>
-                          <small>of {guidance.replaySamples || guidance.samples} past {horizon}h windows</small>
-                        </article>
-                        <article>
-                          <span>Then sell price</span>
-                          <strong>{formatPercent(guidance.exitAfterEntryRate, { signed: false, maximumFractionDigits: 0 })}</strong>
-                          <small>
-                            {guidance.observableSamples
-                              ? `of the ${guidance.observableSamples} that bought`
-                              : "needs a 2h+ horizon to observe"}
-                          </small>
-                        </article>
-                      </div>
-                      <p className="rt-fineprint">
-                        Touched, not filled — an hourly low reaching your price means the market traded there, not
-                        that your order cleared at that size.
-                      </p>
+                      {guidance.status === "ok" && (
+                        <>
+                          {/* Replayed in order: the buy has to be touched before the
+                              sell counts. The old version asked only whether some
+                              later high reached the sell price, so windows where the
+                              buy never filled counted in the plan's favour. */}
+                          <p className="rt-section-label">If you had run this plan</p>
+                          <div className="guidance-grid compact">
+                            <article>
+                              <span>Buy price touched</span>
+                              <strong>{formatPercent(guidance.entryFillRate, { signed: false, maximumFractionDigits: 0 })}</strong>
+                              <small>of {guidance.replaySamples || guidance.samples} past {horizon}h windows</small>
+                            </article>
+                            <article>
+                              <span>Then sell price</span>
+                              <strong>{formatPercent(guidance.exitAfterEntryRate, { signed: false, maximumFractionDigits: 0 })}</strong>
+                              <small>
+                                {guidance.observableSamples
+                                  ? `of the ${guidance.observableSamples} that bought`
+                                  : "needs a 2h+ horizon to observe"}
+                              </small>
+                            </article>
+                          </div>
+                          <p className="rt-fineprint">
+                            Touched, not filled — an hourly low reaching your price means the market traded there, not
+                            that your order cleared at that size.
+                          </p>
+                        </>
+                      )}
                     </>
-                  ) : (
-                    <p className="guidance-empty">
-                      {guidance.status === "insufficient-history"
-                        ? `Not enough completed-hour history yet (${guidance.samples ?? 0}/3).`
-                        : "Enter a current price, or wait for a completed hour with trades in it."}
-                    </p>
                   )}
                 </aside>
               )}

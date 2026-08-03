@@ -142,7 +142,7 @@ export function currentPriceGuidance(points, currentPrice, { maxSamples = 25, mi
     ? median(horizon.windows.map((point) => point.futureHighFactor))
     : median(ratios.map((point) => point.exit));
   if (!(adjustedEntryFactor > 0) || !(adjustedExitFactor > adjustedEntryFactor)) {
-    return { status: "insufficient-history", samples: ratios.length };
+    return { status: "no-price-range", samples: ratios.length };
   }
   const entry = currentPrice * adjustedEntryFactor;
   const exit = currentPrice * adjustedExitFactor;

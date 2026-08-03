@@ -5,7 +5,7 @@ import { mockCharacterInventory, valueInventoryInExalted } from "../lib/ggg-demo
 import { useScrollLock } from "../lib/use-scroll-lock.js";
 import { bestExitCurrency } from "../lib/exit-currency.js";
 import { convertMarketPrice } from "../lib/price-guidance.js";
-import { displayDigits, fallbackIconUrl, formatNumber, gameIconUrl, iconUrl, titleize } from "../lib/market.js";
+import { currencyName, displayDigits, fallbackIconUrl, formatNumber, gameIconUrl, iconUrl, titleize } from "../lib/market.js";
 
 function onIconError(event) {
   const img = event.currentTarget;
@@ -102,7 +102,7 @@ export default function PocketValuator({ game, league, rates, pool, goldPerUnit 
                 const { best } = bestExitCurrency(item.exaltedValue, { rates, goldPerUnit });
                 return (
                   <div className="pocket-row" key={item.id}>
-                    <img src={item.icon ?? iconUrl(item.id)} onError={onIconError} alt="" />
+                    <img src={item.icon ?? iconUrl(item.id)} onError={onIconError} alt="" title={item.name ?? titleize(item.id)} />
                     <span className="pocket-row-name">
                       {formatNumber(item.stackSize, { maximumFractionDigits: 0 })}× {item.name ?? titleize(item.id)}
                     </span>
@@ -115,7 +115,7 @@ export default function PocketValuator({ game, league, rates, pool, goldPerUnit 
                       {best ? (
                         <>
                           <b>
-                            <img src={gameIconUrl(game, best.unit)} onError={onIconError} alt="" />
+                            <img src={gameIconUrl(game, best.unit)} onError={onIconError} alt="" title={currencyName(best.unit)} />
                             {formatNumber(best.units, { maximumFractionDigits: displayDigits(best.units) })}{" "}
                             {titleize(best.unit)}
                           </b>
@@ -135,7 +135,7 @@ export default function PocketValuator({ game, league, rates, pool, goldPerUnit 
               <div className="pocket-totals-values">
                 {totals.map((unit) => (
                   <strong key={unit.id}>
-                    <img src={gameIconUrl(game, unit.id)} onError={onIconError} alt="" />
+                    <img src={gameIconUrl(game, unit.id)} onError={onIconError} alt="" title={currencyName(unit.id)} />
                     {unit.value != null ? formatNumber(unit.value, { maximumFractionDigits: unit.id === "exalted" ? 0 : 2 }) : "—"}
                     <small>{unit.label}</small>
                   </strong>

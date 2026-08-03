@@ -80,6 +80,9 @@ export const popularCurrencies = [
 // GGG's own display names, keyed by trade short id. Built once from the catalog
 // this module already imports.
 const catalogNames = new Map((catalog.items ?? []).map((item) => [item.id, item.name]));
+const semanticCurrencyNames = {
+  alchemy: "Orb of Alchemy",
+};
 
 /**
  * The item's real name, falling back to a title-cased id only for something the
@@ -94,6 +97,7 @@ const catalogNames = new Map((catalog.items ?? []).map((item) => [item.id, item.
 export function currencyName(id) {
   return (
     popularCurrencies.find((currency) => currency.id === id)?.name ??
+    semanticCurrencyNames[id] ??
     catalogNames.get(id) ??
     titleize(id)
   );

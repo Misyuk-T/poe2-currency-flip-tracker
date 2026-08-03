@@ -22,6 +22,7 @@ import {
 } from "../lib/icon-candidates.js";
 import {
   apiBaseUrl,
+  currencyName,
   displayDigits,
   fallbackIconUrl,
   fetchJsonCached,
@@ -148,7 +149,7 @@ function PricePill({ value, unit, game, compact = false }) {
   return (
     <span className={compact ? "price-pill compact" : "price-pill"}>
       <span>{formatNumber(value, { maximumFractionDigits: displayDigits(value) })}</span>
-      <img src={gameIconUrl(game, unit)} onError={onIconError} alt="" title={titleize(unit)} />
+      <img src={gameIconUrl(game, unit)} onError={onIconError} alt="" title={currencyName(unit)} />
     </span>
   );
 }
@@ -172,7 +173,7 @@ function KeyCurrencyCard({ card, game, emptyLabel = "Waiting for data", quantity
     <article className="key-currency-card">
       <div className="key-currency-card-head">
         <span className="key-currency-name">
-          <img src={gameIconUrl(game, card.id)} onError={onIconError} alt="" />
+          <img src={gameIconUrl(game, card.id)} onError={onIconError} alt="" title={card.name} />
           <span>
             <strong>{card.name}</strong>
             <small>{card.unit ? `${titleize(card.unit)} per ${per}` : "Hourly market rate"}</small>
@@ -962,7 +963,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
               aria-pressed={category === "all"}
               onClick={() => { setCategory("all"); setNavOpen(false); }}
             >
-              <img className="rs-cat-icon" src={gameIconUrl(game, "exalted")} onError={onIconError} alt="" aria-hidden="true" />
+              <img className="rs-cat-icon" src={gameIconUrl(game, "exalted")} onError={onIconError} alt="" title="Exalted Orb" aria-hidden="true" />
               <span>All markets</span>
               <small>{searched.length}</small>
             </button>
@@ -1060,12 +1061,13 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                   <button
                     key={currency.id}
                     type="button"
+                    aria-label={currency.label}
                     aria-pressed={displayCurrency === currency.id}
                     title={currency.label}
                     onClick={() => setDisplayCurrency((current) => (current === currency.id ? null : currency.id))}
                     disabled={currency.id !== "exalted" && !rates[currency.id]}
                   >
-                    <img src={gameIconUrl(game, currency.id)} onError={onIconError} alt="" />
+                    <img src={gameIconUrl(game, currency.id)} onError={onIconError} alt="" title={currency.label} />
                   </button>
                 ))}
               </div>
@@ -1328,7 +1330,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                 <div className="radar-trade">
               <header className="rt-head">
                 <div className="rt-head-id">
-                  <img src={iconUrl(selected.targetIcon ?? selected.target)} onError={onIconError} alt="" />
+                  <img src={iconUrl(selected.targetIcon ?? selected.target)} onError={onIconError} alt="" title={selected.targetName} />
                   <div>
                     <strong>{selected.targetName}</strong>
                     <span>{selected.category || "Market"}</span>
@@ -1550,7 +1552,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                               onClick={() => selectModalCurrency(currency.id)}
                               disabled={!rates[currency.id]}
                             >
-                              <img src={gameIconUrl(game, currency.id)} onError={onIconError} alt="" />
+                              <img src={gameIconUrl(game, currency.id)} onError={onIconError} alt="" title={currency.label} />
                             </button>
                           ))}
                         </div>

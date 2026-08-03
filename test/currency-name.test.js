@@ -15,6 +15,7 @@ test("names come from GGG's catalog, with case and punctuation intact", () => {
 test("the popular list still wins, so its hand-written copy stays authoritative", () => {
   assert.equal(currencyName("divine"), "Divine Orb");
   assert.equal(currencyName("exalted"), "Exalted Orb");
+  assert.equal(currencyName("alchemy"), "Orb of Alchemy");
 });
 
 test("an id the catalog has never heard of still gets a readable name", () => {

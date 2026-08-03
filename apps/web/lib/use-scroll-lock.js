@@ -21,11 +21,17 @@ export function useScrollLock(active) {
       bodyOverflow: body.style.overflow,
       bodyPaddingRight: body.style.paddingRight,
     };
-    const scrollbarWidth = window.innerWidth - html.clientWidth;
+    // Measure the actual layout box, not `innerWidth - clientWidth`.
+    // `scrollbar-gutter: stable` keeps the old layout width after the native
+    // scrollbar disappears even though `clientWidth` grows. Using clientWidth
+    // in that case adds a second gutter and squeezes the whole page sideways.
+    const layoutWidth = html.getBoundingClientRect().width;
+    const bodyPaddingRight = Number.parseFloat(getComputedStyle(body).paddingRight) || 0;
 
     html.style.overflow = "hidden";
     body.style.overflow = "hidden";
-    if (scrollbarWidth > 0) body.style.paddingRight = `${scrollbarWidth}px`;
+    const releasedWidth = Math.max(0, html.getBoundingClientRect().width - layoutWidth);
+    if (releasedWidth > 0) body.style.paddingRight = `${bodyPaddingRight + releasedWidth}px`;
 
     return () => {
       html.style.overflow = previous.htmlOverflow;

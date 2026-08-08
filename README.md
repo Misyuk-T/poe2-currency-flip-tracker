@@ -2,7 +2,7 @@
 
 Market timing for Path of Exile 2 currency trading, built on the official hourly market digest.
 
-**[Live app](https://poe2-currency-flip-tracker.vercel.app)**
+**[Live app](https://exileradar.com)**
 
 It answers three questions: what is moving today, what price am I actually seeing right now, and what entry and exit would recent hourly ranges support for the horizon I care about.
 

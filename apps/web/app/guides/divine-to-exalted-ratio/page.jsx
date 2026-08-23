@@ -19,7 +19,7 @@ const faqs = [
   },
   {
     q: "Is the ratio shown on this site a live price?",
-    a: "No. The figures are completed-hour ranges — context, not live executable quotes. The market radar labels whether the active source is official GGG data or sample fixture data; always confirm the price in game.",
+    a: "No. The figures come from official GGG Currency Exchange data, but they are completed-hour ranges — context, not live executable quotes. The market radar labels its source and the hour it covers; always confirm the price in game.",
   },
 ];
 

@@ -8,6 +8,6 @@ export default function Image() {
   return ogImageResponse({
     eyebrow: "Path of Exile 2",
     title: "Currency market radar",
-    tagline: "Hourly market ranges, your verified price, and conservative flip planning — honest, sample-labelled data.",
+    tagline: "Hourly market ranges, your verified price, and conservative flip planning — official, clearly-labelled data.",
   });
 }

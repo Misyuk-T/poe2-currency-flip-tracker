@@ -3,7 +3,7 @@ import { currencyName, popularCurrencies } from "../../../../lib/market.js";
 
 export const size = OG_SIZE;
 export const contentType = "image/png";
-export const alt = "PoE2 currency market tracker";
+export const alt = "PoE2 currency price and hourly market data";
 
 // Prebuild the popular currencies' cards; others render on demand.
 export function generateStaticParams() {

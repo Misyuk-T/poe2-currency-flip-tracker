@@ -13,8 +13,11 @@ export async function generateMetadata({ params }) {
   const { id } = await params;
   const name = currencyName(id);
   return {
-    title: `${name} PoE2 market tracker`,
-    description: `Track ${name} in Path of Exile 2 with hourly market ranges, manual current price checks and conservative entry/exit planning.`,
+    title: `${name} Price — PoE2 Hourly Market Data`,
+    // Deliberately no live figure: at this crawl rate a baked-in price would sit
+    // stale in the SERP for weeks, and Google rewrites most descriptions anyway.
+    // Live numbers belong in the body and JSON-LD.
+    description: `Hourly ${name} price, range and 24h move in Path of Exile 2, with conservative flip planning.`,
     alternates: { canonical: `${siteUrl}/poe2/currencies/${id}` },
   };
 }
@@ -73,7 +76,7 @@ export default async function CurrencyPage({ params }) {
   const webPageLd = {
     "@context": "https://schema.org",
     "@type": "WebPage",
-    name: `${name} PoE2 market tracker`,
+    name: `${name} Price — PoE2 Hourly Market Data`,
     description: price
       ? `${name} latest completed-hour midpoint ≈ ${price} in Path of Exile 2 (${summary.anchor} market)${
           summary.sourceMode === "fixture" ? " — sample data" : ""
@@ -122,9 +125,10 @@ export default async function CurrencyPage({ params }) {
         <img src={iconUrl(id)} alt="" />
         <div>
           <p className="eyebrow">PoE2 currency market</p>
-          <h1>{name}</h1>
+          <h1>{name} price</h1>
           <p>
-            Use the market radar to compare the latest completed-hour range with the current price you see in game.
+            Hourly {name} price from official Path of Exile 2 market data — compare the latest completed-hour range
+            with the price you can verify in game.
           </p>
           <a className="button primary" href={`/poe2?currency=${encodeURIComponent(id)}`}>Open in radar</a>
         </div>

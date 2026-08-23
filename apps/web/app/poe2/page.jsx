@@ -4,7 +4,7 @@ import { siteUrl } from "../../lib/market.js";
 export const metadata = {
   title: "PoE2 currency market",
   description:
-    "Live-style Path of Exile 2 currency dashboard using official completed-hour market data and manual current prices.",
+    "Path of Exile 2 currency dashboard with hourly prices from official completed-hour market data, plus planning around the price you verify in game.",
   alternates: { canonical: `${siteUrl}/poe2` },
 };
 

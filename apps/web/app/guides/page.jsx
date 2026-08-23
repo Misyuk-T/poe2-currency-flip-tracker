@@ -4,7 +4,7 @@ import { guides } from "../../lib/guides.js";
 export const metadata = {
   title: "PoE2 Currency Guides",
   description:
-    "Practical Path of Exile 2 currency guides: flipping with hourly data, the Divine to Exalted ratio, and how the currency exchange works.",
+    "Practical Path of Exile 2 currency guides: league start currency, flipping with hourly data, the Divine to Exalted ratio, and how the currency exchange works.",
   alternates: { canonical: `${siteUrl}/guides` },
 };
 

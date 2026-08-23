@@ -77,7 +77,7 @@ library in `src/` that its `/api/*` route handlers reuse. No separate process.
 ```
 apps/web/
   app/            routes: /poe2 (dashboard), /poe2/currencies, /guides, /landing
-    page.jsx      root /: temporary 307 redirect to /poe2 (landing hidden)
+    page.jsx      root /: permanent 308 redirect to /poe2 (landing hidden)
     api/          route handlers: radar, radar/history, status, config,
                   hotlist, opportunities, cron/radar (Bearer CRON_SECRET)
   components/     MarketDashboard, SpotChart, HomeMiniRadar, …

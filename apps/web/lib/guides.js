@@ -2,6 +2,13 @@
 // new guide is listed everywhere by adding one entry (plus its page).
 export const guides = [
   {
+    // Evergreen slug: no league name, no patch version, so the URL keeps its
+    // authority across every league start. Refresh the body copy, not the slug.
+    slug: "league-start-currency",
+    title: "PoE2 league start currency guide",
+    blurb: "Why prices swing hardest in the first days of a league, which categories move early, and how to read thin day-1 data.",
+  },
+  {
     slug: "currency-flipping",
     title: "PoE2 currency flipping",
     blurb: "Read hourly ranges as context, verify the live price, and pick a holding horizon that matches the trade.",

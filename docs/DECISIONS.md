@@ -2,6 +2,41 @@
 
 Newest first. Each entry: **what** was decided, **why**, and the date.
 
+## 2026-08-23 — SEO Phase 1: migration hygiene, and why `/` stays a redirect
+Four changes, all from the Aug 16 ranking cliff post-mortem
+(`SEO-RECOVERY-PLAN-2026-08.md`):
+
+1. **`poe2-currency-flip-tracker.vercel.app` now 301s to exileradar.com**
+   (`vercel.json` host-scoped redirect). It was serving 200 with full duplicate
+   content; a canonical-only migration is fragile on a weeks-old domain.
+   **`/api/*` is excluded on purpose:** the Supabase pg_cron ingest POSTs to
+   that host (migrations 004/007) and pg_net does not follow redirects, so a
+   blanket 301 would silently stop hourly ingestion. Migration 008 repoints the
+   job at exileradar.com; the exclusion is removable once it is applied.
+2. **`/` is a 308, not a 307** — a temporary redirect made every crawl
+   re-evaluate the hop, so nothing consolidated onto `/poe2`.
+   **Why not serve the landing at `/`:** it exists (`app/landing/page.jsx`) but
+   is `noindex` with a canonical to `/landing`, and mounting it reverses the
+   2026-06-29 decision to open straight to the dashboard while leaving a second
+   copy at `/landing`. That is a product call, not migration hygiene.
+3. **The sitemap moved from `app/sitemap.js` to `app/sitemap.xml/route.js`.**
+   App-router *metadata* routes are emitted as build-time static output and do
+   not honor `export const revalidate`, so all 639 `lastmod` values were frozen
+   at the last deploy (Aug 8) while the data underneath moved hourly. A plain
+   route handler gets real ISR — `next build` now reports `/sitemap.xml` with a
+   1h revalidate. Deliberately **no** `dynamic = "force-static"`: if
+   revalidation ever failed to engage that would reintroduce the same freeze,
+   whereas degrading to per-request rendering only costs one snapshot read.
+4. **Currency titles target `<item> price`** — the query pattern that actually
+   converts in GSC, absent from the old "<name> PoE2 market tracker" title.
+   Descriptions stay number-free: snippets are cached for weeks at this crawl
+   rate, so a baked-in price would sit stale next to a freshness promise. Live
+   figures remain in the body and JSON-LD only.
+
+Head terms ("poe2 currency") are explicitly **not** targeted — they are held by
+poe2scout / poe.ninja / GGG trade and are out of reach until real authority
+exists.
+
 ## 2026-07-27 — Cold-read 502s: cascading timeouts + stale-while-revalidate, not a warm-up cron
 Read routes were intermittently 502ing on the first request after an idle
 stretch (always `cache=MISS`, always followed seconds later by a successful

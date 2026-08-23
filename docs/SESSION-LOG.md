@@ -462,3 +462,86 @@ Google via Supabase; buy a custom domain.
 **C3c Google-auth foundation prep** (migration + Supabase Auth + per-user RLS,
 pending the user's Google OAuth app + secrets). **User action:** buy the domain;
 set up Google OAuth in Supabase; Google Search Console.
+
+## 2026-08-23 — GSC analysis, impressions-cliff diagnosis, SEO recovery plan
+
+- **Analyzed 3-month Search Console data** (exileradar.com): 41 clicks /
+  3.3K impressions / avg pos 29.3. Clicks are long-tail `<item> price`
+  queries; head terms sit page 3+ with 0 clicks; "poe2 radar" brand query
+  exists. **Impressions cliffed** ~130/day → <10/day around Aug 16–17.
+- **League research:** Runes of Aldur (0.5.0, May 29) still running; 0.5.5
+  ~mid-Sept (reveal likely Gamescom Aug 26–30); ExileCon Nov 7–8; 1.0
+  predicted ~Dec 11. The cliff is NOT "season ended".
+- **Live prod findings (curl):** pages fresh + canonical correct, BUT
+  (a) old `poe2-currency-flip-tracker.vercel.app` still serves 200 duplicate
+  content — no 301, canonical-only migration on a weeks-old domain;
+  (b) `/` is a 307 temporary redirect to `/poe2`;
+  (c) all 639 sitemap `lastmod` frozen at the Aug 8 build — app-router
+  `sitemap.js` metadata routes ignore `revalidate` in several Next versions.
+- **Top cliff hypotheses (ranked):** 1) domain-migration re-evaluation
+  (~3 weeks after late-July switch), 2) thin-programmatic quality
+  reassessment / Google update, 3) late-league demand decay (contributing).
+- **Wrote [SEO-RECOVERY-PLAN-2026-08.md](SEO-RECOVERY-PLAN-2026-08.md)** —
+  phases: 0 diagnostics (GSC per-query checks — needs the user), 1 migration
+  hardening (301 vercel.app, fix root redirect, sitemap route handler) +
+  price-pattern titles, 2 distribution round 1 (forum thread, directories) +
+  content (evergreen-slug league-start guide, trends page), 3 Reddit on 0.5.5
+  launch day (no Google Ads), 4 1.0 readiness.
+- **Review:** Codex MCP hit its usage limit (resets Aug 27); ran an
+  independent subagent review instead — 12 findings (domain migration missed,
+  survivor-biased position metric, no live numbers in meta descriptions,
+  distribution moved up, evergreen slug, FAQ rich results restricted) all
+  incorporated into plan v2.
+
+**User action:** GSC Phase-0 checks; decide when to start Phase 1.
+
+## 2026-08-23 (пізніше) — GSC-діагностика напряму в Chrome: вердикт по обвалу
+
+- **Перевірив GSC сам через Chrome MCP** (порівняння 17–23.08 vs 09–15.08):
+  кліки 11→0, покази 916→34 (−96%), позиція 37,2→69,5. **Усі** запити впали
+  до нуля показів після 16.08 — включно з брендом "poe2 radar" (був на 8,3)
+  і топ-10 лонгтейлом ("olroth saga poe2 price", 8,5).
+- **Санкцій немає** (Manual actions чисто, Security чисто). **Індексація
+  стабільна**: 336 в індексі, без провалу на графіку. 280 сторінок
+  "Discovered – not indexed" — Google не бере половину лонгтейлу.
+- **Зовнішніх посилань: 0** (звіт Links: нуль сайтів, нуль анкорів).
+- Google Search Status: **August 2026 spam update, 18–21.08** — міг підсилити,
+  але обвал почався 16–17.08.
+- **Вердикт:** закінчився "медовий місяць" нового домену (~4 тижні) без
+  жодного беклінка — site-wide алгоритмічна демоція, знімати нічого,
+  відновлення = посилання + on-page + гігієна міграції. План оновлено
+  (Phase 0 закрита фактами).
+- **Antigravity CLI знайдено** (`agy`, ~/.local/bin) — піде на ревю замість
+  Codex (ліміт до 27.08).
+- **Заспаунено 2 Opus-агенти** (worktree, паралельно): Phase 1
+  (`seo/phase1-migration-onpage`: 301 з vercel.app, корінь, sitemap route
+  handler, price-титули, чистка "sample data") і Phase 2
+  (`seo/phase2-league-start-guide`: вічний slug /guides/league-start-currency).
+  Далі: agy-ревю обох гілок.
+
+## 2026-08-23 (вечір) — Фази 1–2 реалізовано агентами, agy-ревю CLEAN
+
+- **Phase 1** (`seo/phase1-migration-onpage`, Opus-агент, 6 комітів,
+  302/302 тестів): host-based 301 vercel.app→exileradar.com **з виключенням
+  `/api/*`** — агент упіймав, що pg_cron/pg_net постить інжест на старий хост
+  і не ходить за редіректами (сліпий 301 тихо вбив би щогодинну інжестію);
+  міграція 008 перенацілює крон на exileradar.com (НЕ застосована — після
+  деплою). Корінь: 307→308 (permanentRedirect), лендінг на `/` не монтували —
+  задокументоване продуктове рішення "одразу в дашборд". Sitemap: metadata
+  route → `app/sitemap.xml/route.js` + `lib/sitemap-xml.js`, revalidate 3600
+  реально працює (перевірено білдом). Титули: `${name} Price — PoE2 Hourly
+  Market Data`, опис без живих цифр, H1 з "price", WebPage JSON-LD
+  синхронізовано. Чистка "sample data" у прод-видимих текстах.
+- **Phase 2** (`seo/phase2-league-start-guide`, Opus-агент, 2 коміти,
+  299/299): гайд `/guides/league-start-currency` (вічний slug), структура
+  як у наявних гайдів, лігові факти в одному `currentLeague` const, нуль
+  вигаданих цін/прогнозів, зареєстровано в hub/registry/sitemap.
+- **Ревю: Antigravity CLI (`agy -p`, дифи інлайном у промпті — з тулзами
+  таймаутиться).** Обидва CLEAN; єдина змістовна нотатка (raw `<a>` замість
+  next/Link) виявилась конвенцією наявних гайдів — не дефект.
+- **Не зроблено свідомо:** merge/push/deploy (чекає рішення користувача),
+  migration 008 (після деплою).
+
+**Далі:** merge обох гілок → деплой → застосувати 008 → перевірити
+301/308/sitemap lastmod кроками з плану → форумний тред + каталоги (потрібен
+Taras) → Reddit у день старту 0.5.5.

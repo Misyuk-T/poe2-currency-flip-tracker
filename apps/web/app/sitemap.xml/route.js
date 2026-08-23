@@ -1,10 +1,16 @@
-import { popularCurrencies, siteUrl } from "../lib/market.js";
-import { guides } from "../lib/guides.js";
+import { popularCurrencies, siteUrl } from "../../lib/market.js";
+import { guides } from "../../lib/guides.js";
+import { sitemapXml } from "../../lib/sitemap-xml.js";
 
-// Refresh hourly so per-currency lastmod tracks the latest ingested hour.
+// A route handler, not the app-router `sitemap.js` metadata convention: metadata
+// routes are emitted as build-time static output and don't honor `revalidate`,
+// which froze every lastmod at the deploy timestamp. Deliberately no
+// `dynamic = "force-static"` here — if revalidation ever failed to kick in that
+// would reintroduce the exact freeze this replaces, whereas falling back to
+// per-request rendering only costs one snapshot read.
 export const revalidate = 3600;
 
-export default async function sitemap() {
+export async function GET() {
   const now = new Date();
 
   // Best-effort: a DB hiccup must not fail the sitemap — degrade to the static
@@ -13,7 +19,7 @@ export default async function sitemap() {
   let index = null;
   let entries;
   try {
-    const { getCurrencyIndex, currencySitemapUrls } = await import("../lib/currency-summary.js");
+    const { getCurrencyIndex, currencySitemapUrls } = await import("../../lib/currency-summary.js");
     index = await getCurrencyIndex();
     entries = currencySitemapUrls(index, { popularIds: popularCurrencies.map((c) => c.id) });
   } catch (error) {
@@ -37,14 +43,21 @@ export default async function sitemap() {
     priority: 0.7,
   }));
 
-  return [
-    // Root `/` currently 307-redirects to /poe2 (landing temporarily hidden),
-    // so the dashboard is the canonical entry point — don't list the redirect.
+  const body = sitemapXml([
+    // Root `/` 308-redirects to /poe2 (landing hidden), so the dashboard is the
+    // canonical entry point — don't list the redirect.
     { url: `${siteUrl}/poe2`, lastModified: latest, changeFrequency: "hourly", priority: 1 },
     { url: `${siteUrl}/poe1`, lastModified: latest, changeFrequency: "hourly", priority: 0.9 },
     { url: `${siteUrl}/poe2/currencies`, lastModified: latest, changeFrequency: "hourly", priority: 0.8 },
     { url: `${siteUrl}/guides`, changeFrequency: "monthly", priority: 0.6 },
     ...guides.map((g) => ({ url: `${siteUrl}/guides/${g.slug}`, changeFrequency: "monthly", priority: 0.6 })),
     ...currencyEntries,
-  ];
+  ]);
+
+  return new Response(body, {
+    headers: {
+      "Content-Type": "application/xml; charset=utf-8",
+      "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
+    },
+  });
 }

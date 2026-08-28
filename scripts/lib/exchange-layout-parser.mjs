@@ -26,6 +26,39 @@ export function normalizeExchangeName(value) {
     .trim();
 }
 
+function itemIdentity(item) {
+  const href = String(item?.href ?? "").trim();
+  const name = item?.normalizedName || normalizeExchangeName(item?.name);
+  return href && name ? `${href}\u0000${name}` : null;
+}
+
+/**
+ * PoE2DB may replace the metadata-bearing data-hover query with an opaque
+ * cache URL. Keep a known metadata id only when both the player-facing name
+ * and stable item href still identify the exact same snapshot row.
+ */
+export function preserveKnownMetadataIds(snapshot, previous) {
+  if (!snapshot?.items?.length || !previous?.items?.length) return snapshot;
+
+  const previousByIdentity = new Map();
+  for (const item of previous.items) {
+    if (!item?.metadataId) continue;
+    const identity = itemIdentity(item);
+    if (!identity) continue;
+    previousByIdentity.set(identity, previousByIdentity.has(identity) ? null : item.metadataId);
+  }
+
+  return {
+    ...snapshot,
+    items: snapshot.items.map((item) => {
+      if (item.metadataId) return item;
+      const identity = itemIdentity(item);
+      const metadataId = identity ? previousByIdentity.get(identity) : null;
+      return metadataId ? { ...item, metadataId } : item;
+    }),
+  };
+}
+
 function attribute(attributes, name) {
   const match = String(attributes).match(new RegExp(`\\b${name}=(?:"([^"]*)"|'([^']*)')`, "i"));
   return decodeHtml(match?.[1] ?? match?.[2] ?? "") || null;

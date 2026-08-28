@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseExchangeLayoutHtml } from "../scripts/lib/exchange-layout-parser.mjs";
+import { parseExchangeLayoutHtml, preserveKnownMetadataIds } from "../scripts/lib/exchange-layout-parser.mjs";
 
 test("parses category, section, metadata, item order and fractional gold without page chrome", () => {
   const item = (name, metadata, gold) => {
@@ -25,4 +25,49 @@ test("parses category, section, metadata, item order and fractional gold without
     [parsed.items.at(-1).category, parsed.items.at(-1).section, parsed.items.at(-1).categoryOrder, parsed.items.at(-1).sectionOrder],
     ["Runes", "Greater Runes", 1, 0],
   );
+});
+
+test("preserves a known metadata id when PoE2DB replaces data-hover with an opaque cache URL", () => {
+  const current = {
+    items: [{
+      name: "Divine Orb",
+      normalizedName: "divine orb",
+      href: "Divine_Orb",
+      metadataId: null,
+    }],
+  };
+  const previous = {
+    items: [{
+      name: "Divine Orb",
+      normalizedName: "divine orb",
+      href: "Divine_Orb",
+      metadataId: "Metadata/Items/Currency/CurrencyModValues",
+    }],
+  };
+
+  const merged = preserveKnownMetadataIds(current, previous);
+
+  assert.equal(merged.items[0].metadataId, "Metadata/Items/Currency/CurrencyModValues");
+  assert.equal(current.items[0].metadataId, null);
+});
+
+test("never carries metadata across a changed item identity", () => {
+  const previous = {
+    items: [{
+      name: "Old League Item",
+      normalizedName: "old league item",
+      href: "Reused_Item_Page",
+      metadataId: "Metadata/Items/OldLeague/OldItem",
+    }],
+  };
+  const current = {
+    items: [{
+      name: "New League Item",
+      normalizedName: "new league item",
+      href: "Reused_Item_Page",
+      metadataId: null,
+    }],
+  };
+
+  assert.equal(preserveKnownMetadataIds(current, previous).items[0].metadataId, null);
 });

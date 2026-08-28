@@ -2,7 +2,7 @@
 
 import { readFile, rename, writeFile } from "node:fs/promises";
 
-import { parseExchangeLayoutHtml } from "./lib/exchange-layout-parser.mjs";
+import { parseExchangeLayoutHtml, preserveKnownMetadataIds } from "./lib/exchange-layout-parser.mjs";
 
 const TARGETS = [
   { game: "poe1", sourceUrl: "https://poedb.tw/us/Currency_Exchange", output: new URL("../src/data/exchange-layout-poe1.json", import.meta.url) },
@@ -40,8 +40,11 @@ async function atomicWrite(url, data) {
 }
 
 for (const target of TARGETS) {
-  const parsed = parseExchangeLayoutHtml(await fetchHtml(target.sourceUrl), target);
   const previous = await existingSnapshot(target.output);
+  const parsed = preserveKnownMetadataIds(
+    parseExchangeLayoutHtml(await fetchHtml(target.sourceUrl), target),
+    previous,
+  );
   if (JSON.stringify(meaningful(previous)) === JSON.stringify(parsed)) {
     console.log(`${target.game}: unchanged (${parsed.itemCount} items, ${parsed.categories.length} categories)`);
     continue;

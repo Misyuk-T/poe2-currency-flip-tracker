@@ -52,8 +52,8 @@ test("an unseen item is visible as unclassified with technical provenance preser
 
 test("an unseen item inherits a uniquely named in-game section without hardcoding", () => {
   const resolved = resolveExchangeLayout({
-    target: "Metadata/Items/Deepwater/DeepwaterEldritch",
-    targetName: "Deepwater Eldritch",
+    target: "Metadata/Items/Deepwater/FutureDeepwaterDucat",
+    targetName: "Future Deepwater Ducat",
     category: "Ducats",
     subcategory: "Ducats",
   }, "poe1");

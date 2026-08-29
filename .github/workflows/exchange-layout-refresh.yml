@@ -28,6 +28,10 @@ jobs:
 
       - name: Refresh PoE 1 and PoE 2 in-game layouts
         run: npm run layout:build
+        env:
+          # A scheduled probe should not alert when PoEDB is temporarily down.
+          # Manual runs still fail after retries so maintainers can diagnose them.
+          LAYOUT_REFRESH_ALLOW_STALE_ON_TRANSIENT_FAILURE: ${{ github.event_name == 'schedule' }}
 
       - name: Verify generated layouts
         run: npm test

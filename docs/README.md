@@ -11,6 +11,8 @@ across sessions and reviewers.
 | [DECISIONS.md](DECISIONS.md) | ADR-style log: each notable decision + why + date | any architectural/product decision is made |
 | [SESSION-LOG.md](SESSION-LOG.md) | What changed each session (+ commit refs) | end of every session / phase |
 | [ADVICE.md](ADVICE.md) | Open recommendations & options (domain, SEO, future) | when advice is given or an option is chosen |
+| [LEAGUE-LAUNCH-RUNBOOK.md](LEAGUE-LAUNCH-RUNBOOK.md) | What's automatic vs manual for a new PoE2 league, plus the launch-day checklist | a league launches, or the ingest/discovery mechanics change |
+| [DYNAMIC-DATA-PLAN-2026-09.md](DYNAMIC-DATA-PLAN-2026-09.md) | Plan to make leagues and currency data DB-driven (league_meta, identity, layouts, gold) instead of env + git snapshots | touching league config, data snapshots, or the refresh workflows |
 
 Authoritative roadmaps stay at the repo root:
 [NEXT_STAGE_PLAN.md](../NEXT_STAGE_PLAN.md) (phases A–D),

@@ -171,9 +171,17 @@ Content, published before the 0.5.5 spike so it has indexation age:
 
 ## Phase 3 — 0.5.5 launch window (~mid-Sept)
 
+**STATUS 2026-09-02:** the league is **Forbidden Rites**, launching
+**2026-09-04 13:00 PDT (20:00 UTC)**. Ingest/discovery are automatic (no
+deploy needed); see `docs/LEAGUE-LAUNCH-RUNBOOK.md` for the verified
+automatic-vs-manual breakdown and the day-of checklist.
+
 - [ ] **Reddit r/PathOfExile2 post on launch day**: "free currency radar,
       hourly prices, no login" — the moment everyone needs prices and
       incumbents' league data is thin.
+- [ ] **Re-submit `sitemap.xml` in Google Search Console** after the
+      `fix/sitemap-freshness` deploy (GSC last read it 2026-07-31; lastmod was
+      frozen at 2026-08-29 in prod).
 - [ ] **OG images with sparkline/trend** (no precise baked-in number — Discord/
       Twitter cache cards for days). Social CTR where PoE tools actually
       spread; zero ranking effect, hence scheduled here, not Phase 1.
@@ -187,6 +195,11 @@ Content, published before the 0.5.5 spike so it has indexation age:
   1.0 day-one page, repeat the Phase 3 distribution play.
 
 ## Measurement
+
+**2026-09-02 (GSC, exileradar.com):** Aug 25–31: 0 clicks / 5 impressions /
+avg position 64.6. 28-day window (Aug 4–31): 18 clicks / 1.65K impressions /
+CTR 1.1% / avg position 31.8. Indexed 325 (was 336), crawled-not-indexed 30
+(was 19). External links still 0.
 
 Confounder-aware (Gamescom Aug 26–30 will move all PoE2 volume independently):
 

@@ -30,11 +30,14 @@ review job instead of staying silently stale:
   `npm run gold:build` (`scripts/build-gold-costs.mjs`, added 2026-07-25),
   scraped from poe2db.tw and matched against the catalog by name. Reproduced
   today's manual scrape byte-for-byte as a correctness check.
-- **New leagues** — still hardcoded env vars (`LEAGUE`/`LEAGUES` in
-  `src/server/config.js`), manual Vercel env edit + redeploy. This is exactly
-  what T3 (`service:leagues` auto-sync) fixes — see the GGG OAuth task queue
-  below. Blocked on T1 (GGG OAuth scope grant), not on engineering; a mocked
-  demo already exists (`apps/web/lib/ggg-demo.js`).
+- **New leagues** — **automatic since c0d6c70 (2026-08-01), re-verified
+  2026-09-02:** ingest takes every public league in the CX digest and
+  `listPricedLeagues()` + `resolveLeagueAccess()` expose any league with
+  priced candles without an env edit or redeploy. Only the *default* league
+  (`LEAGUE` in `src/server/config.js`, which scopes the SEO pages + sitemap)
+  is still a manual, deliberate switch — see `docs/LEAGUE-LAUNCH-RUNBOOK.md`.
+  T3 (`service:leagues`) now only adds official metadata (names before the
+  first candle, start/end dates); blocked on T1.
 
 **Shipped 2026-07-25:** `.github/workflows/data-refresh.yml` — a monthly
 (+ manual `workflow_dispatch`) scheduled job running
@@ -113,10 +116,16 @@ below.
   list (env stays fallback; the `hasPricedCandles` probe still gates which
   leagues get offered). **Verify first**: `service:leagues` league names must
   byte-match the league strings in CX digests, or leagues silently go empty.
-  Fixes a real gap: `resolveLeague()` currently 400s any league outside the
-  hardcoded `LEAGUE`/`LEAGUES` env vars in `src/server/config.js`, even though
-  live ingest already stores new leagues — so a league launch (peak traffic +
-  volatility) currently needs a manual env edit + redeploy to reach users.
+  **Closed 2026-09-02**: the "manual env edit + redeploy" gap this used to
+  describe is fixed — `listPricedLeagues()`
+  (`src/storage/radar-repository.js:222-240`) and `resolveLeagueAccess()`
+  (`apps/web/lib/radar-backend.js:300-306, 363-366`) already discover and
+  serve any public league with priced candles automatically, shipped in
+  commit `c0d6c70` (2026-08-01). See `docs/LEAGUE-LAUNCH-RUNBOOK.md` for the
+  verified automatic-vs-manual breakdown and the launch checklist. T3's
+  remaining value is narrower: **official league metadata** (start/end dates,
+  display name before the first candle exists) via GGG's `service:leagues`
+  scope, still blocked on T1.
 - **T4 (S, dep T3)** — "League day N · ends in M d" chip in `MarketDashboard`
   from `/api/config`, labelled with source + fetched-at age. No forecast
   language.

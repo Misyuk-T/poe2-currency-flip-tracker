@@ -2,6 +2,48 @@
 
 Newest first. Each entry: **what** was decided, **why**, and the date.
 
+## 2026-09-02 — Sitemap: CDN cache instead of ISR (`force-dynamic` + `s-maxage`)
+The Aug 23 move of the sitemap to a route handler with `revalidate = 3600`
+froze again: prod `lastmod` stuck at 2026-08-29T19:00Z with zero function
+invocations in Vercel logs while the same `getCurrencyIndex()` read was fresh on
+`/poe2/currencies`; the Aug 30 deploy didn't clear it (ISR cache survives
+deploys). Now `dynamic = "force-dynamic"`, `runtime = "nodejs"`,
+`maxDuration = 30`, edge TTL via the shared `cacheHeader()` helper:
+`s-maxage=3600` **without** stale-while-revalidate (a once-a-day crawl would
+otherwise always get yesterday's body), degraded render (no index) →
+`no-store`. **Why:** ISR on route handlers demonstrably never revalidated on
+Vercel; the `/api/*` routes already prove the CDN-header path works. Post-deploy
+check: `lastmod` must move to the current hour; `no-store` in the response
+means the DB read failed and is now visible instead of cached.
+
+## 2026-09-02 — Hourly snapshots for every priced league, budget-gated
+`refreshRadarSnapshots` builds the active league first (unchanged, unbudgeted),
+then every other public league from `listPricedLeagues()` under a start-gate
+(`SNAPSHOT_BUDGET_MS`, reserve ≥ 60s / 1.5× the slowest build seen); leagues
+that don't fit fall back to the on-demand `/api/radar` path as before.
+**Why:** Forbidden Rites (0.5.5) launches 2026-09-04 20:00Z — the peak-traffic
+hour — and without this its first visitors pay a full raw-candle rebuild.
+Independent review (Opus) cut the budget from 230s to 120s: a single build can
+in the worst case exceed any fixed reserve, and the gate can stop starting work
+but cannot interrupt it; the active snapshot is durably written before pass 2,
+so an overrun costs telemetry, not data.
+
+## 2026-09-02 — Keep `LEAGUE` (default) on Runes of Aldur through the 0.5.5 launch
+Ingest and league discovery are automatic (see `docs/LEAGUE-LAUNCH-RUNBOOK.md`);
+only the default league is a manual switch, and it scopes the 600+ SEO currency
+pages and the sitemap. **Why:** flipping it on day 1 would re-scope pages that
+carry whatever authority exists onto a thin, hours-old economy. Revisit once
+Forbidden Rites has depth; the dashboard picker and `?league=` already serve it.
+
+## 2026-09-02 — Orchestration: head model decides, Opus/Sonnet do hands-on work
+Per Taras: the session head (Fable) holds context and decisions; code changes
+and content go to Opus agents in isolated worktrees, research/docs/greps to
+Sonnet; every branch gets an independent Opus review with a fresh context
+before merge. **Why:** token economy and an actual second pair of eyes (Codex is
+rate-limited). Today's cycle caught a fabricated proper noun, a false budget
+guarantee and a stale-while-revalidate footgun — all in review, none by the
+authors.
+
 ## 2026-08-23 — SEO Phase 1: migration hygiene, and why `/` stays a redirect
 Four changes, all from the Aug 16 ranking cliff post-mortem
 (`SEO-RECOVERY-PLAN-2026-08.md`):

@@ -13,3 +13,6 @@ apps/web/public/icons/*
 .vercel
 supabase/.temp/
 .github/workflows/data-refresh.yml
+
+# Agent worktrees
+.claude/worktrees/

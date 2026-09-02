@@ -545,3 +545,207 @@ set up Google OAuth in Supabase; Google Search Console.
 **Далі:** merge обох гілок → деплой → застосувати 008 → перевірити
 301/308/sitemap lastmod кроками з плану → форумний тред + каталоги (потрібен
 Taras) → Reddit у день старту 0.5.5.
+
+## 2026-08-23 (ніч) — MERGED + DEPLOYED
+
+- **Змержено в main і задеплоєно** (2a87470): Phase 1 (fast-forward) +
+  Phase 2 (merge) + доки. 302/302 тестів на змерженому main. Vercel build
+  READY за ~20с.
+- **Прод верифіковано curl-ом:** старий хост → 308 на exileradar.com;
+  `/api/cron/radar` на старому хості НЕ редіректиться (401 без токена —
+  живий); корінь → 308; титул "Divine Orb Price — PoE2 Hourly Market Data"
+  live; гайд `/guides/league-start-currency` 200; **sitemap lastmod =
+  поточна година (18:00Z) — розморозився**. 638 URL.
+- Побічно підтвердився "деплой 8 серпня": останній прод-деплой до сьогодні
+  був a6243d5 ("Point live link at exileradar.com") від 08.08.
+- **Міграція 008 НЕ застосована:** Supabase MCP і CLI залоговані в інші
+  акаунти (bim-dashboard / design-studio), дашборд у Chrome викинув на
+  sign-in — вводити пароль/OAuth Claude не може. Інжест НЕ під загрозою:
+  `/api/*` виключений з редіректу саме на цей випадок. Потрібно: Taras
+  логіниться в supabase.com/dashboard, далі застосувати 008 і перевірити
+  `cron.job`. Кандидати на проєкт: qbivdphhwfprbfbktskm (exalted-flip,
+  з ADVICE.md) або hncvnczlhlonsxkwqkmf (supabase/.temp/project-ref).
+
+## 2026-08-23 (пізня ніч) — міграція 008 застосована, повний цикл закритий
+
+- Supabase CLI перелогінено у правильний акаунт (exalted-flip-v2 /
+  hncvnczlhlonsxkwqkmf, LINKED). `supabase migration list`: віддалена історія
+  чиста (002–007 + 2 timestamped), у черзі був тільки 008.
+- **`supabase db push --include-all --yes` — 008 застосовано успішно**,
+  Local 008 | Remote 008 підтверджено. (Браузерний шлях через SQL Editor
+  заблокував авто-класифікатор — навіть read-only re-run; CLI-шлях чистіший.)
+- До міграції останній інжест: `generatedAt 19:05Z` через старий хост
+  (виключення `/api/*` відпрацювало). Фонова перевірка стоїть на ~20:08Z —
+  очікуємо `generatedAt 20:05Z` вже через exileradar.com.
+- Примітка: у робочій копії (codex/ingest-diagnostics) лежить untracked копія
+  008 — ідентична main, зникне при мержі.
+- **ФІНАЛ: перший крон-запуск через новий хост підтверджено** —
+  `generatedAt 2026-08-23T20:05:01Z`, trackedCount 629 (без втрат).
+  Міграційний ланцюг закритий повністю: 301/308 → sitemap live → титули →
+  гайд → cron на exileradar.com. Легасі-хост більше ніде не використовується;
+  виключення `/api/*` з редіректу можна прибрати в наступній ітерації.
+
+## 2026-09-02 — статус-чек: GSC без відновлення, sitemap знову завмер, синк репо
+
+- **Chrome MCP: два браузери.** Browser 1 (deviceId 57e77e22…) — персональний
+  (misyuktaras@gmail.com), має доступ до GSC; Browser 2 (d3726ca2…) — робочий
+  (anyforsoft), доступу немає. Записано в глобальний ~/.claude/CLAUDE.md і в
+  пам'ять проєкту. Коннектора Search Console у реєстрі MCP немає; довгий
+  варіант — Search Console API через service account + `scripts/gsc-report.mjs`.
+- **GSC (Browser 1), факти:** 28 днів (04–31.08): 18 кліків / 1,65K показів /
+  CTR 1,1% / позиція 31,8. **Останні 7 днів (25–31.08): 0 кліків / 5 показів /
+  позиція 64,6** — відновлення після Phase 1–2 (деплой 23.08) ще нема, графік
+  плоский на нулі з 16.08. Топ-запити за 28 днів: "poe2 currency" 14 imp,
+  "poe 2 currency" 13, "olroth saga poe2 price" 11, "poe2 radar" 6 (0 кліків).
+  **Індексація:** 325 в індексі (було 336), не в індексі 314: 280 "Discovered –
+  not indexed", 30 "Crawled – not indexed" (було 19), 4 redirect.
+  **Sitemap у GSC: подано 28.07, востаннє прочитано 31.07, 635 сторінок** —
+  Google не перечитував sitemap місяць.
+- **Прод здоровий:** інжест 14:05Z, 625 маркетів, снапшоти Runes of Aldur свіжі
+  (exalted 625 рядків, max hour 13:00Z); за 7 днів 2 помилки крону (rate-limit
+  CDN 27.08, network 31.08). 308 зі старого хоста і кореня стоять, гайд 200.
+- **Баг: sitemap lastmod завмер на 2026-08-29T19:00Z** при свіжій БД і свіжій
+  `/poe2/currencies` (той самий `getCurrencyIndex`, "as of 02.09 13:00").
+  Vercel runtime logs: за годину запитів **нуль викликів функції
+  `/sitemap.xml`**, відповіді `x-vercel-cache: HIT`; деплой 30.08 кеш не
+  скинув (ISR-кеш Vercel живе між деплоями). Висновок: ISR `revalidate` на
+  route handler на Vercel не спрацьовує. Фікс: `force-dynamic` + CDN-кеш через
+  `Vercel-CDN-Cache-Control s-maxage=3600` — делеговано Opus-агенту
+  (гілка `fix/sitemap-freshness`).
+- **Vercel MCP працює** (prj_qrG7AIzXtpDNgQwPRUuuH8pzmAlD /
+  team_hLfvNbFpgEDX98THDt3sE0V5): `get_runtime_errors` надійний, runtime logs
+  лише 1h retention (Hobby), **Web Analytics не ввімкнена** (404).
+  `supabase db query --linked` працює для read-only перевірок БД.
+- **Репо:** origin/main мав 2 коміти Тараса (28–29.08, Currency Exchange
+  layout refresh), робоча копія стояла на codex/ingest-diagnostics (−15).
+  Перейшов на main, ff до 3ae26ac; два записи журналу за 23.08 (ніч), що жили
+  лише в робочій копії, перенесено сюди.
+- **Оркестрація (рішення Тараса):** голова — Fable, правки руками Opus 5 і
+  слабших моделей. Запущено: Opus — фікс sitemap; Sonnet — перевірка анонсу
+  0.5.5 після Gamescom.
+
+**Дії Тараса:** увімкнути Vercel Web Analytics; форумний тред pathofexile.com +
+каталоги (беклінків усе ще 0); після деплою фіксу — повторно подати sitemap у
+GSC (востаннє прочитаний 31.07).
+
+- **0.5.5 = "Forbidden Rites", старт 4 вересня 2026, 13:00 PDT** (Sonnet-ресерч,
+  офіційний тред pathofexile.com/forum/view-thread/3999858; Runes of Aldur
+  продовжується паралельно). 1.0 — 11 грудня 2026 (за пресою з трейлера
+  Gamescom 25.08), ExileCon 7–8 листопада (підтверджено GGG). Це вікно Phase 3
+  плану — за два дні. Запущено: Opus — оновлення `currentLeague` у гайді
+  (гілка `content/forbidden-rites-league`); Sonnet — ранбук запуску ліги
+  (env `LEAGUES`/`LEAGUE`, крон, перевірки).
+- **Фікс sitemap готовий (Opus-агент):** гілка `fix/sitemap-freshness`,
+  коміт f889992. `revalidate=3600` → `dynamic="force-dynamic"`, кеш на CDN
+  через наявний `cacheHeader()` з `apps/web/lib/http.js` (здоровий шлях
+  `s-maxage=3600, swr=86400`; деградований — DB-помилка АБО `index===null` —
+  `s-maxage=300, swr=900`). Нові тести `test/sitemap-route.test.js` +
+  заголовки в `test/sitemap-xml.test.js`; 315/315; `npm run web:build` показує
+  `ƒ /sitemap.xml`. Відправлено на незалежне Opus-ревю (свіжий контекст).
+- **Гайд оновлено під Forbidden Rites (Opus-агент):** гілка
+  `content/forbidden-rites-league`, коміт a5fa0ba, лише
+  `guides/league-start-currency/page.jsx` (`currentLeague`, інтро, FAQ +
+  JSON-LD, абзац про механіки з двома офіційними лінками). 311/311, білд
+  рендерить нову копію. **Агент виправив ресерч за первинними джерелами:**
+  механіки (Ritual у кампанії, Viridian Wildwood, Trial of Chaos) — з
+  прес-релізу view-thread/3999865, не з анонсу; "Runes of Aldur триває
+  паралельно" — з FAQ view-thread/4000430; **FAQ каже, що Forbidden Rites іде
+  до релізу 1.0 і закінчується разом з Runes of Aldur** (ресерч казав "без
+  дати"); "без балансних змін" — нічим не підтверджено, викинуто; 1.0 11 грудня
+  є в самому анонсі GGG. Відправлено на незалежне Opus-ревю.
+- **Ранбук запуску ліги (Sonnet-трейс коду):** інжест бере ВСІ публічні ліги
+  з дайджесту (`normalizeCxDigest` з `league:null`), виявлення в `/api/config`
+  через `listPricedLeagues()`, `resolveLeagueAccess` пускає `?league=` поза
+  env, якщо є свічки (c0d6c70, 01.08) — **env для Forbidden Rites міняти не
+  треба; нотатка T3 у BACKLOG застаріла.** Ручне/рішення: `LEAGUE` (дефолт)
+  скоупить 600+ SEO-сторінок і sitemap — на день 1 лишаємо Runes of Aldur;
+  годинний снапшот будується лише для активної ліги → нова ліга на
+  повільному on-demand шляху. Запущено: Opus — снапшоти для всіх priced-ліг
+  (гілка `feat/snapshots-all-leagues`); Sonnet — `docs/LEAGUE-LAUNCH-RUNBOOK.md`,
+  фікс BACKLOG T3, статус Phase 3 у SEO-плані.
+- **Opus-ревю фіксу sitemap (свіжий контекст): MERGE WITH FIXES.** HIGH: нема
+  `runtime="nodejs"` + `maxDuration=30` на тепер синхронному DB-читанні
+  (лямбда-таймаут не ловиться try/catch → 5xx для Googlebot). MEDIUM:
+  `swr=86400` віддає добову копію майже на кожен fetch — і старий роут уже
+  слав ці ж CDN-заголовки, тож фріз міг бути частково на CDN, а не лише ISR.
+  MEDIUM-LOW: кешування деградованої відповіді суперечить інваріанту в
+  `http.js:5-6`. LOW: негерметичний тест (ambient DATABASE_URL), нема
+  end-to-end тесту здорового шляху. Повернуто агенту-автору на виправлення.
+- **Opus-ревю гайду: MERGE WITH FIXES.** HIGH: "Viridian Wildwood" — слова
+  "Viridian" нема в жодному з трьох постів GGG (PoE1-назва з пам'яті моделі,
+  порушення house rule про факти лише з джерел). MEDIUM: час лише "1 PM PDT",
+  без ISO/UTC. LOW: не сказано, що ліга закінчується з 1.0 (FAQ GGG); третій
+  повтор дисклеймера; жодного тесту на гайд. Повернуто автору; додаємо
+  guard-тест на FAQPage JSON-LD + `startsAtIso`.
+- **Docs (Sonnet):** новий `docs/LEAGUE-LAUNCH-RUNBOOK.md` (чекліст на 04.09 +
+  автоматичне/ручне з file:line), BACKLOG T3 закрито як застарілий, статус
+  Phase 3 + факти GSC у SEO-плані, лінк у docs/README. Голова дочистила другу
+  застарілу нотатку "New leagues" у BACKLOG (розділ Data freshness).
+- **Фікс sitemap після ревю — фінал:** `fix/sitemap-freshness` @ 92f46e8
+  (amend). Додано `runtime="nodejs"` + `maxDuration=30`; здоровий шлях
+  `public, s-maxage=3600` **без swr** (тест пінить відсутність директиви);
+  деградований шлях — `Cache-Control: no-store` через `cacheHeader(200,
+  {sMaxAge:0})`, інваріант `http.js` не порушено; тест роуту герметичний
+  (`delete process.env.DATABASE_URL`). E2E-тест здорового шляху не додано —
+  нема seam (`getCurrencyIndex` кличе `getSql()` напряму). 317/317, білд
+  `ƒ /sitemap.xml`. Після деплою очікуємо `x-vercel-cache` MISS→HIT з age ≤3600
+  і lastmod = поточна година; `no-store` у відповіді = деградація, видима.
+- **Гайд після ревю — фінал:** `content/forbidden-rites-league` @ 7379a17.
+  "Viridian" прибрано (у білді нуль згадок), формулювання механік звірено
+  дослівно з прес-релізом; `startsAtIso: 2026-09-04T20:00:00Z` (зсув
+  підтверджено FAQ GGG: "11:00 PM GMT+3"), `<time dateTime>`; в FAQ додано
+  "триває до 1.0 і закінчується разом з Runes of Aldur" (без хардкоду дати);
+  дисклеймер обрізано. `currentLeague`/`faqs` винесено в
+  `apps/web/lib/league-start-guide.js`, новий `test/league-start-guide.test.js`
+  (JSON-LD серіалізується, нема `undefined`/`</script`, ISO = анонсований
+  момент, джерела лише pathofexile.com). 317/317, білд чистий.
+  **Урок:** агент-автор узяв "Viridian" з ресерч-зведення Sonnet, а не з
+  сирого джерела — факти для копі брати лише з raw HTML офіційного поста.
+- **Снапшоти для всіх priced-ліг (Opus-агент):** `feat/snapshots-all-leagues`
+  @ 066fee8, лише `radar-backend.js` + `test/radar-backend.test.js`.
+  `refreshRadarSnapshots` → два проходи: активна ліга (без змін, поза
+  бюджетом), потім `listPricedLeagues()` мінус вже зібрані і `(PLnnnnn)`;
+  помилки ліги/дискаверi ізольовані в trace, не валять крон. Бюджет без
+  нового таймера: `SNAPSHOT_BUDGET_MS=230s` + резерв max(60s, найдовший білд у
+  цьому запуску) від `startedAt` роуту (300s). 5 нових тестів, 316/316.
+  **Невідомо:** реальний час білду однієї ліги (нема історичних `elapsedMs`) —
+  дивитись `snapshot.scope.end` у першому кроні після деплою. Відправлено на
+  незалежне Opus-ревю з фокусом на бюджет і поведінку для свіжої ліги з 1–2
+  свічками.
+- **Інтеграційна суха злиття** (тимчасовий worktree у scratchpad,
+  `integration-dryrun` = origin/main + три гілки): без конфліктів, **328/328
+  тестів** (у симлінкованих node_modules падало 3 через відсутній `postgres` —
+  артефакт середовища, після `npm install` у worktree чисто).
+- **Opus-ревю снапшотів: MERGE WITH FIXES.** HIGH: гарантія "не вийдемо за
+  300s" хибна — один білд ліги в найгіршому разі (18s op timeout × 2 спроби ×
+  ~10 операцій) ≈ 320s, старт на 229s = вбита лямбда і втрачена телеметрія
+  (активна ліга при цьому вже записана — дані не страждають). MEDIUM: реальна
+  ціна ліги ~4× вища за оцінку (ще `listAnchorCandidates` 7-денний group-by),
+  обидві гри, до 64 ліг. LOW: непарний trace `scope.skipped`; фільтр `(PL\d+)`
+  строгіший за `leagueAvailability`. Повернуто автору: бюджет 120s, резерв
+  max(60s, 1.5×worst), чесний коментар, парні trace-події.
+- **Снапшоти після ревю — фінал:** `feat/snapshots-all-leagues` @ 866bab6.
+  Бюджет 120s, резерв `max(60s, 1.5×worst)` (`snapshotLeagueReserve()`),
+  чесний коментар про межі гейта і реальну ціну ліги, skipped → парні
+  `scope.start`/`scope.end` з `skipped:"budget"` (тест звіряє трейси),
+  `isPublicLeague` спільний з інжестом. 316/316.
+- **Фінальна інтеграція** origin/main + 92f46e8 + 7379a17 + 866bab6: без
+  конфліктів, **328/328**, білд чистий (`○ /guides/league-start-currency`,
+  `ƒ /sitemap.xml`). Гілки НЕ змержені і НЕ запушені — чекає рішення Тараса
+  (push у main = прод-деплой). Після деплою: перевірити lastmod sitemap,
+  `snapshot.scope.end elapsedMs` у першому кроні, повторно подати sitemap у GSC.
+
+**Дії Тараса:** дати добро на merge+push трьох гілок; увімкнути Vercel Web
+Analytics; форумний тред pathofexile.com + каталоги; 04.09 — Reddit-пост і
+перевірка `/api/config` на "Forbidden Rites".
+- **Запит Тараса: "динаміка на все — валюти і ліги".** Sonnet-інвентар
+  (file:line): ліги вже динамічні в інжесті/дискаверi, статичні лише дефолт
+  `LEAGUE`, PoE1-фолбек-список, метадані PoE2-ліг (legacy endpoint ігнорує
+  realm=poe2 → тільки OAuth T1), `currentLeague` гайду; валюти — git-снапшоти
+  identity/catalog/gold/layout з PR-рефрешем за правилом чесності; невідомий
+  Metadata id уже отримує рядок/сторінку/sitemap з humanized-ім'ям без іконки.
+  Написано `docs/DYNAMIC-DATA-PLAN-2026-09.md`: A — ліги з власних даних
+  (`league_meta`, дефолт з гістерезисом 48h/200 пар, env = override),
+  B — identity у БД з RePoE/GGG static, C — layout/gold у БД за floors,
+  D — офіційні метадані після T1. Рішення потрібні від Тараса (пороги, гейт
+  чесності, порядок).

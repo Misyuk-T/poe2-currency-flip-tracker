@@ -1,23 +1,11 @@
 import { siteUrl } from "../../../lib/market.js";
 import GuideLayout from "../../../components/GuideLayout.jsx";
+import { currentLeague, faqs } from "../../../lib/league-start-guide.js";
 
 // Evergreen slug on purpose: no league name and no patch version in the URL or
 // the title, so this page keeps accumulating authority across 0.5.5, 1.0 and
-// every league after. Anything league-specific lives in `currentLeague` below
-// and in body copy, where it is a one-line refresh.
-// Every fact here comes from GGG's own announcement and press release, linked
-// below. No predictions, no prices — just the name, version, start and what the
-// patch says it adds.
-const currentLeague = {
-  name: "Forbidden Rites",
-  version: "0.5.5",
-  startsOn: "4 September 2026",
-  startsAt: "1 PM PDT",
-  // The previous league keeps running in parallel rather than being replaced.
-  parallelLeague: "Runes of Aldur",
-  source: "https://www.pathofexile.com/forum/view-thread/3999858",
-  pressSource: "https://www.pathofexile.com/forum/view-thread/3999865",
-};
+// every league after. Anything league-specific lives in lib/league-start-guide.js,
+// where refreshing for a new league is a one-file edit.
 
 export const metadata = {
   title: "PoE2 League Start Currency Guide",
@@ -25,33 +13,6 @@ export const metadata = {
     "What actually moves the Path of Exile 2 currency market in the first days of a league, which categories of goods draw early demand, and how to read hourly prices while the data is still thin.",
   alternates: { canonical: `${siteUrl}/guides/league-start-currency` },
 };
-
-const faqs = [
-  {
-    q: "What currency should I buy at league start in PoE2?",
-    a: "There is no single right answer, and anyone who names one is guessing. In mechanism terms, the currencies that are safest to hold early are the ones everybody produces and consumes — the everyday crafting orbs — because you can actually get out of them again. The riskiest are the ones carrying the biggest early scarcity premium, since that premium tends to erode as supply catches up. Decide from the liquidity and hourly range you can see, not from a prediction.",
-  },
-  {
-    q: "Is league start a good time to flip currency in PoE2?",
-    a: "League start is when prices move most, and that cuts both ways: wider swings mean more opportunity and a higher chance of being stuck holding something thin that nobody is buying yet. If you trade early, size positions against how liquid the market is rather than against how far it has moved.",
-  },
-  {
-    q: "Why do PoE2 currency prices swing so much on day 1?",
-    a: "Supply of everything starts at zero and arrives at different speeds, demand is concentrated on the same handful of progression items, and very few trades have happened. When a market has only a few trades in it, each one moves the quoted range a long way — so early prices are a market being discovered, not a settled market being nudged.",
-  },
-  {
-    q: "When do PoE2 currency prices stabilise after a league launch?",
-    a: "There is no fixed day. Prices generally steady as supply catches up with the front-loaded demand, which happens sooner for common bulk currencies and later for high-value endgame ones. Rather than waiting for a date, watch for the 24h move to shrink and the hourly low/high range to narrow on the markets you care about.",
-  },
-  {
-    q: "Does this tracker have data on day 1 of a new league?",
-    a: "It follows the official hourly currency exchange feed, so a new league is covered once it is published there and the tracker is pointed at it. Expect the first day to be thin: fewer samples per hour and wider low/high ranges. Treat those early readings as low-confidence context and confirm any price in game.",
-  },
-  {
-    q: "Which league does this guide cover?",
-    a: `It is written to apply to any Path of Exile 2 league start. The league start it was last updated for is ${currentLeague.name} (${currentLeague.version}), which GGG announced for ${currentLeague.startsOn} at ${currentLeague.startsAt}. It is an event league, and the existing ${currentLeague.parallelLeague} league keeps running alongside it rather than being replaced, so there are two live economies to keep apart when you read a price. The mechanics described here are meant to carry over to whatever launches after that.`,
-  },
-];
 
 export default function LeagueStartCurrencyGuide() {
   const breadcrumbLd = {
@@ -98,20 +59,22 @@ export default function LeagueStartCurrencyGuide() {
           <a href={currentLeague.source} rel="nofollow noopener" target="_blank">
             {currentLeague.name} event league ({currentLeague.version})
           </a>
-          , announced for {currentLeague.startsOn} at {currentLeague.startsAt}. Note that it does not replace the
-          existing {currentLeague.parallelLeague} league, which GGG has said keeps running alongside it — so check which
-          league a price belongs to before comparing anything. Nothing below depends on either of them: the same
-          supply-and-demand mechanics show up at every launch.
+          , announced for{" "}
+          <time dateTime={currentLeague.startsAtIso}>
+            {currentLeague.startsOn} at {currentLeague.startsAt} ({currentLeague.startsAtUtc})
+          </time>
+          . Note that it does not replace the existing {currentLeague.parallelLeague} league, which GGG has said keeps
+          running alongside it — so check which league a price belongs to before comparing anything. Nothing below
+          depends on either of them: the same supply-and-demand mechanics show up at every launch.
         </p>
         <p>
           By GGG&rsquo;s own{" "}
           <a href={currentLeague.pressSource} rel="nofollow noopener" target="_blank">
             description of the event
           </a>
-          , {currentLeague.version} brings Ritual encounters into the campaign areas, returns the Viridian Wildwood as
-          an endgame mechanic and overhauls the Trial of Chaos. What any of that does to prices is not knowable in
-          advance — a new mechanic can create or remove a whole category of tradeable goods, which is precisely why the
-          sections below are about reading the data as it arrives rather than predicting it.
+          , {currentLeague.version} puts Ritual sites in every campaign area, returns the Wildwood as an endgame
+          mechanic — entered from an Endgame Map using a Sacred Bloom acquired through Ritual — and overhauls the Trial
+          of Chaos.
         </p>
 
         <h2>Why league start moves the currency market most</h2>

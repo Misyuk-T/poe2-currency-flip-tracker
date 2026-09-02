@@ -2,6 +2,24 @@
 
 Newest first. Each entry: **what** was decided, **why**, and the date.
 
+## 2026-09-02 — Phase B: currency identity is DB-first, committed JSON is the fallback
+New table `cx_identity(game, metadata_id, name, icon, category, subcategory,
+short_id, source, resolved_at, updated_at)` (migration 010) plus a daily
+`/api/cron/identity` job (`refreshCurrencyIdentity`) that lists Metadata ids seen
+in candles in the last 7 days, drops everything `src/data/cx-identity-*.json`
+already answers, and resolves the rest from RePoE + GGG trade static — through
+the SAME pure join the build scripts use (`src/domain/identity-resolve.js`).
+Readers merge **DB > committed JSON > humanized leaf, per field**; a DB null can
+never blank a committed value. **Why:** ids GGG adds mid-league currently render
+as a title-cased path with no icon until someone merges a monthly PR, and
+identity is not a market claim — a wrong icon is visible and cosmetic, so it may
+auto-apply behind sanity floors (Taras, 2026-09-02). Guard rails: ≤200 ids per
+run, 7-day retry window for rows still missing an icon, minimum upstream sizes
+before any write, `coalesce`-per-field upserts. The committed JSON and
+`npm run identity:build` deliberately stay as the cold-start fallback and safety
+net. `/api/status` reports `identity.overrides` / `identity.unresolvedObserved`
+from the reader's own cached load — no extra table, no extra query.
+
 ## 2026-09-02 — Sitemap: CDN cache instead of ISR (`force-dynamic` + `s-maxage`)
 The Aug 23 move of the sitemap to a route handler with `revalidate = 3600`
 froze again: prod `lastmod` stuck at 2026-08-29T19:00Z with zero function

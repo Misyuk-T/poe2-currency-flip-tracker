@@ -390,6 +390,130 @@ export function createRadarRepository({
   }
 
   /**
+   * Every currency id the candles carry for this stream, from ONE bounded
+   * aggregate — the identity job's input (migration 010).
+   *
+   * It reads `pair_id`, not `base_currency`/`quote_currency`, precisely because
+   * pair_id is the fifth column of the PRIMARY KEY (game, realm, league,
+   * provider, pair_id, completed_hour) while the two currency columns are heap-
+   * only. Filtering on (game, realm, provider) and selecting distinct pair_id is
+   * therefore an index-only scan over the same prefix Phase A's league aggregate
+   * uses; splitting the pair back into its two ids is free in JS. `canonicalPairId`
+   * joins the two ids with "|", and a Metadata path never contains one.
+   *
+   * `limit` bounds the ROWS RETURNED, not the scan — Postgres still walks the
+   * whole (game, realm, provider) window to compute the distinct set. That is
+   * the same shape of work as the hourly league aggregate and finishes far
+   * inside OP_TIMEOUT_MS today; if a stream ever grows past that, this needs a
+   * narrower window or its own index, not a smaller limit.
+   */
+  async function listObservedCurrencyIds({ days = windowDays, limit = 20_000 } = {}) {
+    const rows = await withTimeout(
+      sql`
+        select distinct pair_id
+        from hourly_market_candles
+        where game = ${scope.game} and realm = ${scope.realm} and provider = ${scope.mode}
+          and completed_hour >= now() - make_interval(days => ${days})
+        limit ${limit}`,
+      opTimeoutMs,
+      "observed currency ids",
+      onTimeout,
+    );
+    const ids = new Set();
+    for (const row of rows) {
+      for (const id of String(row.pair_id ?? "").split("|")) if (id) ids.add(id);
+    }
+    return [...ids];
+  }
+
+  /** Stored identity overrides for one game. Bounded; the tail is small by design. */
+  async function readCxIdentity({ game = scope.game, limit = 2_000 } = {}) {
+    const rows = await withTimeout(
+      sql`
+        select metadata_id, name, icon, category, subcategory, short_id, source,
+               extract(epoch from resolved_at) * 1000 as resolved_at,
+               extract(epoch from updated_at) * 1000 as updated_at
+        from cx_identity
+        where game = ${game}
+        order by metadata_id asc
+        limit ${limit}`,
+      opTimeoutMs,
+      "cx identity read",
+      onTimeout,
+    );
+    return rows.map((row) => ({
+      game,
+      metadataId: row.metadata_id,
+      name: row.name ?? null,
+      icon: row.icon ?? null,
+      category: row.category ?? null,
+      subcategory: row.subcategory ?? null,
+      shortId: row.short_id ?? null,
+      source: row.source ?? null,
+      resolvedAt: row.resolved_at == null ? null : Number(row.resolved_at),
+      updatedAt: row.updated_at == null ? null : Number(row.updated_at),
+    }));
+  }
+
+  /**
+   * Upsert identity rows, keeping the better value per field.
+   *
+   * Every display column is written with `coalesce(excluded.x, cx_identity.x)`,
+   * so a later run that only managed a humanized name can never blank an icon or
+   * a category an earlier run resolved. That is the whole sanity floor for this
+   * table: identity improves monotonically, and the only way to clear a field is
+   * a deliberate manual update.
+   *
+   * `resolved_at` moves only when the row actually carries an upstream answer
+   * (source <> 'humanized'); `updated_at` always moves, because the job's retry
+   * window is "icon is null and not touched for 7 days" and a placeholder that
+   * never ages would be re-fetched every single run.
+   *
+   * Written in multi-row batches (same `sql(rows, ...columns)` fragment the
+   * candle writer uses) rather than one statement per id: 200 sequential round
+   * trips would spend most of the route's 60s budget on latency alone.
+   */
+  async function upsertCxIdentity(rows, { game = scope.game, now = new Date(), batchSize = 50 } = {}) {
+    const entries = (rows ?? []).filter((row) => typeof row?.metadataId === "string" && row.metadataId);
+    if (!entries.length) return 0;
+    const at = now instanceof Date ? now : new Date(now);
+    const resolved = (row) => Boolean(row.source && row.source !== "humanized");
+    onPhase("db.cxIdentity.upsert.start", { rows: entries.length });
+    for (let offset = 0; offset < entries.length; offset += batchSize) {
+      const batch = entries.slice(offset, offset + batchSize).map((row) => ({
+        game,
+        metadata_id: row.metadataId,
+        name: row.name ?? null,
+        icon: row.icon ?? null,
+        category: row.category ?? null,
+        subcategory: row.subcategory ?? null,
+        short_id: row.shortId ?? null,
+        source: row.source ?? "humanized",
+        resolved_at: resolved(row) ? at : null,
+        updated_at: at,
+      }));
+      await withTimeout(
+        sql`
+          insert into cx_identity ${sql(batch)}
+          on conflict (game, metadata_id) do update set
+            name = coalesce(excluded.name, cx_identity.name),
+            icon = coalesce(excluded.icon, cx_identity.icon),
+            category = coalesce(excluded.category, cx_identity.category),
+            subcategory = coalesce(excluded.subcategory, cx_identity.subcategory),
+            short_id = coalesce(excluded.short_id, cx_identity.short_id),
+            source = case when excluded.source = 'humanized' then cx_identity.source else excluded.source end,
+            resolved_at = coalesce(excluded.resolved_at, cx_identity.resolved_at),
+            updated_at = excluded.updated_at`,
+        opTimeoutMs,
+        "cx identity upsert",
+        onTimeout,
+      );
+    }
+    onPhase("db.cxIdentity.upsert.end", { rows: entries.length });
+    return entries.length;
+  }
+
+  /**
    * Currencies ranked by how many distinct priced pairs they connect in this
    * league. This is the data-driven anchor selector: Standard usually resolves
    * to Chaos/Divine, while Ruthless naturally resolves to Orb of Alchemy.
@@ -643,6 +767,9 @@ export function createRadarRepository({
     refreshLeagueMeta,
     readLeagueMeta,
     setDefaultLeague,
+    listObservedCurrencyIds,
+    readCxIdentity,
+    upsertCxIdentity,
     listAnchorCandidates,
     readRadarSnapshot,
     writeRadarSnapshots,

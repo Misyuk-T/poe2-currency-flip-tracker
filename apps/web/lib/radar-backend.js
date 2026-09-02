@@ -30,7 +30,9 @@ import {
 } from "../../../src/server/radar-core.js";
 import { CORE_CURRENCY_IDS, ingestFixtures, ingestFixtureIncrement, ingestLiveStreams, translatorForGame } from "../../../src/server/radar-ingest.js";
 import { createCxapiProvider } from "../../../src/providers/create-cxapi-provider.js";
+import { chooseDefaultLeague } from "../../../src/domain/league-meta.js";
 import { getSql, resetSql, withDbRetry } from "./db.js";
+import { readLeagueMetaCached, resetLeagueMetaCache, resolveDefaultLeague } from "./default-league.js";
 import { createMemoryRepository } from "./memory-repo.js";
 
 const NO_DB = {
@@ -117,9 +119,37 @@ export function gameConfigs(config) {
   ];
 }
 
-export function resolveGame(searchParams, config) {
+/**
+ * gameConfigs with each enabled game's `activeLeague` replaced by the RESOLVED
+ * default league (env override > league_meta.is_default > code fallback), plus
+ * the `defaultLeagueSource` that produced it.
+ *
+ * Every read surface that used to take `config.league` at face value goes
+ * through here, so there is exactly one answer per process per minute. The
+ * resolved league is unioned into `leagues` so resolveLeague still accepts it
+ * even when the env allow-list predates it.
+ */
+export async function resolveGameConfigs(config, { trace = null } = {}) {
+  const definitions = gameConfigs(config);
+  return Promise.all(
+    definitions.map(async (game) => {
+      if (!game.enabled) return { ...game, defaultLeagueSource: "fallback" };
+      // No trace on a read path: the resolver's own default logger takes over,
+      // so a degraded default league is never invisible outside the cron.
+      const { league, source } = await resolveDefaultLeague(game.id, trace ? { config, trace } : { config });
+      return {
+        ...game,
+        activeLeague: league,
+        defaultLeagueSource: source,
+        leagues: [...new Set([league, ...game.leagues])],
+      };
+    }),
+  );
+}
+
+export function resolveGame(searchParams, config, definitions = gameConfigs(config)) {
   const requested = searchParams.get("game") ?? config.poeGame ?? "poe2";
-  const game = gameConfigs(config).find((entry) => entry.id === requested && entry.enabled);
+  const game = definitions.find((entry) => entry.id === requested && entry.enabled);
   if (!game) {
     return {
       error: {
@@ -357,7 +387,7 @@ function finalizeRadarBody(body, game, league) {
 export async function getRadar(searchParams) {
   const ctx = await context();
   const { config } = ctx;
-  const selectedGame = resolveGame(searchParams, config);
+  const selectedGame = resolveGame(searchParams, config, await resolveGameConfigs(config));
   if (selectedGame.error) return selectedGame.error;
   const { game } = selectedGame;
   const selected = await resolveLeagueAccess(searchParams, game, async (requestedLeague) => {
@@ -559,7 +589,10 @@ export async function refreshRadarSnapshots(ctx, {
     }
   };
 
-  const games = gameConfigs(ctx.config).filter((game) => game.enabled);
+  // The RESOLVED default league is pass 1's scope, not the env constant: the
+  // league-meta step upstream may have just moved it, and the SEO surface and
+  // the snapshot priority must agree on which league that is.
+  const games = (await resolveGameConfigs(ctx.config, { trace })).filter((game) => game.enabled);
   const results = [];
   const built = new Map(games.map((game) => [game.id, new Set()]));
 
@@ -610,6 +643,71 @@ export async function refreshRadarSnapshots(ctx, {
   return results;
 }
 
+/**
+ * Hourly league-metadata refresh + default-league decision.
+ *
+ * Runs after ingest and BEFORE snapshots, because the snapshot pass builds the
+ * default league first and must build the league this step just chose. Per
+ * enabled game: one bounded aggregate over the candle window, then the pure
+ * chooseDefaultLeague rule, then a persist only when the answer actually moved.
+ *
+ * Everything here is best-effort. A missing table (code deployed ahead of
+ * migration 009), a timeout, a transient connection error — all are traced and
+ * returned as a per-game result, and none of them fails the cron. The resolver's
+ * cache is invalidated afterwards so the snapshot pass in the SAME invocation
+ * sees a default this run just wrote.
+ */
+export async function refreshLeagueDefaults(ctx, {
+  now = Date.now(),
+  trace = noop,
+  makeRepo = repository,
+} = {}) {
+  const results = [];
+  // Start from the database, not from whatever this warm instance cached before
+  // the ingest wrote new candles.
+  resetLeagueMetaCache();
+  for (const game of gameConfigs(ctx.config).filter((entry) => entry.enabled)) {
+    trace("league-meta.scope.start", { game: game.id });
+    try {
+      // The aggregate is league-independent; the scope league only completes the
+      // repository's key. Provider is the READ provider, matching the snapshots
+      // and the resolver, so the rows land where the readers look for them.
+      const repo = makeRepo(scopeFor(ctx, game, game.activeLeague), { trace, anchors: game.anchors });
+      if (!repo?.refreshLeagueMeta) {
+        const skipped = { game: game.id, skipped: "no-database" };
+        trace("league-meta.scope.end", skipped);
+        results.push(skipped);
+        continue;
+      }
+      const rows = await withDbRetry(() => repo.refreshLeagueMeta({ now }));
+      const storedDefault = rows.find((row) => row.isDefault)?.league ?? null;
+      // Without a stored decision the rule starts from what the readers use
+      // today, so its forward-only guard is anchored on the live default rather
+      // than on nothing.
+      const currentDefault = storedDefault ?? (await resolveDefaultLeague(game.id, { config: ctx.config, trace })).league;
+      const chosen = chooseDefaultLeague(rows, { game: game.id, currentDefault, now });
+      const changed = Boolean(chosen) && chosen !== storedDefault;
+      if (changed) await withDbRetry(() => repo.setDefaultLeague(chosen));
+      const result = {
+        game: game.id,
+        leagues: rows.length,
+        previousDefault: storedDefault,
+        defaultLeague: chosen ?? currentDefault,
+        changed,
+      };
+      trace("league-meta.scope.end", result);
+      results.push(result);
+    } catch (error) {
+      const result = { game: game.id, error: error?.message ?? String(error), errorCode: error?.code ?? null };
+      trace("league-meta.scope.error", result);
+      results.push(result);
+    }
+  }
+  // Whatever happened above, the next resolve must not serve a pre-cron answer.
+  resetLeagueMetaCache();
+  return results;
+}
+
 export async function getHistory(searchParams) {
   const ctx = await context();
   const { config } = ctx;
@@ -622,7 +720,7 @@ export async function getHistory(searchParams) {
   if (!/^[\p{L}\p{N}_\-/]{1,128}\|[\p{L}\p{N}_\-/]{1,128}$/u.test(pair)) {
     return { status: 400, body: { error: { code: "invalid-pair", message: "invalid market pair" } } };
   }
-  const selectedGame = resolveGame(searchParams, config);
+  const selectedGame = resolveGame(searchParams, config, await resolveGameConfigs(config));
   if (selectedGame.error) return selectedGame.error;
   const { game } = selectedGame;
   const selected = await resolveLeagueAccess(searchParams, game, async (requestedLeague) => {
@@ -644,7 +742,7 @@ export async function getHistory(searchParams) {
 export async function getHotlist(searchParams = new URLSearchParams()) {
   const ctx = await context();
   const { config, identityByGame } = ctx;
-  const selectedGame = resolveGame(searchParams, config);
+  const selectedGame = resolveGame(searchParams, config, await resolveGameConfigs(config));
   if (selectedGame.error) return selectedGame.error;
   const { game } = selectedGame;
   const selected = await resolveLeagueAccess(searchParams, game, async (requestedLeague) => {
@@ -711,18 +809,35 @@ async function leagueAvailability(ctx, games) {
 export async function getConfig() {
   const ctx = await context();
   const { config } = ctx;
-  const definitions = gameConfigs(config);
+  const definitions = await resolveGameConfigs(config);
   const leagueState = await leagueAvailability(ctx, definitions);
+  // Observed depth per league, from league_meta. Additive and best-effort: with
+  // no table and no database every field below is simply null/0.
+  const metaByGame = new Map(
+    await Promise.all(
+      definitions.map(async (game) => [game.id, (await readLeagueMetaCached(game.id, { config })).byLeague]),
+    ),
+  );
   const games = definitions.map((game) => {
+    const meta = metaByGame.get(game.id) ?? new Map();
     const allLeagues = [...new Set([
       ...game.leagues,
       ...(leagueState?.discovered.get(game.id) ?? []),
     ])];
-    const leagues = allLeagues.map((league) => ({
-      id: league,
-      label: league,
-      enabled: leagueState?.available.get(`${game.id}|${league}`) !== false,
-    }));
+    const leagues = allLeagues.map((league) => {
+      const row = meta.get(league) ?? null;
+      return {
+        id: league,
+        label: league,
+        enabled: leagueState?.available.get(`${game.id}|${league}`) !== false,
+        // "first seen on the exchange" — our own first priced hour, not a GGG
+        // start date. Null until the cron has aggregated this league once.
+        firstSeenAt: row?.firstSeenAt ? new Date(row.firstSeenAt).toISOString() : null,
+        lastSeenAt: row?.lastSeenAt ? new Date(row.lastSeenAt).toISOString() : null,
+        pairCount: row?.pairCount ?? 0,
+        completedHours: row?.completedHours ?? 0,
+      };
+    });
     const enabledLeagueIds = leagues.filter((entry) => entry.enabled).map((entry) => entry.id);
     return {
       ...game,
@@ -733,10 +848,14 @@ export async function getConfig() {
       leagues,
     };
   });
+  const primary = games.find((game) => game.id === config.poeGame) ?? games[0];
   return {
     status: 200,
     body: {
-      league: config.league,
+      league: primary?.activeLeague ?? config.league,
+      // Where that default came from: an env pin, the league_meta row the cron
+      // maintains, or the code constant.
+      defaultLeagueSource: primary?.defaultLeagueSource ?? "fallback",
       game: config.poeGame,
       realm: config.poeRealm,
       anchorCurrency: config.anchorCurrency,
@@ -795,8 +914,11 @@ export async function runRadarIngest({ now = Date.now(), trace = noop } = {}) {
       budgetMs: config.cxapiIngestBudgetMs,
       trace,
     });
+    // Leagues become data here: aggregate what the candles now say, decide the
+    // default, persist it — then let the snapshot pass build that league first.
+    const leagueMeta = await refreshLeagueDefaults(await context(), { now, trace });
     const snapshots = await refreshRadarSnapshots(await context(), { now, trace });
-    return { status: 200, body: { mode: "live", streams, snapshots } };
+    return { status: 200, body: { mode: "live", streams, leagueMeta, snapshots } };
   }
   // Production cron is incremental. The offline in-memory fallback above still
   // seeds full history once, but a deployed invocation writes only one digest.
@@ -808,18 +930,23 @@ export async function runRadarIngest({ now = Date.now(), trace = noop } = {}) {
     now,
     trace,
   });
+  const leagueMeta = await refreshLeagueDefaults(await context(), { now, trace });
   const snapshots = await refreshRadarSnapshots(await context(), { now, trace });
-  return { status: 200, body: { ...summary, snapshots } };
+  return { status: 200, body: { ...summary, leagueMeta, snapshots } };
 }
 
 export async function getStatus() {
   const ctx = await context();
   const { config } = ctx;
-  const repo = await resolveRepo(ctx);
+  // /api/status reports the scope the SEO surface actually renders, so it must
+  // read the same resolved default as everything else — not the env constant.
+  const { league, source } = await resolveDefaultLeague(config.poeGame, { config });
+  const repo = await resolveRepo(ctx, { ...ctx.scope, league });
   const base = {
     providerMode: config.providerMode,
     ingestProviderMode: config.ingestProviderMode,
-    league: config.league,
+    league,
+    defaultLeagueSource: source,
     sourceMode: sourceMode(config),
   };
   if (!repo) return { status: 200, body: { ...base, radar: { configured: false, reason: "no-database" } } };

@@ -43,7 +43,30 @@ test("getConfig returns public config with server-side opportunities disabled", 
   assert.equal(body.games.find((g) => g.id === "poe1")?.anchorCurrency, "chaos");
   assert.deepEqual(body.games.find((g) => g.id === "poe2")?.leagues.map((l) => l.id), ["Runes of Aldur"]);
   assert.equal(body.games.find((g) => g.id === "poe1")?.activeLeague, "Standard");
-  assert.deepEqual(body.games.find((g) => g.id === "poe1")?.leagues.map((l) => l.id), ["Standard", "Hardcore", "Ruthless", "Ancestors"]);
+  // PoE 1 no longer ships a hardcoded league list: leagues come from the same
+  // candle discovery PoE 2 uses, so with no database only the default is known.
+  assert.deepEqual(body.games.find((g) => g.id === "poe1")?.leagues.map((l) => l.id), ["Standard"]);
+});
+
+test("getConfig exposes observed league depth and where the default came from", async () => {
+  const { body } = await getConfig();
+  // No database and no env pin here, so the default is the code constant and
+  // every depth field is present but empty — additive, never missing.
+  assert.equal(body.league, "Runes of Aldur");
+  assert.equal(body.defaultLeagueSource, "fallback");
+  const league = body.games.find((g) => g.id === "poe2")?.leagues[0];
+  assert.deepEqual(
+    { ...league },
+    {
+      id: "Runes of Aldur",
+      label: "Runes of Aldur",
+      enabled: true,
+      firstSeenAt: null,
+      lastSeenAt: null,
+      pairCount: 0,
+      completedHours: 0,
+    },
+  );
 });
 
 test("resolveGame accepts configured game streams and rejects unknown games", () => {

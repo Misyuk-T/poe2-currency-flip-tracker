@@ -15,6 +15,7 @@ import { backtestRecommendations } from "../../../src/domain/paper-trade.js";
 import { isCompatibleRadarSnapshot } from "../../../src/domain/radar-snapshot.js";
 import { createRadarRepository, groupCandlesByPair } from "../../../src/storage/radar-repository.js";
 import { getSql } from "./db.js";
+import { resolveDefaultLeague } from "./default-league.js";
 
 const BACKTEST_HORIZON_HOURS = 6;
 
@@ -24,7 +25,11 @@ export async function getCurrencySummary(id) {
   const sql = getSql();
   if (!sql) return null;
 
-  const scope = { game: config.poeGame, realm: config.poeRealm, league: config.league, mode: config.providerMode };
+  // The SEO pages are scoped to the RESOLVED default league (env override >
+  // league_meta.is_default > code fallback), so a league flip re-points them
+  // without a redeploy — and, equally, cannot happen until the rule says so.
+  const { league } = await resolveDefaultLeague(config.poeGame, { config });
+  const scope = { game: config.poeGame, realm: config.poeRealm, league, mode: config.providerMode };
   const repo = createRadarRepository({ sql, scope });
   const pairId = canonicalPairId(id, config.anchorCurrency);
   const candles = await repo.readPairCandles(pairId);
@@ -201,7 +206,10 @@ export async function getCurrencyIndex() {
   const sql = getSql();
   if (!sql) return null;
 
-  const scope = { game: config.poeGame, realm: config.poeRealm, league: config.league, mode: config.providerMode };
+  // Same resolved scope as getCurrencySummary — index and pages must never
+  // disagree about which league they describe.
+  const { league } = await resolveDefaultLeague(config.poeGame, { config });
+  const scope = { game: config.poeGame, realm: config.poeRealm, league, mode: config.providerMode };
   const repo = createRadarRepository({ sql, scope });
   const sourceMode = config.providerMode === "live" ? "official" : "fixture";
 

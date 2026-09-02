@@ -9,6 +9,9 @@
  * resurrecting that server. Never used in production when a database is present.
  */
 
+import { isPublicLeague } from "../../../src/domain/cx-market.js";
+import { isPermanentLeague } from "../../../src/domain/league-meta.js";
+
 const WINDOW_DAYS = 30;
 const MAX_HOURS_PER_PAIR = 48;
 const DAY_MS = 86_400_000;
@@ -19,6 +22,8 @@ export function createMemoryRepository(scope, { windowDays = WINDOW_DAYS, maxHou
   // Dedupe candles by their primary key (completedHour|pairId) so re-running the
   // fixture ingest is idempotent, mirroring `on conflict do nothing`.
   const byKey = new Map();
+  // league -> league_meta row. Upsert-only, exactly like the SQL table.
+  const leagueMeta = new Map();
   let cursor = null;
   let lastDigestId = null;
 
@@ -72,5 +77,80 @@ export function createMemoryRepository(scope, { windowDays = WINDOW_DAYS, maxHou
     return { cursor, lastDigestId };
   }
 
-  return { readCandleWindow, readPairCandles, readCxapiState, recordCxDigest };
+  /**
+   * The in-memory twin of createRadarRepository.refreshLeagueMeta: the same
+   * per-league aggregate (first/last hour, distinct pairs, distinct completed
+   * hours) over the same window, with the same least()/greatest() merge on the
+   * seen-at bounds so first_seen_at only ever moves backwards in time.
+   */
+  async function refreshLeagueMeta({ now = Date.now() } = {}) {
+    const at = now instanceof Date ? now.getTime() : Number(now);
+    const start = windowStart(at);
+    const byLeague = new Map();
+    for (const candle of byKey.values()) {
+      if (candle.completedHour < start) continue;
+      const league = candle.league ?? scope.league;
+      let entry = byLeague.get(league);
+      if (!entry) byLeague.set(league, (entry = { pairs: new Set(), hours: new Set(), first: null, last: null }));
+      entry.pairs.add(candle.pairId);
+      entry.hours.add(candle.completedHour);
+      entry.first = entry.first == null ? candle.completedHour : Math.min(entry.first, candle.completedHour);
+      entry.last = entry.last == null ? candle.completedHour : Math.max(entry.last, candle.completedHour);
+    }
+    for (const [league, entry] of byLeague) {
+      const previous = leagueMeta.get(league);
+      leagueMeta.set(league, {
+        game: scope.game,
+        realm: scope.realm,
+        provider: scope.mode,
+        league,
+        firstSeenAt: previous?.firstSeenAt == null ? entry.first : Math.min(previous.firstSeenAt, entry.first),
+        lastSeenAt: previous?.lastSeenAt == null ? entry.last : Math.max(previous.lastSeenAt, entry.last),
+        pairCount: entry.pairs.size,
+        completedHours: entry.hours.size,
+        isPublic: isPublicLeague(league),
+        isPermanent: isPermanentLeague(league, scope.game),
+        isDefault: previous?.isDefault === true,
+      });
+    }
+    return readLeagueMeta();
+  }
+
+  async function readLeagueMeta(game = scope.game, realm = scope.realm, provider = scope.mode) {
+    return [...leagueMeta.values()]
+      .filter((row) => row.game === game && row.realm === realm && row.provider === provider)
+      .map((row) => ({ ...row }))
+      .sort((a, b) => (b.firstSeenAt ?? -Infinity) - (a.firstSeenAt ?? -Infinity) || a.league.localeCompare(b.league));
+  }
+
+  async function setDefaultLeague(league) {
+    if (typeof league !== "string" || !league) return false;
+    if (!leagueMeta.has(league)) {
+      leagueMeta.set(league, {
+        game: scope.game,
+        realm: scope.realm,
+        provider: scope.mode,
+        league,
+        firstSeenAt: null,
+        lastSeenAt: null,
+        pairCount: 0,
+        completedHours: 0,
+        isPublic: isPublicLeague(league),
+        isPermanent: isPermanentLeague(league, scope.game),
+        isDefault: false,
+      });
+    }
+    for (const [name, row] of leagueMeta) row.isDefault = name === league;
+    return true;
+  }
+
+  return {
+    readCandleWindow,
+    readPairCandles,
+    readCxapiState,
+    recordCxDigest,
+    refreshLeagueMeta,
+    readLeagueMeta,
+    setDefaultLeague,
+  };
 }

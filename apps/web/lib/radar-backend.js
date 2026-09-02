@@ -434,73 +434,177 @@ export async function getRadar(searchParams) {
   return { status: 200, body };
 }
 
-async function refreshRadarSnapshots(ctx, { now = Date.now(), trace = noop } = {}) {
-  const results = [];
-  for (const game of gameConfigs(ctx.config)) {
-    if (!game.enabled) continue;
-    // Rebuild the two default landing scopes hourly. Alternate leagues keep
-    // their stored snapshot and self-refresh on first use after the six-hour
-    // freshness window. Rebuilding every selector option transferred tens of
-    // millions of raw candle rows from Supabase even when nobody viewed them.
-    for (const league of [game.activeLeague]) {
-      const startedAt = Date.now();
-      trace("snapshot.scope.start", { game: game.id, league });
-      try {
-        const discoveryRepo = gameAwareRepository(
-          repository(scopeFor(ctx, game, league), { trace, anchors: game.anchors }),
-          game.id,
-        );
-        if (!discoveryRepo || !(await withDbRetry(() => discoveryRepo.hasPricedCandles()))) {
-          results.push({ game: game.id, league, skipped: "no-data" });
-          trace("snapshot.scope.end", { game: game.id, league, skipped: "no-data" });
-          continue;
-        }
-        const previousAuto = discoveryRepo.readRadarSnapshot
-          ? await withDbRetry(() => discoveryRepo.readRadarSnapshot("auto"))
-          : null;
-        const anchorPlan = await automaticAnchorPlan(
-          discoveryRepo,
-          game,
-          previousAuto?.payload?.anchor ?? game.anchorCurrency,
-        );
-        const repo = gameAwareRepository(
-          repository(scopeFor(ctx, game, league), { trace, anchors: anchorPlan.anchors }),
-          game.id,
-        );
-        const payloads = await withDbRetry(() =>
-          buildRadarPayloads(radarBuildInput(ctx, game, repo, now, anchorPlan.anchors)),
-        );
-        const snapshots = Object.entries(payloads).map(([anchor, payload]) => ({
-          anchor,
-          payload: finalizeRadarBody(payload, game, league),
-        }));
-        snapshots.push({
-          anchor: "auto",
-          payload: mergeRadarPayloads(
-            Object.fromEntries(snapshots.map((snapshot) => [snapshot.anchor, snapshot.payload])),
-            { preferredAnchor: anchorPlan.primary },
-          ),
-        });
-        await withDbRetry(() => repo.writeRadarSnapshots(snapshots));
-        const result = {
-          game: game.id,
-          league,
-          anchors: snapshots.length,
-          rows: snapshots.reduce((count, item) => count + item.payload.rows.length, 0),
-          elapsedMs: Date.now() - startedAt,
-        };
-        results.push(result);
-        trace("snapshot.scope.end", result);
-      } catch (error) {
-        const result = {
-          game: game.id,
-          league,
-          error: error?.message ?? String(error),
-          elapsedMs: Date.now() - startedAt,
-        };
-        results.push(result);
-        trace("snapshot.scope.error", result);
+// Latest point in the cron invocation at which a SECONDARY league build may
+// START. `now` is the route's wall-clock start (route.js passes its startedAt),
+// so gating against `now + SNAPSHOT_BUDGET_MS` reuses that clock instead of
+// starting a second timer, and the live-ingest phase's own cxapiIngestBudgetMs
+// spend is already counted in it.
+//
+// This is deliberately far below the 300s route ceiling because the gate CANNOT
+// bound a build once it has begun: one league is 4 withDbRetry-wrapped reads
+// plus a writeRadarSnapshots of up to 6 upserts inside a single withDbRetry, and
+// with OP_TIMEOUT_MS at 18s and two attempts the pathological all-timeout case
+// is ~320s on its own. Starting one of those late would blow both maxDuration
+// and the pg_net statement timeout (migration 007), losing the cron response and
+// its telemetry. Pass 1 has already durably written every active league by then,
+// so an overrun costs observability, not data, and any league that does not fit
+// simply keeps falling back to the on-demand rebuild in /api/radar as it does
+// today.
+const SNAPSHOT_BUDGET_MS = 120_000;
+// Floor for the per-league reserve before a real build has been measured. Once
+// the active league is built its observed elapsedMs takes over, with 1.5x
+// headroom because a secondary league can be slower than the active one.
+const SNAPSHOT_LEAGUE_RESERVE_MS = 60_000;
+const snapshotLeagueReserve = (worstLeagueMs) =>
+  Math.max(SNAPSHOT_LEAGUE_RESERVE_MS, Math.ceil(worstLeagueMs * 1.5));
+
+/**
+ * Rebuild the precomputed radar snapshots that /api/radar serves.
+ *
+ * Priority order is deliberate: every enabled game's ACTIVE league is rebuilt
+ * first (unchanged behaviour), and only then do secondary leagues that have
+ * recent priced candles get a turn. That way a league-launch day — several
+ * public leagues live at once — can never starve the default landing scope.
+ *
+ * Secondary leagues are discovered with the same `listPricedLeagues()` probe
+ * /api/config already uses (up to 64 rows per game), and each one is gated on
+ * the shared wall-clock budget. The gate only decides whether to START a league;
+ * it cannot interrupt one already running (see SNAPSHOT_BUDGET_MS).
+ *
+ * One extra league is NOT cheap. Per league, per game, every hour:
+ *   - hasPricedCandles()      EXISTS probe over the 7-day window
+ *   - readRadarSnapshot("auto")
+ *   - listAnchorCandidates()  7-day group-by aggregate over the candle window
+ *   - readCandleWindow()      the 7-day window itself, the dominant cost
+ *   - writeRadarSnapshots()   up to 6 payload upserts (anchors + "auto")
+ * Every one of those is withDbRetry-wrapped (two attempts) and capped at
+ * OP_TIMEOUT_MS. Budget accordingly before widening the set further.
+ *
+ * A secondary league that fails is logged and recorded; it never fails the
+ * active league or the cron response.
+ */
+export async function refreshRadarSnapshots(ctx, {
+  now = Date.now(),
+  trace = noop,
+  clock = () => Date.now(),
+  budgetMs = SNAPSHOT_BUDGET_MS,
+  makeRepo = repository,
+} = {}) {
+  const deadlineAt = now + budgetMs;
+  // Slowest league build observed in this invocation; the reserve is derived
+  // from it so the guard calibrates on real cost once pass 1 has run.
+  let worstLeagueMs = 0;
+  const canStartAnotherLeague = () => clock() + snapshotLeagueReserve(worstLeagueMs) <= deadlineAt;
+
+  const buildLeague = async (game, league) => {
+    const startedAt = clock();
+    trace("snapshot.scope.start", { game: game.id, league });
+    try {
+      const discoveryRepo = gameAwareRepository(
+        makeRepo(scopeFor(ctx, game, league), { trace, anchors: game.anchors }),
+        game.id,
+      );
+      if (!discoveryRepo || !(await withDbRetry(() => discoveryRepo.hasPricedCandles()))) {
+        const skipped = { game: game.id, league, skipped: "no-data" };
+        trace("snapshot.scope.end", skipped);
+        return skipped;
       }
+      const previousAuto = discoveryRepo.readRadarSnapshot
+        ? await withDbRetry(() => discoveryRepo.readRadarSnapshot("auto"))
+        : null;
+      const anchorPlan = await automaticAnchorPlan(
+        discoveryRepo,
+        game,
+        previousAuto?.payload?.anchor ?? game.anchorCurrency,
+      );
+      const repo = gameAwareRepository(
+        makeRepo(scopeFor(ctx, game, league), { trace, anchors: anchorPlan.anchors }),
+        game.id,
+      );
+      const payloads = await withDbRetry(() =>
+        buildRadarPayloads(radarBuildInput(ctx, game, repo, now, anchorPlan.anchors)),
+      );
+      const snapshots = Object.entries(payloads).map(([anchor, payload]) => ({
+        anchor,
+        payload: finalizeRadarBody(payload, game, league),
+      }));
+      snapshots.push({
+        anchor: "auto",
+        payload: mergeRadarPayloads(
+          Object.fromEntries(snapshots.map((snapshot) => [snapshot.anchor, snapshot.payload])),
+          { preferredAnchor: anchorPlan.primary },
+        ),
+      });
+      await withDbRetry(() => repo.writeRadarSnapshots(snapshots));
+      const result = {
+        game: game.id,
+        league,
+        anchors: snapshots.length,
+        rows: snapshots.reduce((count, item) => count + item.payload.rows.length, 0),
+        elapsedMs: clock() - startedAt,
+      };
+      trace("snapshot.scope.end", result);
+      return result;
+    } catch (error) {
+      const result = {
+        game: game.id,
+        league,
+        error: error?.message ?? String(error),
+        elapsedMs: clock() - startedAt,
+      };
+      trace("snapshot.scope.error", result);
+      return result;
+    } finally {
+      worstLeagueMs = Math.max(worstLeagueMs, clock() - startedAt);
+    }
+  };
+
+  const games = gameConfigs(ctx.config).filter((game) => game.enabled);
+  const results = [];
+  const built = new Map(games.map((game) => [game.id, new Set()]));
+
+  // Pass 1 — the default landing scope of every enabled game, always, budget or
+  // not. This is exactly what the cron did before secondary leagues existed.
+  for (const game of games) {
+    built.get(game.id).add(game.activeLeague);
+    results.push(await buildLeague(game, game.activeLeague));
+  }
+
+  // Pass 2 — every other public league with recent priced candles. Discovery
+  // failures degrade to "no secondary leagues this run", never to a failed cron.
+  for (const game of games) {
+    // Don't even pay for the discovery query once nothing else can start.
+    if (!canStartAnotherLeague()) break;
+    let discovered = [];
+    try {
+      const discoveryRepo = makeRepo(scopeFor(ctx, game, game.activeLeague), { trace, anchors: game.anchors });
+      discovered = discoveryRepo?.listPricedLeagues
+        ? await withDbRetry(() => discoveryRepo.listPricedLeagues())
+        : [];
+    } catch (error) {
+      trace("snapshot.discovery.error", { game: game.id, error: error?.message ?? String(error) });
+      discovered = [];
+    }
+    for (const row of discovered) {
+      const league = row?.league;
+      if (typeof league !== "string" || !league) continue;
+      if (built.get(game.id).has(league)) continue;
+      // Defence in depth: normalizeCxDigest already drops private (PLnnnnn)
+      // leagues at ingest. getConfig's leagueAvailability deliberately does NOT
+      // re-filter — it only reports what exists — whereas spending cron budget
+      // on a private scope would be a real cost, so this consumer does.
+      if (!isPublicLeague(league)) continue;
+      built.get(game.id).add(league);
+      if (!canStartAnotherLeague()) {
+        const skipped = { game: game.id, league, skipped: "budget" };
+        results.push(skipped);
+        // Paired start/end so every league in the run reads the same way in the
+        // trace, exactly like the "no-data" skip inside buildLeague.
+        trace("snapshot.scope.start", { game: game.id, league });
+        trace("snapshot.scope.end", skipped);
+        continue;
+      }
+      results.push(await buildLeague(game, league));
     }
   }
   return results;

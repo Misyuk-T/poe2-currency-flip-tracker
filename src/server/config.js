@@ -22,6 +22,28 @@
  * @property {string|null} poesessid
  */
 
+/**
+ * Last-resort default league per game, used when neither the env override nor
+ * the `league_meta.is_default` row in the database can answer. It is a cold-start
+ * constant, NOT the source of truth: the runtime precedence is
+ * env override > DB is_default > this (see apps/web/lib/default-league.js).
+ */
+export const FALLBACK_LEAGUES = {
+  poe2: "Runes of Aldur",
+  poe1: "Standard",
+};
+
+/**
+ * The env override for one game's default league, or null when it is unset or
+ * blank. `LEAGUE` deliberately stays supported — it just stops being the source
+ * of truth and becomes a manual override that outranks the database.
+ */
+export function envLeagueOverride(game, env = process.env) {
+  const raw = game === "poe1" ? env.POE1_LEAGUE : game === "poe2" ? env.LEAGUE : undefined;
+  const value = typeof raw === "string" ? raw.trim() : "";
+  return value || null;
+}
+
 /** @returns {AppConfig} */
 export function loadConfig(env = process.env) {
   const providerMode = (env.PROVIDER_MODE ?? "fixture").toLowerCase() === "live" ? "live" : "fixture";
@@ -32,11 +54,18 @@ export function loadConfig(env = process.env) {
     (env.INGEST_PROVIDER_MODE ?? providerMode).toLowerCase() === "live" ? "live" : "fixture";
   // Public PoE2 leagues exposed by the read API/UI. The active LEAGUE is always
   // included; live ingest stores every public league carried by the CDN digest.
-  const league = env.LEAGUE ?? "Runes of Aldur";
+  // `league`/`poe1League` remain the SYNCHRONOUS cold-start answer (env override
+  // first, then the code constant). The runtime default league is resolved
+  // asynchronously against league_meta — see apps/web/lib/default-league.js —
+  // and these two only ever act as its fallback.
+  const league = envLeagueOverride("poe2", env) ?? FALLBACK_LEAGUES.poe2;
   const leagues = list(env.LEAGUES, [league]);
   if (!leagues.includes(league)) leagues.unshift(league);
-  const poe1League = env.POE1_LEAGUE ?? "Standard";
-  const poe1Leagues = list(env.POE1_LEAGUES, [poe1League, "Hardcore", "Ruthless", "Ancestors"]);
+  const poe1League = envLeagueOverride("poe1", env) ?? FALLBACK_LEAGUES.poe1;
+  // No hardcoded PoE 1 league list any more: leagues are discovered from the
+  // candles we actually store (listPricedLeagues, unioned in getConfig), exactly
+  // like PoE 2. POE1_LEAGUES stays as an explicit override.
+  const poe1Leagues = list(env.POE1_LEAGUES, [poe1League]);
   if (!poe1Leagues.includes(poe1League)) poe1Leagues.unshift(poe1League);
 
   // Active anchor + the set of anchors the scheduler maintains books for. The

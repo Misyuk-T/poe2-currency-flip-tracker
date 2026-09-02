@@ -9,7 +9,8 @@
  * in tests with no real database.
  */
 
-import { canonicalizeCandle } from "../domain/cx-market.js";
+import { canonicalizeCandle, isPublicLeague } from "../domain/cx-market.js";
+import { isPermanentLeague } from "../domain/league-default.js";
 
 const WINDOW_DAYS = 7;
 // How far back the RADAR read looks. The Free-plan store retains seven days;
@@ -237,6 +238,155 @@ export function createRadarRepository({
     return rows
       .filter((row) => typeof row.league === "string" && row.league.length > 0)
       .map((row) => ({ league: row.league, newestCompletedHour: Number(row.newest_completed_hour) || null }));
+  }
+
+  /**
+   * Recompute `league_meta` for this whole stream in ONE bounded aggregate.
+   *
+   * The query groups the candle window by league and asks four questions per
+   * league: earliest hour, latest hour, distinct pairs, distinct completed
+   * hours. It filters on (game, realm, provider) and selects only league,
+   * pair_id and completed_hour, so every column it touches lives in the table's
+   * PRIMARY KEY index (game, realm, league, provider, pair_id, completed_hour):
+   * an index-only scan over the (game, realm) prefix, already ordered by league,
+   * feeds a GroupAggregate with no extra sort and no heap access. That matters
+   * because the dedicated pair_recent index was dropped for storage reasons
+   * (migration 20260801132323) — the primary key is what is left, and it fits.
+   *
+   * Writes are upserts; rows are never deleted. `first_seen_at` is written with
+   * least(existing, new) so seven-day retention pruning can never make an old
+   * league look newly born — which would corrupt the forward-only hysteresis in
+   * chooseDefaultLeague. `pair_count`/`completed_hours` are replaced, not
+   * accumulated: they describe depth in the CURRENT window, which is what the
+   * threshold asks about. `is_default` is deliberately untouched here; only
+   * setDefaultLeague moves it.
+   */
+  async function refreshLeagueMeta({ now = new Date() } = {}) {
+    const rows = await withTimeout(
+      sql`
+        select league,
+               extract(epoch from min(completed_hour)) * 1000 as first_seen_at,
+               extract(epoch from max(completed_hour)) * 1000 as last_seen_at,
+               count(distinct pair_id) as pair_count,
+               count(distinct completed_hour) as completed_hours
+        from hourly_market_candles
+        where game = ${scope.game} and realm = ${scope.realm} and provider = ${scope.mode}
+          and completed_hour >= now() - make_interval(days => ${windowDays})
+        group by league`,
+      opTimeoutMs,
+      "league meta aggregate",
+      onTimeout,
+    );
+    const observed = rows
+      .filter((row) => typeof row.league === "string" && row.league.length > 0)
+      .map((row) => ({
+        league: row.league,
+        firstSeenAt: Number(row.first_seen_at) || null,
+        lastSeenAt: Number(row.last_seen_at) || null,
+        pairCount: Number(row.pair_count) || 0,
+        completedHours: Number(row.completed_hours) || 0,
+        isPublic: isPublicLeague(row.league),
+        isPermanent: isPermanentLeague(row.league, scope.game),
+      }));
+    if (!observed.length) return readLeagueMeta();
+    onPhase("db.leagueMeta.upsert.start", { leagues: observed.length });
+    const updatedAt = now instanceof Date ? now : new Date(now);
+    for (const row of observed) {
+      await withTimeout(
+        sql`
+          insert into league_meta (
+            game, realm, provider, league,
+            first_seen_at, last_seen_at, pair_count, completed_hours,
+            is_public, is_permanent, updated_at
+          ) values (
+            ${scope.game}, ${scope.realm}, ${scope.mode}, ${row.league},
+            ${row.firstSeenAt == null ? null : new Date(row.firstSeenAt)},
+            ${row.lastSeenAt == null ? null : new Date(row.lastSeenAt)},
+            ${row.pairCount}, ${row.completedHours},
+            ${row.isPublic}, ${row.isPermanent}, ${updatedAt}
+          )
+          on conflict (game, realm, provider, league) do update set
+            first_seen_at = least(league_meta.first_seen_at, excluded.first_seen_at),
+            last_seen_at = greatest(league_meta.last_seen_at, excluded.last_seen_at),
+            pair_count = excluded.pair_count,
+            completed_hours = excluded.completed_hours,
+            is_public = excluded.is_public,
+            is_permanent = excluded.is_permanent,
+            updated_at = excluded.updated_at`,
+        opTimeoutMs,
+        "league meta upsert",
+        onTimeout,
+      );
+    }
+    onPhase("db.leagueMeta.upsert.end", { leagues: observed.length });
+    return readLeagueMeta();
+  }
+
+  /** Stored league metadata for one stream. Newest first-seen first. */
+  async function readLeagueMeta(
+    game = scope.game,
+    realm = scope.realm,
+    provider = scope.mode,
+  ) {
+    const rows = await withTimeout(
+      sql`
+        select league,
+               extract(epoch from first_seen_at) * 1000 as first_seen_at,
+               extract(epoch from last_seen_at) * 1000 as last_seen_at,
+               pair_count, completed_hours, is_public, is_permanent, is_default
+        from league_meta
+        where game = ${game} and realm = ${realm} and provider = ${provider}
+        order by first_seen_at desc nulls last, league asc`,
+      opTimeoutMs,
+      "league meta read",
+      onTimeout,
+    );
+    return rows.map((row) => ({
+      game,
+      realm,
+      provider,
+      league: row.league,
+      firstSeenAt: row.first_seen_at == null ? null : Number(row.first_seen_at),
+      lastSeenAt: row.last_seen_at == null ? null : Number(row.last_seen_at),
+      pairCount: Number(row.pair_count) || 0,
+      completedHours: Number(row.completed_hours) || 0,
+      isPublic: row.is_public !== false,
+      isPermanent: row.is_permanent === true,
+      isDefault: row.is_default === true,
+    }));
+  }
+
+  /**
+   * Point `is_default` at one league, atomically. The chosen league is upserted
+   * (it may have no candles yet — an env/code fallback still deserves a row) and
+   * every other league in the same stream is cleared in the SAME transaction, so
+   * a reader can never observe zero or two defaults.
+   */
+  async function setDefaultLeague(
+    league,
+    { game = scope.game, realm = scope.realm, provider = scope.mode } = {},
+  ) {
+    if (typeof league !== "string" || !league) return false;
+    onPhase("db.leagueMeta.default.start", { league });
+    await withTimeout(
+      sql.begin(async (tx) => {
+        await tx`
+          insert into league_meta (game, realm, provider, league, is_public, is_permanent, is_default, updated_at)
+          values (${game}, ${realm}, ${provider}, ${league},
+                  ${isPublicLeague(league)}, ${isPermanentLeague(league, game)}, true, now())
+          on conflict (game, realm, provider, league) do update set
+            is_default = true, updated_at = now()`;
+        await tx`
+          update league_meta set is_default = false, updated_at = now()
+          where game = ${game} and realm = ${realm} and provider = ${provider}
+            and league <> ${league} and is_default`;
+      }),
+      opTimeoutMs,
+      "league meta default",
+      onTimeout,
+    );
+    onPhase("db.leagueMeta.default.end", { league });
+    return true;
   }
 
   /**
@@ -490,6 +640,9 @@ export function createRadarRepository({
     readPairCandles,
     hasPricedCandles,
     listPricedLeagues,
+    refreshLeagueMeta,
+    readLeagueMeta,
+    setDefaultLeague,
     listAnchorCandidates,
     readRadarSnapshot,
     writeRadarSnapshots,

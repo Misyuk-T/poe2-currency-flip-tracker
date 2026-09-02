@@ -121,35 +121,26 @@ export function metadataForShortId(shortId, game = "poe2") {
 }
 
 /** True when the id is covered by the map (not just a humanized fallback). */
-export function isKnownCurrency(metadataId, game = "poe2", { overrides = null } = {}) {
+export function isKnownCurrency(metadataId, game = "poe2") {
   const { items } = load(game);
-  if (overrides?.get?.(metadataId)?.name) return true;
   return Object.prototype.hasOwnProperty.call(items, metadataId);
 }
 
 /** { metadataId: name } for every mapped item — merge into the radar `names` map
  *  so tail targets (Metadata ids without a catalog short id) still render a real
  *  name instead of a raw path. */
-export function identityNames(game = "poe2", { overrides = null } = {}) {
+export function identityNames(game = "poe2") {
   const { items } = load(game);
   const out = {};
   for (const [meta, e] of Object.entries(items)) {
     out[meta] = e.name;
     if (e.shortId) out[e.shortId] = e.name;
   }
-  // DB last: it is the higher-precedence layer, and it only ever carries ids the
-  // committed snapshot could not answer or answered worse.
-  for (const [meta, o] of overrides ?? []) {
-    if (!o?.name) continue;
-    out[meta] = o.name;
-    const shortId = o.shortId ?? items[meta]?.shortId;
-    if (shortId) out[shortId] = o.name;
-  }
   return out;
 }
 
 /** { canonical-or-Metadata id: official GGG CDN image URL }. */
-export function identityIcons(game = "poe2", { overrides = null } = {}) {
+export function identityIcons(game = "poe2") {
   const { items } = load(game);
   const out = {};
   for (const [meta, e] of Object.entries(items)) {
@@ -158,17 +149,11 @@ export function identityIcons(game = "poe2", { overrides = null } = {}) {
     out[meta] = icon;
     if (e.shortId) out[e.shortId] = icon;
   }
-  for (const [meta, o] of overrides ?? []) {
-    if (!o?.icon) continue;
-    out[meta] = o.icon;
-    const shortId = o.shortId ?? items[meta]?.shortId;
-    if (shortId) out[shortId] = o.icon;
-  }
   return out;
 }
 
 /** { canonical-or-Metadata id: RePoE item class }. */
-export function identityCategories(game = "poe2", { overrides = null } = {}) {
+export function identityCategories(game = "poe2") {
   const { items } = load(game);
   const out = {};
   for (const [meta, e] of Object.entries(items)) {
@@ -176,12 +161,6 @@ export function identityCategories(game = "poe2", { overrides = null } = {}) {
     if (!category) continue;
     out[meta] = category;
     if (e.shortId) out[e.shortId] = category;
-  }
-  for (const [meta, o] of overrides ?? []) {
-    if (!o?.category) continue;
-    out[meta] = o.category;
-    const shortId = o.shortId ?? items[meta]?.shortId;
-    if (shortId) out[shortId] = o.category;
   }
   return out;
 }

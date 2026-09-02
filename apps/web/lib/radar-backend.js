@@ -369,6 +369,12 @@ export function tradableRows(rows) {
 /**
  * Fold the `cx_identity` overrides on top of the process-cached identity maps.
  *
+ * THE single bulk merge. `identityNames/Icons/Categories` in
+ * src/domain/cx-identity.js deliberately know nothing about overrides — they
+ * read the committed snapshot and only that — so there is exactly one place
+ * where DB-over-JSON precedence is implemented for the radar, and one more
+ * (`resolveCurrency(id, game, { overrides })`) for single-id lookups.
+ *
  * The base maps hold thousands of entries and are built once per warm instance;
  * copying them per request to add a handful of overrides would be a real cost
  * for no reason. So the merged result is memoized against the overrides Map
@@ -378,7 +384,7 @@ export function tradableRows(rows) {
  * icon leaves the committed icon standing.
  */
 const mergedIdentityCache = new WeakMap();
-function identityWithOverrides(identity, overrides) {
+export function identityWithOverrides(identity, overrides) {
   if (!overrides || overrides.size === 0) return identity;
   const cached = mergedIdentityCache.get(overrides);
   if (cached?.base === identity) return cached.merged;
@@ -816,6 +822,10 @@ export async function getHotlist(searchParams = new URLSearchParams()) {
   if (selected.error) return selected.error;
   const repo = gameAwareRepository(await resolveRepo(ctx, scopeFor(ctx, game, selected.league)), game.id);
   if (!repo) return NO_DB;
+  // Unlike /api/radar there is no precomputed-snapshot short circuit to sit
+  // below: the hotlist is ALWAYS built from candles here, and the build needs
+  // the names map. So this load is on the only path there is. It is the same
+  // bounded 2s/one-attempt read, and it is a cache hit for the next ten minutes.
   const overrides = await loadIdentityOverrides(game.id, { config });
   const names = identityWithOverrides(
     identityByGame[game.id] ?? { names: CORE_NAMES, icons: {}, categories: {} },
@@ -1018,11 +1028,11 @@ export async function getStatus() {
   const { league, source } = await resolveDefaultLeague(config.poeGame, { config });
   const repo = await resolveRepo(ctx, { ...ctx.scope, league });
   // How much of the currency identity is coming from the database rather than
-  // the committed snapshot, and how much the daily job still cannot label. Both
+  // the committed snapshot, and how much of it is still only half-resolved. Both
   // numbers fall out of the SAME cached read the radar already does — no extra
-  // query, and no `cx_identity_runs` table to keep in sync. `unresolvedObserved`
-  // counts stored rows that still have no icon, which is exactly the set the
-  // job's retry window will pick up again.
+  // query, and no `cx_identity_runs` table to keep in sync. `iconlessRows` is
+  // named for exactly what it counts: stored rows with no icon, which is the set
+  // the job's retry window will pick up again.
   const identityState = await readIdentityOverridesCached(config.poeGame, { config });
   const base = {
     providerMode: config.providerMode,
@@ -1032,7 +1042,7 @@ export async function getStatus() {
     sourceMode: sourceMode(config),
     identity: {
       overrides: identityState.overrides.size,
-      unresolvedObserved: identityState.unresolved,
+      iconlessRows: identityState.iconless,
     },
   };
   if (!repo) return { status: 200, body: { ...base, radar: { configured: false, reason: "no-database" } } };

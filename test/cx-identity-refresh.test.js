@@ -7,6 +7,7 @@ import {
   TRADE_STATIC_URLS,
   catalogItemsFromTradeStatic,
   identityRowFor,
+  observedMetadataIds,
   refreshCurrencyIdentity,
   selectIdentityCandidates,
 } from "../apps/web/lib/identity-refresh.js";
@@ -99,13 +100,15 @@ test("row shaping records how much upstream actually knew", () => {
     shortId: "brand-new-orb",
     icon: "https://example.test/new.png",
     category: "Currency",
+    taxonomySource: "official-id",
   }, { game: "poe2", knownUpstream: true });
   assert.deepEqual(resolved, {
     metadataId: TAIL,
     name: "Brand New Orb",
     icon: "https://example.test/new.png",
     category: "Currency",
-    subcategory: "Core currency",
+    // Derived presentation taxonomy is not stored; see identityRowFor.
+    subcategory: null,
     shortId: "brand-new-orb",
     source: "repoe-catalog",
   });
@@ -117,10 +120,51 @@ test("row shaping records how much upstream actually knew", () => {
     knownUpstream: true,
   });
   assert.equal(derived.icon, "https://web.poecdn.com/image/Art/2DItems/Currency/New.png?scale=1&realm=poe2");
-  assert.equal(derived.subcategory, null);
 
   const placeholder = identityRowFor(TAIL, { name: "Currency Brand New Thing" }, { game: "poe2", knownUpstream: false });
   assert.deepEqual([placeholder.icon, placeholder.source], [null, "humanized"]);
+});
+
+test("a guessed category is stored as null so the committed JSON keeps answering", () => {
+  // repo-class is RePoE's item class humanized, not an official trade category.
+  // Storing it would permanently shadow a better category from a later
+  // identity:build, because the reader takes DB over JSON and the upsert never
+  // degrades a field.
+  for (const taxonomySource of ["repo-class", "unresolved", undefined]) {
+    const row = identityRowFor(TAIL, {
+      name: "Brand New Orb",
+      art: "2DItems/Currency/New",
+      category: "Stackable Currency",
+      taxonomySource,
+    }, { game: "poe2", knownUpstream: true });
+    assert.equal(row.category, null, `${taxonomySource} must not be stored as a category`);
+    // The name and the derived icon are still worth storing.
+    assert.equal(row.name, "Brand New Orb");
+    assert.equal(row.icon, "https://web.poecdn.com/image/Art/2DItems/Currency/New.png?scale=1&realm=poe2");
+    assert.equal(row.source, "repoe-catalog");
+  }
+
+  for (const taxonomySource of ["official-id", "official-name", "official-path-token", "learned-prefix"]) {
+    const row = identityRowFor(TAIL, { name: "Brand New Orb", category: "Currency", taxonomySource }, {
+      game: "poe2",
+      knownUpstream: true,
+    });
+    assert.equal(row.category, "Currency", `${taxonomySource} is an official answer and must be stored`);
+  }
+});
+
+test("observed ids are seeded as Metadata paths, reverse-mapped from the stored canonical ids", () => {
+  // hourly_market_candles stores canonical short ids for everything the
+  // committed bridge knows; both the taxonomy's prefix learning and the
+  // short-id collision tie-break key on Metadata paths, so the short ids must
+  // be mapped back before they are handed to the resolver.
+  const seeded = observedMetadataIds(["exalted", "divine", TAIL, "not-a-real-short-id"], "poe2");
+  assert.ok([...seeded].every((id) => id.startsWith("Metadata/")), `expected only Metadata paths, got ${[...seeded]}`);
+  assert.ok(seeded.has(EXALTED), "the anchor's short id must map back to its Metadata path");
+  assert.ok(seeded.has("Metadata/Items/Currency/CurrencyModValues"), "divine must map back too");
+  assert.ok(seeded.has(TAIL), "an already-unmapped Metadata path passes through untouched");
+  assert.equal(seeded.has("not-a-real-short-id"), false, "an id with no bridge is dropped, not guessed");
+  assert.equal(seeded.size, 3);
 });
 
 test("the trade static feed is parsed the way build-catalog.mjs parses it", () => {

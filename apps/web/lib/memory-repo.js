@@ -188,7 +188,10 @@ export function createMemoryRepository(scope, { windowDays = WINDOW_DAYS, maxHou
       .map((row) => ({ ...row }));
   }
 
-  async function upsertCxIdentity(rows, { game = scope.game, now = Date.now() } = {}) {
+  // `batchSize` is accepted and ignored: batching is a transport detail of the
+  // SQL twin (one multi-row insert per 50 ids), not a semantic difference.
+  async function upsertCxIdentity(rows, { game = scope.game, now = Date.now(), batchSize } = {}) {
+    void batchSize;
     const entries = (rows ?? []).filter((row) => typeof row?.metadataId === "string" && row.metadataId);
     const at = now instanceof Date ? now.getTime() : Number(now);
     for (const row of entries) {

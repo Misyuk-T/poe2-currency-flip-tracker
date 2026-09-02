@@ -30,8 +30,7 @@
  */
 
 import { loadConfig } from "../../../src/server/config.js";
-import { catalogTaxonomy } from "../../../src/domain/catalog-taxonomy.js";
-import { iconUrlFromArt, isKnownCurrency } from "../../../src/domain/cx-identity.js";
+import { iconUrlFromArt, isKnownCurrency, metadataForShortId } from "../../../src/domain/cx-identity.js";
 import { buildIdentityEntries } from "../../../src/domain/identity-resolve.js";
 import { createRadarRepository } from "../../../src/storage/radar-repository.js";
 import { getSql, resetSql, withDbRetry } from "./db.js";
@@ -82,6 +81,49 @@ const noop = () => {};
 
 /** Only full Metadata paths are candidates: a short id is already canonical. */
 const isMetadataId = (id) => typeof id === "string" && id.startsWith("Metadata/");
+
+/**
+ * Taxonomy sources we are willing to STORE a category from.
+ *
+ * `repo-class` is RePoE's internal item class, humanized ("Stackable Currency"),
+ * and `unresolved` is nothing at all. Neither is an official trade category —
+ * and because the reader takes DB over JSON per field and the upsert never
+ * degrades a value, writing one would PERMANENTLY shadow the better category a
+ * later `npm run identity:build` puts in the committed snapshot. So those two
+ * are stored as null and the JSON/humanized fallback keeps answering.
+ */
+const TRUSTED_TAXONOMY_SOURCES = new Set(["official-id", "official-name", "official-path-token", "learned-prefix"]);
+
+/**
+ * The observed ids, expressed the way the resolver needs them: Metadata paths.
+ *
+ * This matters more than it looks. `hourly_market_candles` stores CANONICAL ids
+ * — for PoE2 the ingest has already rewritten every id the committed bridge
+ * knows into a trade short id ("chaos"), and only the unmapped tail keeps its
+ * raw Metadata path. But both consumers of `observedIds` key on Metadata paths:
+ * `buildIdentityTaxonomy` seeds its prefix learning from them
+ * (src/domain/identity-taxonomy.js), and `chooseShortIdOwner` settles name
+ * collisions with them (src/domain/identity-collision.js). Handing them short
+ * ids would silently disable both — new siblings would fall through to
+ * `repo-class`, and contested names would be decided by a blind sort.
+ *
+ * So every short id is reverse-mapped through the committed bridge and raw
+ * Metadata paths pass through untouched. The result is the set of ids GGG
+ * actually lists markets for — the same thing `fetchTradedIds()` collects in
+ * scripts/build-identity.mjs, just read from our own candles instead of the CDN.
+ */
+export function observedMetadataIds(observed, game = "poe2") {
+  const ids = new Set();
+  for (const id of observed ?? []) {
+    if (isMetadataId(id)) {
+      ids.add(id);
+      continue;
+    }
+    const metadataId = metadataForShortId(id, game);
+    if (metadataId) ids.add(metadataId);
+  }
+  return ids;
+}
 
 function defaultMakeRepo(scope) {
   const sql = getSql();
@@ -191,17 +233,20 @@ export function selectIdentityCandidates(observedIds, existingRows, {
  */
 export function identityRowFor(metadataId, entry, { game = "poe2", knownUpstream = false } = {}) {
   const icon = entry?.icon ?? iconUrlFromArt(entry?.art, game) ?? null;
-  const category = entry?.category ?? null;
-  const subcategory = category && entry?.name
-    ? catalogTaxonomy({ name: entry.name, category }).subcategory ?? null
-    : null;
+  // Only an OFFICIAL trade category is worth storing — see TRUSTED_TAXONOMY_SOURCES.
+  const category = TRUSTED_TAXONOMY_SOURCES.has(entry?.taxonomySource) ? entry?.category ?? null : null;
   const source = !knownUpstream ? "humanized" : icon || entry?.shortId ? "repoe-catalog" : "repoe";
   return {
     metadataId,
     name: entry?.name ?? null,
     icon,
     category,
-    subcategory,
+    // The column exists (migration 010) but nothing writes it yet. Subcategory is
+    // DERIVED presentation taxonomy (catalogTaxonomy), not something upstream
+    // told us — deriving it here would freeze today's derivation into a row that
+    // outranks tomorrow's code, for a field no reader consumes. Null until a real
+    // source exists.
+    subcategory: null,
     shortId: entry?.shortId ?? null,
     source,
   };
@@ -306,11 +351,12 @@ export async function refreshCurrencyIdentity({
   }
 
   // The SAME pure join the build scripts run. Observed ids seed the taxonomy's
-  // prefix learning and settle short-id collisions, exactly as they do there.
+  // prefix learning and settle short-id collisions, exactly as they do there —
+  // which is why they must be Metadata paths, not the stored canonical ids.
   const { items } = buildIdentityEntries({
     baseItems,
     catalogItems,
-    observedIds: new Set(observed),
+    observedIds: observedMetadataIds(observed, game),
     coreShortIds: game === "poe1" ? POE1_CORE_SHORT_IDS : {},
     joinShortIdsByName: game === "poe2",
     attachCatalogIcon: game === "poe2",

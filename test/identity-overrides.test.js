@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { resolveCurrency, identityCategories, identityIcons, identityNames } from "../src/domain/cx-identity.js";
+import { resolveCurrency } from "../src/domain/cx-identity.js";
+import { identityWithOverrides } from "../apps/web/lib/radar-backend.js";
 import {
   loadIdentityOverrides,
   readIdentityOverridesCached,
@@ -68,14 +69,27 @@ test("with no override at all an unmapped id still falls through to the humanize
   assert.deepEqual([bare.name, bare.icon, bare.category], ["Currency Brand New Thing", null, null]);
 });
 
-test("the bulk identity maps take the same precedence, keyed by Metadata id and short id", () => {
+test("the bulk merge keys by Metadata id and short id and leaves everything else alone", () => {
+  const base = {
+    names: { [EXALTED]: "Exalted Orb", exalted: "Exalted Orb" },
+    icons: { [EXALTED]: "https://example.test/ex.png" },
+    categories: { [EXALTED]: "Currency" },
+  };
   const overrides = new Map([[TAIL, { name: "Brand New Orb", icon: "https://example.test/new.png", category: "Currency", shortId: "brand-new-orb" }]]);
-  assert.equal(identityNames("poe2", { overrides })[TAIL], "Brand New Orb");
-  assert.equal(identityNames("poe2", { overrides })["brand-new-orb"], "Brand New Orb");
-  assert.equal(identityIcons("poe2", { overrides })["brand-new-orb"], "https://example.test/new.png");
-  assert.equal(identityCategories("poe2", { overrides })[TAIL], "Currency");
-  // Untouched ids keep the committed answer.
-  assert.equal(identityNames("poe2", { overrides })[EXALTED], "Exalted Orb");
+  const merged = identityWithOverrides(base, overrides);
+
+  assert.equal(merged.names[TAIL], "Brand New Orb");
+  assert.equal(merged.names["brand-new-orb"], "Brand New Orb");
+  assert.equal(merged.icons["brand-new-orb"], "https://example.test/new.png");
+  assert.equal(merged.categories[TAIL], "Currency");
+  // Untouched ids keep the committed answer, and the base maps are not mutated.
+  assert.equal(merged.names[EXALTED], "Exalted Orb");
+  assert.equal(base.names[TAIL], undefined);
+
+  // Memoized against the overrides Map itself, so a warm request pays nothing.
+  assert.equal(identityWithOverrides(base, overrides), merged);
+  // An empty override set is the identity function, not a copy.
+  assert.equal(identityWithOverrides(base, new Map()), base);
 });
 
 test("a missing cx_identity table is traced once and degrades to an empty map", async () => {
@@ -138,7 +152,7 @@ test("the loader counts iconless rows so /api/status needs no second query", asy
     trace: () => {},
   });
   assert.equal(state.overrides.size, 2);
-  assert.equal(state.unresolved, 2);
+  assert.equal(state.iconless, 2);
   resetIdentityOverridesCache();
 });
 

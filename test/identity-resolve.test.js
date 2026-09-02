@@ -108,21 +108,40 @@ test("an id the exchange lists but RePoE has never heard of still gets a humaniz
 
 /**
  * The real regression guard for "the build script's output must not move": the
- * committed map is fed back through the shared resolver as if it had just come
- * off RePoE, alongside the real committed catalog, and must come out identical.
- * Offline — the upstream documents are not available in CI, but the committed
+ * WHOLE committed map is fed back through the shared resolver as if it had just
+ * come off RePoE, alongside the real committed catalog, and must come out
+ * identical — name, class, art, icon, short id, category AND taxonomySource.
+ * Offline: the upstream documents are not available in CI, but the committed
  * artefact carries everything they contributed.
+ *
+ * Two groups of ids are excluded, and both exclusions are the point rather than
+ * a fudge, because both depend on the live exchange, which a test cannot have:
+ *
+ *   - `learned-prefix` entries (5 of 4825). Prefix learning is seeded from the
+ *     ids GGG currently lists markets for; without that set nothing is learned.
+ *   - ids whose display name is carried by more than one Metadata id (contested
+ *     names). `chooseShortIdOwner` asks the exchange which twin is real, and with
+ *     no exchange it falls back to a stable sort — which can hand the short id,
+ *     and with it `official-id` vs `official-name`, to the other twin.
+ *
+ * Everything else — 4355 ids — must round-trip exactly. Category and
+ * taxonomySource are asserted deliberately: they are the fields the identity job
+ * writes into a table that outranks this file, so a drift here is a drift that
+ * would become permanent in production.
  */
-test("re-resolving committed entries against the real catalog reproduces the committed JSON", () => {
-  const entries = Object.entries(committed.items);
-  // A deterministic spread across the file rather than the first N (which are all
-  // core currency): every 137th id, plus the two collision-sensitive anchors.
-  const sampled = entries.filter((_, index) => index % 137 === 0).slice(0, 40).map(([id]) => id);
-  const sample = [...new Set([...sampled, EXALTED, GREATER_EXALTED])];
-  assert.ok(sample.length > 10, "expected a meaningful sample of committed ids");
+test("re-resolving the committed map against the real catalog reproduces it exactly", () => {
+  const ids = Object.keys(committed.items);
+  const nameCounts = new Map();
+  for (const id of ids) {
+    const key = nameKey(committed.items[id].name);
+    nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1);
+  }
+  const exchangeIndependent = (id) =>
+    committed.items[id].taxonomySource !== "learned-prefix" &&
+    nameCounts.get(nameKey(committed.items[id].name)) === 1;
 
   const baseItems = {};
-  for (const id of sample) {
+  for (const id of ids) {
     const entry = committed.items[id];
     baseItems[id] = {
       name: entry.name,
@@ -133,24 +152,34 @@ test("re-resolving committed entries against the real catalog reproduces the com
   const { items } = buildIdentityEntries({
     baseItems,
     catalogItems: catalog.items,
-    observedIds: new Set(sample),
+    // Empty on purpose: see the exclusions above. Seeding this with anything
+    // other than the ids GGG actually trades changes categories — feeding it all
+    // 4825 committed ids moves 1056 of them.
+    observedIds: new Set(),
     joinShortIdsByName: true,
     attachCatalogIcon: true,
   });
 
-  for (const id of sample) {
+  const checked = ids.filter(exchangeIndependent);
+  assert.ok(checked.length > 4_000, `expected most of the map to be checkable, got ${checked.length}`);
+  // `official-name` is excluded as a class, not by accident: resolving by name
+  // instead of by id is what a contested name looks like, so every such entry
+  // falls into the exchange-dependent group above.
+  const sources = new Set(checked.map((id) => committed.items[id].taxonomySource));
+  for (const source of ["official-id", "official-path-token", "repo-class"]) {
+    assert.ok(sources.has(source), `expected the checked set to cover ${source}, got ${[...sources]}`);
+  }
+
+  for (const id of checked) {
     const expected = committed.items[id];
     const actual = items[id];
     assert.deepEqual(
-      [actual.name, actual.class, actual.art, actual.icon],
-      [expected.name, expected.class, expected.art, expected.icon],
-      `identity fields drifted for ${id}`,
+      [actual.name, actual.class, actual.art, actual.icon, actual.shortId, actual.category, actual.taxonomySource],
+      [expected.name, expected.class, expected.art, expected.icon, expected.shortId, expected.category, expected.taxonomySource],
+      `identity drifted for ${id}`,
     );
-    // Short ids are only owned via the catalog name join, which is exactly what
-    // the sample reproduces; an id whose committed short id came from a name the
-    // sample does not contain twice must still land on the same owner.
-    assert.equal(actual.shortId, expected.shortId, `short id drifted for ${id}`);
   }
+
   assert.equal(items[EXALTED].name, "Exalted Orb");
   assert.equal(items[GREATER_EXALTED].name, "Greater Exalted Orb");
   // The tier variants share one piece of art, which is precisely why the join is

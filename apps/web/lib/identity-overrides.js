@@ -87,7 +87,7 @@ function defaultMakeRepo(scope) {
 }
 
 async function loadOverrides(game, { config, trace, makeRepo }) {
-  const entry = { overrides: EMPTY, unresolved: 0, error: null };
+  const entry = { overrides: EMPTY, iconless: 0, error: null };
   const scope = {
     game,
     realm: realmForGame(game, config),
@@ -113,12 +113,13 @@ async function loadOverrides(game, { config, trace, makeRepo }) {
     return entry;
   }
   const overrides = new Map();
-  let unresolved = 0;
+  let iconless = 0;
   for (const row of rows ?? []) {
     if (!row?.metadataId) continue;
-    // A row with nothing usable is noise in the merge; count it and skip it, so
-    // /api/status can report "still unresolved" without a second query.
-    if (!row.icon) unresolved += 1;
+    // A row still missing an icon is what the job's retry window will pick up
+    // again; count it here so /api/status needs no second query. A row with
+    // nothing usable at all is also noise in the merge, so it is skipped below.
+    if (!row.icon) iconless += 1;
     if (!row.name && !row.icon && !row.category && !row.subcategory && !row.shortId) continue;
     overrides.set(row.metadataId, {
       name: row.name ?? null,
@@ -130,12 +131,13 @@ async function loadOverrides(game, { config, trace, makeRepo }) {
     });
   }
   entry.overrides = overrides;
-  entry.unresolved = unresolved;
+  entry.iconless = iconless;
   return entry;
 }
 
 /**
- * The full loaded state for one game: `{ overrides, unresolved, error }`.
+ * The full loaded state for one game: `{ overrides, iconless, error }`, where
+ * `iconless` counts stored rows that still have no icon.
  * Never throws — every failure mode degrades to an empty map plus a trace, and
  * the failure is cached too so the next attempt waits for the TTL rather than
  * hammering a database that just timed out.

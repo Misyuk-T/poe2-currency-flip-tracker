@@ -401,8 +401,11 @@ export function createRadarRepository({
    * uses; splitting the pair back into its two ids is free in JS. `canonicalPairId`
    * joins the two ids with "|", and a Metadata path never contains one.
    *
-   * `limit` bounds the scan the way listPricedLeagues does. A stream with more
-   * distinct pairs than this simply resolves the rest on the next run.
+   * `limit` bounds the ROWS RETURNED, not the scan — Postgres still walks the
+   * whole (game, realm, provider) window to compute the distinct set. That is
+   * the same shape of work as the hourly league aggregate and finishes far
+   * inside OP_TIMEOUT_MS today; if a stream ever grows past that, this needs a
+   * narrower window or its own index, not a smaller limit.
    */
   async function listObservedCurrencyIds({ days = windowDays, limit = 20_000 } = {}) {
     const rows = await withTimeout(
@@ -465,25 +468,33 @@ export function createRadarRepository({
    * (source <> 'humanized'); `updated_at` always moves, because the job's retry
    * window is "icon is null and not touched for 7 days" and a placeholder that
    * never ages would be re-fetched every single run.
+   *
+   * Written in multi-row batches (same `sql(rows, ...columns)` fragment the
+   * candle writer uses) rather than one statement per id: 200 sequential round
+   * trips would spend most of the route's 60s budget on latency alone.
    */
-  async function upsertCxIdentity(rows, { game = scope.game, now = new Date() } = {}) {
+  async function upsertCxIdentity(rows, { game = scope.game, now = new Date(), batchSize = 50 } = {}) {
     const entries = (rows ?? []).filter((row) => typeof row?.metadataId === "string" && row.metadataId);
     if (!entries.length) return 0;
     const at = now instanceof Date ? now : new Date(now);
+    const resolved = (row) => Boolean(row.source && row.source !== "humanized");
     onPhase("db.cxIdentity.upsert.start", { rows: entries.length });
-    for (const row of entries) {
+    for (let offset = 0; offset < entries.length; offset += batchSize) {
+      const batch = entries.slice(offset, offset + batchSize).map((row) => ({
+        game,
+        metadata_id: row.metadataId,
+        name: row.name ?? null,
+        icon: row.icon ?? null,
+        category: row.category ?? null,
+        subcategory: row.subcategory ?? null,
+        short_id: row.shortId ?? null,
+        source: row.source ?? "humanized",
+        resolved_at: resolved(row) ? at : null,
+        updated_at: at,
+      }));
       await withTimeout(
         sql`
-          insert into cx_identity (
-            game, metadata_id, name, icon, category, subcategory, short_id,
-            source, resolved_at, updated_at
-          ) values (
-            ${game}, ${row.metadataId}, ${row.name ?? null}, ${row.icon ?? null},
-            ${row.category ?? null}, ${row.subcategory ?? null}, ${row.shortId ?? null},
-            ${row.source ?? "humanized"},
-            ${row.source && row.source !== "humanized" ? at : null},
-            ${at}
-          )
+          insert into cx_identity ${sql(batch)}
           on conflict (game, metadata_id) do update set
             name = coalesce(excluded.name, cx_identity.name),
             icon = coalesce(excluded.icon, cx_identity.icon),

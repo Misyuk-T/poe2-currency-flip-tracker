@@ -884,3 +884,54 @@ Analytics; форумний тред pathofexile.com + каталоги; 04.09 �
 - Live `cron.job`: 1 prune-old-storage 03:17, 2 radar-ingest-hourly xx:05 —
   міграція 010 додасть третю (cx-identity-daily 04:20) через `cron.schedule`
   з ім'ям; перевірити ідемпотентність у ревю перед застосуванням.
+- **Гайд з даних після ревю — фінал і деплой:** `1b90496` (plural helper;
+  фраза про паралельну лігу лише для announced/confirmed; в observed —
+  секція `<h2>Previously announced: …</h2>` з механіками; суфікси " HC"/
+  " Hardcore"/" SSF" постійні; збережені прапорці isPublic/isPermanent як
+  advisory-negative; reseed-guard: кандидат у межах ±2h від рухомого 7-денного
+  floor або з <24 completed hours не стає observed/confirmed). 365/365.
+  **Змержено (ff) і запушено разом з доксами (7b37c04).**
+- **Opus-ревю Phase B: MERGE WITH FIXES** (377/377; 010 безпечна й
+  ідемпотентна — `cron.schedule` за ім'ям як у 004; RLS як 009; ризик деплою
+  LOW). MEDIUM: джоб сіє `observedIds`/`tradedIds` short id-ами замість
+  Metadata-шляхів → таксономія гірша за скриптову і через DB > JSON назавжди
+  перекриває кращу; фікс — reverse-map через `metadataForShortId()` + не
+  писати category при `repo-class`/`unresolved`. LOW: `unresolvedObserved`
+  насправді "рядки без іконки"; невикористані `overrides` у
+  identityNames/Icons/Categories; `limit` не обмежує скан; серійні upsert-и
+  (батчити); `getHotlist` вантажить overrides безумовно; round-trip тест не
+  перевіряє category. **Підтверджено головну межу:** Phase B дає імена/іконки
+  в радарі, hotlist і API, але **нуль нового SEO** — URL сторінок ключуються
+  short id, канонізованими при інжесті з JSON; B2 = канонізація при інжесті з
+  БД, з ризиком re-key `pair_id` (розрив історії) і карбування URL — має бути
+  review-gated, не авто. Повернуто автору.
+- **Хибна тривога 19:41Z:** усі curl до exileradar.com → 403
+  `x-vercel-mitigated: challenge`, включно з POST на `/api/cron/radar`.
+  Причина — Vercel System Mitigation (DDoS) поставив Challenge на наш IP
+  37.46.252.23 після ~50 curl-запитів за кілька хвилин (поллінг sitemap/гайду).
+  Attack Challenge Mode вимкнений, Bot Protection неактивний; запит з боку
+  Vercel (`web_fetch_vercel_url`) → 200, браузер проходить; pg_cron і Googlebot
+  не зачеплені. **Урок (у пам'ять):** прод перевіряти через Vercel MCP fetch
+  або браузер, curl не частіше ніж раз на 30 с.
+- **Гайд на проді після 7b37c04 (через Vercel-side fetch):** 200, режим
+  "announced" (10× Forbidden Rites, 20:00 UTC, без "Previously announced");
+  35 входжень "undefined" — усі `$undefined` у RSC-payload Next, у видимому
+  тексті 0.
+- **Phase B після ревю:** `feat/cx-identity-db` @ 27d0f8f, 382/382.
+  `observedMetadataIds()` (reverse-map short id → Metadata через
+  `metadataForShortId`, unbridged відкидаються) — експеримент: неправильний
+  observed-set дрейфує 1056 категорій committed-мапи, правильний — 0;
+  `TRUSTED_TAXONOMY_SOURCES`, інакше `category: null`; `iconlessRows`;
+  сигнатури identityNames/Icons/Categories/isKnownCurrency повернуто,
+  `identityWithOverrides` — єдиний bulk-merge, тестований; subcategory не
+  деривується; upsert батчами по 50 (`sql(rows)`, coalesce збережено, новий
+  `test/cx-identity-repository.test.js`); round-trip тест на всю committed-мапу
+  (4355/4825 id, 0 розходжень; виключення — learned-prefix і дубль-імена,
+  задокументовано). `getHotlist` без short-circuit — залишено з коментарем.
+  Дельта-ревю відправлено.
+- **Дельта-ревю Phase B: MERGE** (382/382; reverse-map коректний, coalesce в
+  обидва боки, батчі без дублікатів сьогодні — захисний dedupe у
+  `upsertCxIdentity` як фолоу-ап; round-trip тест не покриває seeding, але
+  його покривають тести refresh). **Змержено в main (75741ae)**, 396/396.
+  DECISIONS-запис Phase B виправлено (`iconlessRows`, subcategory null,
+  guard rails, межа для SEO + B2). Міграція 010 застосовується, код пушиться.

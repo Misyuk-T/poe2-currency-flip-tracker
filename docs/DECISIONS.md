@@ -3,7 +3,7 @@
 Newest first. Each entry: **what** was decided, **why**, and the date.
 
 ## 2026-09-02 — Phase B: currency identity is DB-first, committed JSON is the fallback
-New table `cx_identity(game, metadata_id, name, icon, category, subcategory,
+New table `cx_identity(game, metadata_id, name, icon, category, subcategory [always null],
 short_id, source, resolved_at, updated_at)` (migration 010) plus a daily
 `/api/cron/identity` job (`refreshCurrencyIdentity`) that lists Metadata ids seen
 in candles in the last 7 days, drops everything `src/data/cx-identity-*.json`
@@ -17,8 +17,18 @@ auto-apply behind sanity floors (Taras, 2026-09-02). Guard rails: ≤200 ids per
 run, 7-day retry window for rows still missing an icon, minimum upstream sizes
 before any write, `coalesce`-per-field upserts. The committed JSON and
 `npm run identity:build` deliberately stay as the cold-start fallback and safety
-net. `/api/status` reports `identity.overrides` / `identity.unresolvedObserved`
-from the reader's own cached load — no extra table, no extra query.
+net. `/api/status` reports `identity.overrides` / `identity.iconlessRows` (stored
+rows still missing an icon) from the reader's own cached load — no extra table,
+no extra query. After review: observed ids are reverse-mapped from stored short
+ids to Metadata paths before resolution (the wrong seed set drifted 1056
+categories of the committed map; the right one drifts 0), and `category` is
+stored only from official/learned taxonomy sources — a `repo-class` guess is
+written as null so the committed JSON keeps answering. `subcategory` is not
+derived (column kept, always null). **Limit:** this labels rows in the radar,
+hotlist and API payloads; it creates NO new SEO pages — currency URLs are
+short ids canonicalised at ingest from the committed JSON. Ingest-time
+canonicalisation from the DB (Phase B2) is a separate, review-gated step because
+it re-keys `pair_id` and mints permanent URLs.
 
 ## 2026-09-02 — Sitemap: CDN cache instead of ISR (`force-dynamic` + `s-maxage`)
 The Aug 23 move of the sitemap to a route handler with `revalidate = 3600`

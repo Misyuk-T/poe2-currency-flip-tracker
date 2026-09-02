@@ -5,7 +5,19 @@ import GuideLayout from "../../../components/GuideLayout.jsx";
 // the title, so this page keeps accumulating authority across 0.5.5, 1.0 and
 // every league after. Anything league-specific lives in `currentLeague` below
 // and in body copy, where it is a one-line refresh.
-const currentLeague = { name: "Runes of Aldur", version: "0.5.0", startedOn: "29 May 2026" };
+// Every fact here comes from GGG's own announcement and press release, linked
+// below. No predictions, no prices — just the name, version, start and what the
+// patch says it adds.
+const currentLeague = {
+  name: "Forbidden Rites",
+  version: "0.5.5",
+  startsOn: "4 September 2026",
+  startsAt: "1 PM PDT",
+  // The previous league keeps running in parallel rather than being replaced.
+  parallelLeague: "Runes of Aldur",
+  source: "https://www.pathofexile.com/forum/view-thread/3999858",
+  pressSource: "https://www.pathofexile.com/forum/view-thread/3999865",
+};
 
 export const metadata = {
   title: "PoE2 League Start Currency Guide",
@@ -37,7 +49,7 @@ const faqs = [
   },
   {
     q: "Which league does this guide cover?",
-    a: `It is written to apply to any Path of Exile 2 league start. The league running as this was last updated is ${currentLeague.name} (${currentLeague.version}), which launched on ${currentLeague.startedOn}; the mechanics described here are meant to carry over to whatever launches next.`,
+    a: `It is written to apply to any Path of Exile 2 league start. The league start it was last updated for is ${currentLeague.name} (${currentLeague.version}), which GGG announced for ${currentLeague.startsOn} at ${currentLeague.startsAt}. It is an event league, and the existing ${currentLeague.parallelLeague} league keeps running alongside it rather than being replaced, so there are two live economies to keep apart when you read a price. The mechanics described here are meant to carry over to whatever launches after that.`,
   },
 ];
 
@@ -82,9 +94,24 @@ export default function LeagueStartCurrencyGuide() {
           price.
         </p>
         <p>
-          It is written to be league-agnostic on purpose. At the time of writing the live league is{" "}
-          {currentLeague.name} ({currentLeague.version}), launched {currentLeague.startedOn}, but nothing below depends
-          on that: the same supply-and-demand mechanics show up at every launch.
+          It is written to be league-agnostic on purpose. The league start it was last updated for is the{" "}
+          <a href={currentLeague.source} rel="nofollow noopener" target="_blank">
+            {currentLeague.name} event league ({currentLeague.version})
+          </a>
+          , announced for {currentLeague.startsOn} at {currentLeague.startsAt}. Note that it does not replace the
+          existing {currentLeague.parallelLeague} league, which GGG has said keeps running alongside it — so check which
+          league a price belongs to before comparing anything. Nothing below depends on either of them: the same
+          supply-and-demand mechanics show up at every launch.
+        </p>
+        <p>
+          By GGG&rsquo;s own{" "}
+          <a href={currentLeague.pressSource} rel="nofollow noopener" target="_blank">
+            description of the event
+          </a>
+          , {currentLeague.version} brings Ritual encounters into the campaign areas, returns the Viridian Wildwood as
+          an endgame mechanic and overhauls the Trial of Chaos. What any of that does to prices is not knowable in
+          advance — a new mechanic can create or remove a whole category of tradeable goods, which is precisely why the
+          sections below are about reading the data as it arrives rather than predicting it.
         </p>
 
         <h2>Why league start moves the currency market most</h2>

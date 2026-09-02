@@ -24,7 +24,8 @@
  * right after it persists a new default, so snapshots in the same run see it.
  */
 
-import { chooseDefaultLeague } from "../../../src/domain/league-default.js";
+import { isPublicLeague } from "../../../src/domain/cx-market.js";
+import { chooseDefaultLeague, isPermanentLeague } from "../../../src/domain/league-default.js";
 import { FALLBACK_LEAGUES, envLeagueOverride, loadConfig } from "../../../src/server/config.js";
 import { createRadarRepository } from "../../../src/storage/radar-repository.js";
 import { getSql, resetSql, withDbRetry } from "./db.js";
@@ -170,8 +171,14 @@ export async function readLeagueMetaCached(game, {
  * turns out to have none. Same shape of judgement as the real rule (newest
  * eligible league wins, ties break on name) but with the depth thresholds
  * lowered to "any data at all", because at this point the alternative is a page
- * with nothing on it. Falls back to the most recently seen league of any kind
- * when only permanent/private leagues have data.
+ * with nothing on it.
+ *
+ * When even that finds nothing (rows the rule rejects for reasons other than
+ * depth — no firstSeenAt, a future firstSeenAt, permanent leagues), it falls
+ * back to the most recently seen PUBLIC league: non-permanent first, permanent
+ * only if no challenge league has data. A private `... (PLxxxxx)` league is
+ * never served — a throwaway ten-player economy must not become the SEO scope,
+ * and no data at all is better than that. Null means "keep what was chosen".
  */
 function bestPricedLeague(rows, game) {
   const priced = rows.filter((row) => (row.pairCount ?? 0) > 0);
@@ -183,7 +190,13 @@ function bestPricedLeague(rows, game) {
     minPairs: 1,
   });
   if (eligible) return eligible;
-  return priced.reduce((best, row) =>
+  const publicPriced = priced.filter((row) => row.isPublic ?? isPublicLeague(row.league));
+  const challenge = publicPriced.filter(
+    (row) => !(row.isPermanent ?? isPermanentLeague(row.league, game)),
+  );
+  const candidates = challenge.length ? challenge : publicPriced;
+  if (!candidates.length) return null;
+  return candidates.reduce((best, row) =>
     (row.lastSeenAt ?? -Infinity) > (best.lastSeenAt ?? -Infinity) ? row : best,
   ).league;
 }

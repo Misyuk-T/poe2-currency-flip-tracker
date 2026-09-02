@@ -450,3 +450,55 @@ test("the SQL repository maps the league-meta aggregate and reads it back", asyn
   assert.equal(queries[1].values.includes(""), false);
   assert.match(queries[1].text, /least\(league_meta\.first_seen_at, excluded\.first_seen_at\)/);
 });
+
+/**
+ * The last-resort branch of the unpriced guard: rows the depth rule rejects for
+ * reasons other than depth (here, an inconsistent completedHours of 0) fall
+ * through to "newest lastSeenAt wins". That reduce must still respect what may
+ * become the SEO scope for 600 pages.
+ */
+test("the last-resort priced fallback prefers a challenge league over a permanent one", async () => {
+  resetLeagueMetaCache();
+  const resolved = await resolveDefaultLeague("poe2", {
+    config: CONFIG,
+    trace: () => {},
+    makeRepo: repoWith(
+      metaRow("Ghost League", { pairCount: 0, completedHours: 0, isDefault: true }),
+      metaRow("Standard", { isPermanent: true, completedHours: 0, lastSeenAt: NOW }),
+      metaRow("Forbidden Rites", { completedHours: 0, lastSeenAt: NOW - 5 * HOUR }),
+    ),
+  });
+  // Standard was seen more recently, but a permanent league is never preferred
+  // over a challenge league we also hold prices for.
+  assert.equal(resolved.league, "Forbidden Rites");
+  assert.equal(resolved.unpricedFallbackFrom, "Ghost League");
+});
+
+test("the last-resort priced fallback falls back to a permanent league, never a private one", async () => {
+  resetLeagueMetaCache();
+  const resolved = await resolveDefaultLeague("poe2", {
+    config: CONFIG,
+    trace: () => {},
+    makeRepo: repoWith(
+      metaRow("Ghost League", { pairCount: 0, completedHours: 0, isDefault: true }),
+      metaRow("Standard", { isPermanent: true, completedHours: 0, lastSeenAt: NOW - 5 * HOUR }),
+      metaRow("Taras Test (PL12345)", { isPublic: false, completedHours: 0, lastSeenAt: NOW }),
+    ),
+  });
+  assert.equal(resolved.league, "Standard");
+});
+
+test("a private league is never served, even when it is the only priced league", async () => {
+  resetLeagueMetaCache();
+  const resolved = await resolveDefaultLeague("poe2", {
+    config: CONFIG,
+    trace: () => {},
+    makeRepo: repoWith(
+      metaRow("Ghost League", { pairCount: 0, completedHours: 0, isDefault: true }),
+      metaRow("Taras Test (PL12345)", { isPublic: false, completedHours: 0, lastSeenAt: NOW }),
+    ),
+  });
+  // Nothing public has data: keep the chosen league rather than re-scoping the
+  // whole site onto a throwaway ten-player economy.
+  assert.deepEqual(resolved, { league: "Ghost League", source: "db" });
+});

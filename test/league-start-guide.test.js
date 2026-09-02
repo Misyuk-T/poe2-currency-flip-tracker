@@ -1,60 +1,203 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { currentLeague, faqs } from "../apps/web/lib/league-start-guide.js";
+import {
+  announcedLeague,
+  buildFaqs,
+  pickGuideLeague,
+  resolveGuideLeague,
+} from "../apps/web/lib/league-start-guide.js";
 
-// The /guides/league-start-currency page is evergreen: its league facts get
-// hand-edited every league. These guards catch the ways that edit goes wrong —
-// a renamed field leaving `undefined` interpolated into published copy, or a
-// start time that no longer matches its machine-readable timestamp.
+// The /guides/league-start-currency page is evergreen. Its league facts come
+// from two places that must never be confused: the curated `announcedLeague`
+// (official GGG sources, the only home of mechanics prose) and our own
+// league_meta rows (what the exchange feed actually showed us). These guards
+// cover both — the hand-edit failure modes (a renamed field leaving
+// "undefined" in published copy, a start time drifting from its machine
+// timestamp) and the three resolution cases the page renders.
 
-test("every FAQ answer is publishable prose, with no leaked template holes", () => {
-  assert.ok(faqs.length > 0, "the guide should ship at least one FAQ");
-  for (const { q, a } of faqs) {
-    assert.equal(typeof q, "string");
-    assert.equal(typeof a, "string");
-    assert.ok(q.trim().length > 0, `question is empty: ${JSON.stringify(q)}`);
-    assert.ok(a.trim().length > 0, `answer for ${q} is empty`);
-    // A renamed/removed currentLeague field interpolates as the literal
-    // "undefined" (or "null") rather than throwing, so assert it never ships.
-    assert.doesNotMatch(a, /\bundefined\b|\bnull\b|\[object Object\]/, `answer for ${q} has a leaked template hole`);
-  }
-});
+const HOUR = 3_600_000;
+const ANNOUNCED_START = Date.parse(announcedLeague.startsAtIso);
+const NOW = ANNOUNCED_START + 200 * HOUR;
 
-test("FAQ questions are unique, so the FAQPage entries do not collide", () => {
-  const questions = faqs.map((f) => f.q);
-  assert.equal(new Set(questions).size, questions.length);
-});
-
-test("the FAQPage JSON-LD serializes to valid JSON and round-trips", () => {
-  const faqLd = {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: faqs.map((f) => ({
-      "@type": "Question",
-      name: f.q,
-      acceptedAnswer: { "@type": "Answer", text: f.a },
-    })),
+/** A league_meta row as the repository produces it. */
+function metaRow(league, extra = {}) {
+  return {
+    league,
+    firstSeenAt: NOW - 100 * HOUR,
+    lastSeenAt: NOW,
+    pairCount: 480,
+    completedHours: 100,
+    isPublic: true,
+    isPermanent: false,
+    isDefault: false,
+    ...extra,
   };
-  const json = JSON.stringify(faqLd);
-  // The page injects this raw into a <script> tag, so a literal "</script>"
-  // in any answer would break out of it.
-  assert.doesNotMatch(json, /<\/script/i);
-  const parsed = JSON.parse(json);
-  assert.equal(parsed["@type"], "FAQPage");
-  assert.equal(parsed.mainEntity.length, faqs.length);
-  for (const entry of parsed.mainEntity) {
-    assert.ok(entry.name && entry.acceptedAnswer.text);
+}
+
+const OLD_LEAGUE = metaRow("Runes of Aldur", { firstSeenAt: ANNOUNCED_START - 900 * HOUR });
+const ANNOUNCED_ROW = metaRow(announcedLeague.name, { firstSeenAt: ANNOUNCED_START + HOUR });
+const NEXT_LEAGUE = metaRow("Wraeclast Reborn", {
+  firstSeenAt: NOW - 20 * HOUR,
+  pairCount: 137,
+  completedHours: 19,
+});
+
+const kindOf = (rows) => pickGuideLeague(rows, { now: NOW });
+const coverage = (resolved) =>
+  buildFaqs(resolved).find((f) => f.q === "Which league does this guide cover?").a;
+
+test("no observed league newer than the announced one keeps the curated facts", () => {
+  for (const rows of [[], null, [OLD_LEAGUE], [metaRow("Standard", { isPermanent: true, firstSeenAt: NOW })]]) {
+    const resolved = kindOf(rows);
+    assert.equal(resolved.kind, "announced");
+    assert.equal(resolved.league, announcedLeague);
   }
+  // A private league is noise, never the league this guide is about.
+  assert.equal(kindOf([metaRow("Taras Test (PL12345)", { isPublic: false, firstSeenAt: NOW })]).kind, "announced");
+  // Bad data dated in the future cannot win "newest" either.
+  assert.equal(kindOf([metaRow("Clock Skew League", { firstSeenAt: NOW + 50 * HOUR })]).kind, "announced");
+});
+
+test("seeing the announced league on the exchange confirms it, adding a first priced hour", () => {
+  const resolved = kindOf([OLD_LEAGUE, ANNOUNCED_ROW]);
+  assert.equal(resolved.kind, "confirmed");
+  assert.equal(resolved.league.name, announcedLeague.name);
+  assert.equal(resolved.league.mechanics, announcedLeague.mechanics);
+  assert.equal(resolved.league.firstSeenAt, new Date(ANNOUNCED_START + HOUR).toISOString());
+  assert.match(resolved.league.firstSeenAtUtc, /^\d{1,2} \w+ \d{4}, \d{2}:\d{2} UTC$/);
+  // Case and whitespace in the feed's league name must not split the two apart.
+  assert.equal(kindOf([metaRow("  forbidden rites  ", { firstSeenAt: NOW })]).kind, "confirmed");
+});
+
+test("a newer, different league is reported as observed, with depth and no mechanics", () => {
+  const resolved = kindOf([OLD_LEAGUE, ANNOUNCED_ROW, NEXT_LEAGUE]);
+  assert.equal(resolved.kind, "observed");
+  assert.deepEqual(Object.keys(resolved.league).sort(), [
+    "completedHours",
+    "firstSeenAt",
+    "firstSeenAtUtc",
+    "name",
+    "pairCount",
+  ]);
+  assert.equal(resolved.league.name, "Wraeclast Reborn");
+  assert.equal(resolved.league.pairCount, 137);
+  assert.equal(resolved.league.completedHours, 19);
+  assert.equal(resolved.league.firstSeenAt, new Date(NOW - 20 * HOUR).toISOString());
+  // We know nothing about this league beyond what we priced: no mechanics, no
+  // announced start, no source links leaking in from the curated facts.
+  assert.equal(JSON.stringify(resolved.league).includes(announcedLeague.mechanics), false);
+  for (const field of ["startsOn", "startsAt", "startsAtIso", "source", "endsWith", "mechanics"]) {
+    assert.equal(field in resolved.league, false, `${field} must not be attached to an observed league`);
+  }
+});
+
+test("the observed FAQ answer describes an observation, never a launch or a mechanic", () => {
+  const answer = coverage(kindOf([ANNOUNCED_ROW, NEXT_LEAGUE]));
+  assert.match(answer, /Wraeclast Reborn/);
+  assert.match(answer, /seen on the exchange/);
+  assert.doesNotMatch(answer, /launched|launches on|begins at/);
+  // The mechanics of the announced league say nothing about the observed one.
+  assert.equal(answer.includes(announcedLeague.mechanics), false);
+  for (const word of ["Ritual", "Wildwood", "Sacred Bloom", "Trial of Chaos"]) {
+    assert.equal(answer.includes(word), false, `observed copy must not claim ${word}`);
+  }
+  // It still says, honestly, which league the detailed notes below cover.
+  assert.match(answer, new RegExp(announcedLeague.name));
+});
+
+test("the confirmed and announced FAQ answers keep the curated facts", () => {
+  const announced = coverage({ kind: "announced", league: announcedLeague });
+  assert.match(announced, new RegExp(`${announcedLeague.name} \\(${announcedLeague.version}\\)`));
+  assert.match(announced, new RegExp(announcedLeague.startsOn));
+
+  const confirmed = coverage(kindOf([ANNOUNCED_ROW]));
+  assert.match(confirmed, new RegExp(announcedLeague.startsOn));
+  assert.match(confirmed, /first saw .* priced on the exchange/);
+});
+
+test("every FAQ answer is publishable prose in all three kinds, with no leaked template holes", () => {
+  const cases = [
+    kindOf([]),
+    kindOf([ANNOUNCED_ROW]),
+    kindOf([ANNOUNCED_ROW, NEXT_LEAGUE]),
+  ];
+  assert.deepEqual(cases.map((c) => c.kind), ["announced", "confirmed", "observed"]);
+  for (const resolved of cases) {
+    const faqs = buildFaqs(resolved);
+    assert.ok(faqs.length > 0, "the guide should ship at least one FAQ");
+    for (const { q, a } of faqs) {
+      assert.equal(typeof q, "string");
+      assert.equal(typeof a, "string");
+      assert.ok(q.trim().length > 0, `question is empty: ${JSON.stringify(q)}`);
+      assert.ok(a.trim().length > 0, `answer for ${q} is empty`);
+      // A renamed/removed field interpolates as the literal "undefined" (or
+      // "null") rather than throwing, so assert it never ships.
+      assert.doesNotMatch(a, /\bundefined\b|\bnull\b|\[object Object\]/, `answer for ${q} has a leaked template hole`);
+    }
+    const questions = faqs.map((f) => f.q);
+    assert.equal(new Set(questions).size, questions.length, "FAQPage entries must not collide");
+  }
+});
+
+test("the FAQPage JSON-LD serializes to valid JSON and round-trips, in all three kinds", () => {
+  for (const resolved of [kindOf([]), kindOf([ANNOUNCED_ROW]), kindOf([ANNOUNCED_ROW, NEXT_LEAGUE])]) {
+    const faqs = buildFaqs(resolved);
+    const faqLd = {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: faqs.map((f) => ({
+        "@type": "Question",
+        name: f.q,
+        acceptedAnswer: { "@type": "Answer", text: f.a },
+      })),
+    };
+    const json = JSON.stringify(faqLd);
+    // The page injects this raw into a <script> tag, so a literal "</script>"
+    // in any answer would break out of it.
+    assert.doesNotMatch(json, /<\/script/i);
+    assert.doesNotMatch(json, /\bundefined\b|\bnull\b/);
+    const parsed = JSON.parse(json);
+    assert.equal(parsed["@type"], "FAQPage");
+    assert.equal(parsed.mainEntity.length, faqs.length);
+    for (const entry of parsed.mainEntity) {
+      assert.ok(entry.name && entry.acceptedAnswer.text);
+    }
+  }
+});
+
+test("resolveGuideLeague reads league_meta and falls back silently on any failure", async () => {
+  const resolved = await resolveGuideLeague({
+    now: NOW,
+    readMeta: async (game) => {
+      assert.equal(game, "poe2");
+      return { rows: [ANNOUNCED_ROW, NEXT_LEAGUE] };
+    },
+  });
+  assert.equal(resolved.kind, "observed");
+
+  // No database / no table: readLeagueMetaCached answers with an empty row set.
+  assert.equal((await resolveGuideLeague({ now: NOW, readMeta: async () => ({ rows: [] }) })).kind, "announced");
+
+  // Anything unexpected is traced, never thrown: the page must still render.
+  const traced = [];
+  const broken = await resolveGuideLeague({
+    now: NOW,
+    readMeta: async () => { throw new Error("boom"); },
+    trace: (phase, details) => traced.push({ phase, ...details }),
+  });
+  assert.equal(broken.kind, "announced");
+  assert.equal(broken.league, announcedLeague);
+  assert.deepEqual(traced.map((e) => e.phase), ["guide-league.resolve.error"]);
 });
 
 test("startsAtIso parses to the announced UTC instant", () => {
-  const parsed = new Date(currentLeague.startsAtIso);
+  const parsed = new Date(announcedLeague.startsAtIso);
   assert.ok(!Number.isNaN(parsed.getTime()), "startsAtIso should be a parseable timestamp");
   assert.equal(parsed.toISOString(), "2026-09-04T20:00:00.000Z");
   // GGG announced 1 PM PDT (UTC-7), i.e. 20:00 UTC — keep the machine-readable
   // timestamp and the human-readable strings from drifting apart.
-  assert.equal(currentLeague.startsAtUtc, "20:00 UTC");
+  assert.equal(announcedLeague.startsAtUtc, "20:00 UTC");
   assert.equal(parsed.getUTCHours(), 20);
 });
 
@@ -68,15 +211,16 @@ test("the league facts the copy interpolates are all present and non-empty", () 
     "startsAtIso",
     "endsWith",
     "parallelLeague",
+    "mechanics",
   ]) {
-    assert.equal(typeof currentLeague[field], "string", `${field} should be a string`);
-    assert.ok(currentLeague[field].trim().length > 0, `${field} should not be empty`);
+    assert.equal(typeof announcedLeague[field], "string", `${field} should be a string`);
+    assert.ok(announcedLeague[field].trim().length > 0, `${field} should not be empty`);
   }
 });
 
 test("every source link is an official pathofexile.com post", () => {
   for (const field of ["source", "pressSource", "faqSource"]) {
-    const url = new URL(currentLeague[field]);
+    const url = new URL(announcedLeague[field]);
     assert.equal(url.protocol, "https:");
     assert.equal(url.hostname, "www.pathofexile.com");
     assert.match(url.pathname, /^\/forum\/view-thread\/\d+$/, `${field} should point at a forum thread`);

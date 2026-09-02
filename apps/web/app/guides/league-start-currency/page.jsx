@@ -1,11 +1,17 @@
 import { siteUrl } from "../../../lib/market.js";
 import GuideLayout from "../../../components/GuideLayout.jsx";
-import { currentLeague, faqs } from "../../../lib/league-start-guide.js";
+import { announcedLeague, buildFaqs, resolveGuideLeague } from "../../../lib/league-start-guide.js";
 
 // Evergreen slug on purpose: no league name and no patch version in the URL or
 // the title, so this page keeps accumulating authority across 0.5.5, 1.0 and
-// every league after. Anything league-specific lives in lib/league-start-guide.js,
-// where refreshing for a new league is a one-file edit.
+// every league after. Anything league-specific lives in lib/league-start-guide.js:
+// the announced facts as curated content with official sources, the live league
+// name/first-seen/depth from our own league_meta rows.
+
+// Hourly, so a new league shows up on its own once the exchange prices it — and
+// so the route still prerenders at build time (no database needed: the resolver
+// falls back to the announced league).
+export const revalidate = 3600;
 
 export const metadata = {
   title: "PoE2 League Start Currency Guide",
@@ -14,7 +20,11 @@ export const metadata = {
   alternates: { canonical: `${siteUrl}/guides/league-start-currency` },
 };
 
-export default function LeagueStartCurrencyGuide() {
+export default async function LeagueStartCurrencyGuide() {
+  const resolved = await resolveGuideLeague();
+  const faqs = buildFaqs(resolved);
+  const observed = resolved.kind === "observed" ? resolved.league : null;
+  const confirmedFirstSeen = resolved.kind === "confirmed" ? resolved.league.firstSeenAtUtc : null;
   const breadcrumbLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -54,27 +64,45 @@ export default function LeagueStartCurrencyGuide() {
           <a href="/poe2">market radar</a> while the numbers are still thin — without pretending anyone can predict a
           price.
         </p>
+        {observed ? (
+          <p>
+            It is written to be league-agnostic on purpose. The newest league our own hourly data has seen on the{" "}
+            <a href="/poe2">exchange</a> is <strong>{observed.name}</strong>, first priced on{" "}
+            <time dateTime={observed.firstSeenAt}>{observed.firstSeenAtUtc}</time>, with {observed.pairCount} markets
+            across {observed.completedHours} completed hours so far. That is what we observed in the exchange feed, not
+            an announcement: we hold no official details for it, so the league notes just below still describe the
+            previously announced {announcedLeague.name} league. Nothing else on this page depends on either — the same
+            supply-and-demand mechanics show up at every launch.
+          </p>
+        ) : null}
         <p>
-          It is written to be league-agnostic on purpose. The league start it was last updated for is the{" "}
-          <a href={currentLeague.source} rel="nofollow noopener" target="_blank">
-            {currentLeague.name} event league ({currentLeague.version})
+          {observed
+            ? "The last league start we hold official GGG sources for is the "
+            : "It is written to be league-agnostic on purpose. The league start it was last updated for is the "}
+          <a href={announcedLeague.source} rel="nofollow noopener" target="_blank">
+            {announcedLeague.name} event league ({announcedLeague.version})
           </a>
           , announced for{" "}
-          <time dateTime={currentLeague.startsAtIso}>
-            {currentLeague.startsOn} at {currentLeague.startsAt} ({currentLeague.startsAtUtc})
+          <time dateTime={announcedLeague.startsAtIso}>
+            {announcedLeague.startsOn} at {announcedLeague.startsAt} ({announcedLeague.startsAtUtc})
           </time>
-          . Note that it does not replace the existing {currentLeague.parallelLeague} league, which GGG has said keeps
-          running alongside it — so check which league a price belongs to before comparing anything. Nothing below
-          depends on either of them: the same supply-and-demand mechanics show up at every launch.
+          .{confirmedFirstSeen ? (
+            <>
+              {" "}
+              Our own hourly data first saw it priced on the exchange on{" "}
+              <time dateTime={resolved.league.firstSeenAt}>{confirmedFirstSeen}</time>.
+            </>
+          ) : null}{" "}
+          Note that it does not replace the existing {announcedLeague.parallelLeague} league, which GGG has said keeps
+          running alongside it — so check which league a price belongs to before comparing anything.
+          {observed ? null : " Nothing below depends on either of them: the same supply-and-demand mechanics show up at every launch."}
         </p>
         <p>
           By GGG&rsquo;s own{" "}
-          <a href={currentLeague.pressSource} rel="nofollow noopener" target="_blank">
+          <a href={announcedLeague.pressSource} rel="nofollow noopener" target="_blank">
             description of the event
           </a>
-          , {currentLeague.version} puts Ritual sites in every campaign area, returns the Wildwood as an endgame
-          mechanic — entered from an Endgame Map using a Sacred Bloom acquired through Ritual — and overhauls the Trial
-          of Chaos.
+          , {announcedLeague.mechanics}
         </p>
 
         <h2>Why league start moves the currency market most</h2>

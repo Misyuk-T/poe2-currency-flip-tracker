@@ -65,7 +65,13 @@ function load(game = "poe2") {
   return store;
 }
 
-/** Convert a RePoE visual identity into an official GGG CDN URL. */
+/**
+ * Convert a RePoE visual identity into an official GGG CDN URL.
+ *
+ * Exported as `iconUrlFromArt` for the runtime identity job (Phase B), which
+ * must store the SAME derived URL the reader would have computed — otherwise a
+ * DB-backed icon and a JSON-backed icon for the same art path could differ.
+ */
 function iconFromArt(art, game) {
   if (typeof art !== "string" || !art) return null;
   const clean = art.replace(/^Art\//, "").replace(/\.dds$/i, "");
@@ -74,18 +80,35 @@ function iconFromArt(art, game) {
   return `https://web.poecdn.com/image/Art/${path}.png?scale=1${realm}`;
 }
 
-/** Resolve a Metadata id to display info; humanized fallback when unmapped. */
-export function resolveCurrency(metadataId, game = "poe2") {
+export { iconFromArt as iconUrlFromArt };
+
+/**
+ * Resolve a Metadata id to display info; humanized fallback when unmapped.
+ *
+ * `overrides` is the runtime layer added in Phase B: a Map<metadataId, identity>
+ * loaded once per request from the `cx_identity` table (see
+ * apps/web/lib/identity-overrides.js). Precedence is PER FIELD, highest first —
+ * DB row, then the committed JSON, then the humanized leaf — so a DB row that
+ * knows a name but no icon can never blank an icon the committed snapshot has.
+ * That asymmetry is the point: the table exists to fill gaps in the snapshot,
+ * not to replace it. With no overrides argument this behaves exactly as before.
+ */
+export function resolveCurrency(metadataId, game = "poe2", { overrides = null } = {}) {
   const { items } = load(game);
   const e = items[metadataId];
-  if (e) {
+  const o = overrides?.get?.(metadataId) ?? null;
+  if (e || o) {
+    const category = o?.category ?? e?.category ?? (e?.class ? humanize(e.class) : null);
     return {
       id: metadataId,
-      name: e.name,
-      icon: e.icon ?? iconFromArt(e.art, game),
-      shortId: e.shortId ?? null,
-      category: e.category ?? (e.class ? humanize(e.class) : null),
-      taxonomySource: e.taxonomySource ?? (e.class ? "repo-class" : "unresolved"),
+      name: o?.name ?? e?.name ?? humanize(metadataId),
+      icon: o?.icon ?? e?.icon ?? iconFromArt(e?.art, game),
+      shortId: o?.shortId ?? e?.shortId ?? null,
+      category,
+      subcategory: o?.subcategory ?? null,
+      taxonomySource: o?.category
+        ? "cx-identity-db"
+        : e?.taxonomySource ?? (e?.class ? "repo-class" : "unresolved"),
     };
   }
   return { id: metadataId, name: humanize(metadataId), icon: null, shortId: null, category: null };
@@ -98,26 +121,35 @@ export function metadataForShortId(shortId, game = "poe2") {
 }
 
 /** True when the id is covered by the map (not just a humanized fallback). */
-export function isKnownCurrency(metadataId, game = "poe2") {
+export function isKnownCurrency(metadataId, game = "poe2", { overrides = null } = {}) {
   const { items } = load(game);
+  if (overrides?.get?.(metadataId)?.name) return true;
   return Object.prototype.hasOwnProperty.call(items, metadataId);
 }
 
 /** { metadataId: name } for every mapped item — merge into the radar `names` map
  *  so tail targets (Metadata ids without a catalog short id) still render a real
  *  name instead of a raw path. */
-export function identityNames(game = "poe2") {
+export function identityNames(game = "poe2", { overrides = null } = {}) {
   const { items } = load(game);
   const out = {};
   for (const [meta, e] of Object.entries(items)) {
     out[meta] = e.name;
     if (e.shortId) out[e.shortId] = e.name;
   }
+  // DB last: it is the higher-precedence layer, and it only ever carries ids the
+  // committed snapshot could not answer or answered worse.
+  for (const [meta, o] of overrides ?? []) {
+    if (!o?.name) continue;
+    out[meta] = o.name;
+    const shortId = o.shortId ?? items[meta]?.shortId;
+    if (shortId) out[shortId] = o.name;
+  }
   return out;
 }
 
 /** { canonical-or-Metadata id: official GGG CDN image URL }. */
-export function identityIcons(game = "poe2") {
+export function identityIcons(game = "poe2", { overrides = null } = {}) {
   const { items } = load(game);
   const out = {};
   for (const [meta, e] of Object.entries(items)) {
@@ -126,11 +158,17 @@ export function identityIcons(game = "poe2") {
     out[meta] = icon;
     if (e.shortId) out[e.shortId] = icon;
   }
+  for (const [meta, o] of overrides ?? []) {
+    if (!o?.icon) continue;
+    out[meta] = o.icon;
+    const shortId = o.shortId ?? items[meta]?.shortId;
+    if (shortId) out[shortId] = o.icon;
+  }
   return out;
 }
 
 /** { canonical-or-Metadata id: RePoE item class }. */
-export function identityCategories(game = "poe2") {
+export function identityCategories(game = "poe2", { overrides = null } = {}) {
   const { items } = load(game);
   const out = {};
   for (const [meta, e] of Object.entries(items)) {
@@ -138,6 +176,12 @@ export function identityCategories(game = "poe2") {
     if (!category) continue;
     out[meta] = category;
     if (e.shortId) out[e.shortId] = category;
+  }
+  for (const [meta, o] of overrides ?? []) {
+    if (!o?.category) continue;
+    out[meta] = o.category;
+    const shortId = o.shortId ?? items[meta]?.shortId;
+    if (shortId) out[shortId] = o.category;
   }
   return out;
 }

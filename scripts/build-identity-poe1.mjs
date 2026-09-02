@@ -12,8 +12,7 @@
 
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { buildIdentityTaxonomy } from "../src/domain/identity-taxonomy.js";
-import { humanize } from "../src/domain/humanize.js";
+import { buildIdentityEntries } from "../src/domain/identity-resolve.js";
 
 const REPOE_URL = "https://repoe-fork.github.io/base_items.min.json";
 const STATIC_URL = "https://www.pathofexile.com/api/trade/data/static";
@@ -25,11 +24,6 @@ const CORE_SHORT_IDS = Object.freeze({
   "Metadata/Items/Currency/CurrencyModValues": "divine",
   "Metadata/Items/Currency/CurrencyAddModToRare": "exalted",
 });
-
-function artFromDds(dds) {
-  if (typeof dds !== "string") return null;
-  return dds.replace(/^Art\//, "").replace(/\.dds$/i, "");
-}
 
 async function fetchObservedIds({ hoursBack = 6 } = {}) {
   const currentHour = Math.floor(Date.now() / 3600_000) * 3600;
@@ -66,35 +60,16 @@ async function main() {
     category: group.label ?? group.id ?? "Unknown",
   })));
 
-  const identityEntries = Object.fromEntries(Object.entries(base)
-    .filter(([, entry]) => entry?.name)
-    .map(([metaId, entry]) => [metaId, {
-      name: entry.name,
-      class: entry.item_class ?? null,
-      art: artFromDds(entry.visual_identity?.dds_file),
-      shortId: CORE_SHORT_IDS[metaId] ?? null,
-    }]));
-  for (const metaId of observedIds) {
-    if (!identityEntries[metaId]) {
-      identityEntries[metaId] = { name: humanize(metaId), class: null, art: null, shortId: CORE_SHORT_IDS[metaId] ?? null };
-    }
-  }
-  const resolveTaxonomy = buildIdentityTaxonomy({ catalogItems, identities: identityEntries, observedIds });
-
-  const items = {};
-  let named = 0;
-  let withArt = 0;
-  const taxonomyCounts = {};
-  for (const [metaId, entry] of Object.entries(identityEntries)) {
-    const taxonomy = resolveTaxonomy(metaId, entry);
-    items[metaId] = {
-      ...entry,
-      ...taxonomy,
-    };
-    taxonomyCounts[taxonomy.taxonomySource] = (taxonomyCounts[taxonomy.taxonomySource] ?? 0) + 1;
-    named += 1;
-    if (entry.art) withArt += 1;
-  }
+  // One shared join for both games and the runtime job — see
+  // src/domain/identity-resolve.js. PoE1 pins only the three core short ids and
+  // carries no `icon` key: the runtime derives a CDN URL from `art`.
+  const { items, stats } = buildIdentityEntries({
+    baseItems: base,
+    catalogItems,
+    observedIds,
+    coreShortIds: CORE_SHORT_IDS,
+  });
+  const { named, withArt, taxonomyCounts } = stats;
 
   const out = {
     source: "repoe-fork poe1 base_items (GGPK-derived); official trade taxonomy joined from GGG static data",

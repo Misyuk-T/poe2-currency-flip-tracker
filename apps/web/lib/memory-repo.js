@@ -24,6 +24,8 @@ export function createMemoryRepository(scope, { windowDays = WINDOW_DAYS, maxHou
   const byKey = new Map();
   // league -> league_meta row. Upsert-only, exactly like the SQL table.
   const leagueMeta = new Map();
+  // "<game>|<metadataId>" -> cx_identity row. Upsert-only, same merge rules.
+  const cxIdentity = new Map();
   let cursor = null;
   let lastDigestId = null;
 
@@ -151,6 +153,64 @@ export function createMemoryRepository(scope, { windowDays = WINDOW_DAYS, maxHou
     return true;
   }
 
+  /**
+   * The in-memory twin of createRadarRepository.listObservedCurrencyIds: split
+   * every stored pair id in the window back into its two currency ids. Same
+   * insertion-ordered, de-duplicated result, no league filter — one stream
+   * carries them all.
+   */
+  async function listObservedCurrencyIds({ days = windowDays, limit = 20_000, now = Date.now() } = {}) {
+    const start = now - days * DAY_MS;
+    const pairIds = new Set();
+    for (const candle of byKey.values()) {
+      if (candle.completedHour < start) continue;
+      if (pairIds.size >= limit) break;
+      pairIds.add(candle.pairId);
+    }
+    const ids = new Set();
+    for (const pairId of pairIds) {
+      for (const id of String(pairId ?? "").split("|")) if (id) ids.add(id);
+    }
+    return [...ids];
+  }
+
+  /**
+   * The in-memory twin of the cx_identity table (migration 010). Same
+   * coalesce-per-field merge as the SQL upsert, so the identity job's
+   * "never overwrite a resolved field with a null" guarantee is exercised by
+   * tests without a Postgres.
+   */
+  async function readCxIdentity({ game = scope.game, limit = 2_000 } = {}) {
+    return [...cxIdentity.values()]
+      .filter((row) => row.game === game)
+      .sort((a, b) => a.metadataId.localeCompare(b.metadataId))
+      .slice(0, limit)
+      .map((row) => ({ ...row }));
+  }
+
+  async function upsertCxIdentity(rows, { game = scope.game, now = Date.now() } = {}) {
+    const entries = (rows ?? []).filter((row) => typeof row?.metadataId === "string" && row.metadataId);
+    const at = now instanceof Date ? now.getTime() : Number(now);
+    for (const row of entries) {
+      const key = `${game}|${row.metadataId}`;
+      const previous = cxIdentity.get(key);
+      const resolved = row.source && row.source !== "humanized";
+      cxIdentity.set(key, {
+        game,
+        metadataId: row.metadataId,
+        name: row.name ?? previous?.name ?? null,
+        icon: row.icon ?? previous?.icon ?? null,
+        category: row.category ?? previous?.category ?? null,
+        subcategory: row.subcategory ?? previous?.subcategory ?? null,
+        shortId: row.shortId ?? previous?.shortId ?? null,
+        source: resolved ? row.source : previous?.source ?? "humanized",
+        resolvedAt: resolved ? at : previous?.resolvedAt ?? null,
+        updatedAt: at,
+      });
+    }
+    return entries.length;
+  }
+
   return {
     readCandleWindow,
     readPairCandles,
@@ -159,5 +219,8 @@ export function createMemoryRepository(scope, { windowDays = WINDOW_DAYS, maxHou
     refreshLeagueMeta,
     readLeagueMeta,
     setDefaultLeague,
+    listObservedCurrencyIds,
+    readCxIdentity,
+    upsertCxIdentity,
   };
 }

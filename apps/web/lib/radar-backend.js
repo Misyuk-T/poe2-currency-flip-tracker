@@ -33,6 +33,7 @@ import { createCxapiProvider } from "../../../src/providers/create-cxapi-provide
 import { chooseDefaultLeague } from "../../../src/domain/league-default.js";
 import { getSql, resetSql, withDbRetry } from "./db.js";
 import { readLeagueMetaCached, resetLeagueMetaCache, resolveDefaultLeague } from "./default-league.js";
+import { loadIdentityOverrides, readIdentityOverridesCached } from "./identity-overrides.js";
 import { createMemoryRepository } from "./memory-repo.js";
 
 const NO_DB = {
@@ -365,9 +366,45 @@ export function tradableRows(rows) {
   return (rows ?? []).filter((row) => row?.pairId && row.status !== "no-trades-this-hour");
 }
 
-function radarBuildInput(ctx, game, repo, now = Date.now(), anchors = game.anchors) {
+/**
+ * Fold the `cx_identity` overrides on top of the process-cached identity maps.
+ *
+ * The base maps hold thousands of entries and are built once per warm instance;
+ * copying them per request to add a handful of overrides would be a real cost
+ * for no reason. So the merged result is memoized against the overrides Map
+ * ITSELF (a WeakMap): the loader hands out the same Map object for its whole
+ * 10-minute TTL, so this spreads once per TTL, not once per request. A DB row
+ * only ever ADDS or replaces a field it actually has — an override with a null
+ * icon leaves the committed icon standing.
+ */
+const mergedIdentityCache = new WeakMap();
+function identityWithOverrides(identity, overrides) {
+  if (!overrides || overrides.size === 0) return identity;
+  const cached = mergedIdentityCache.get(overrides);
+  if (cached?.base === identity) return cached.merged;
+  const names = { ...identity.names };
+  const icons = { ...identity.icons };
+  const categories = { ...identity.categories };
+  for (const [metadataId, row] of overrides) {
+    // Key by the Metadata path and, when the DB knows one, by the trade short id
+    // the ingest canonicalises to — the same two keys identityNames() writes.
+    for (const key of row.shortId ? [metadataId, row.shortId] : [metadataId]) {
+      if (row.name) names[key] = row.name;
+      if (row.icon) icons[key] = row.icon;
+      if (row.category) categories[key] = row.category;
+    }
+  }
+  const merged = { names, icons, categories };
+  mergedIdentityCache.set(overrides, { base: identity, merged });
+  return merged;
+}
+
+function radarBuildInput(ctx, game, repo, now = Date.now(), anchors = game.anchors, overrides = null) {
   const isPoe2 = game.id === "poe2";
-  const identity = ctx.identityByGame[game.id] ?? { names: CORE_NAMES, icons: {}, categories: {} };
+  const identity = identityWithOverrides(
+    ctx.identityByGame[game.id] ?? { names: CORE_NAMES, icons: {}, categories: {} },
+    overrides,
+  );
   return {
     repo,
     anchors,
@@ -449,7 +486,16 @@ export async function getRadar(searchParams) {
   // Backward-compatible/self-healing fallback for the first request after the
   // migration or if the hourly snapshot refresh failed. It is deliberately not
   // the normal path anymore.
-  const built = await withDbRetry(() => buildRadarPayloads(radarBuildInput(ctx, game, repo, Date.now(), requestedAnchors)));
+  //
+  // The identity overrides are loaded HERE and not above the snapshot short
+  // circuit on purpose: a served snapshot already carries the names and icons
+  // that were resolved when the cron built it, so paying a cold 2s read to
+  // decorate rows nobody is about to rebuild would put latency on the one path
+  // that is currently fast. On this path the read is one bounded query for a
+  // request that is already doing several, and its worst case is bounded by the
+  // loader's own 2s budget.
+  const overrides = await loadIdentityOverrides(game.id, { config });
+  const built = await withDbRetry(() => buildRadarPayloads(radarBuildInput(ctx, game, repo, Date.now(), requestedAnchors, overrides)));
   const payloads = Object.fromEntries(Object.entries(built).map(([payloadAnchor, payload]) => [
     payloadAnchor,
     finalizeRadarBody(payload, game, selected.league),
@@ -564,8 +610,13 @@ export async function refreshRadarSnapshots(ctx, {
         makeRepo(scopeFor(ctx, game, league), { trace, anchors: anchorPlan.anchors }),
         game.id,
       );
+      // One read per game per invocation, not per league: the loader's cache is
+      // keyed by game and outlives the whole cron run. Whatever the identity job
+      // resolved overnight is baked into the snapshots here, so /api/radar's
+      // fast path serves the better names without ever reading cx_identity.
+      const overrides = await loadIdentityOverrides(game.id, { config: ctx.config, trace });
       const payloads = await withDbRetry(() =>
-        buildRadarPayloads(radarBuildInput(ctx, game, repo, now, anchorPlan.anchors)),
+        buildRadarPayloads(radarBuildInput(ctx, game, repo, now, anchorPlan.anchors, overrides)),
       );
       const snapshots = Object.entries(payloads).map(([anchor, payload]) => ({
         anchor,
@@ -765,12 +816,17 @@ export async function getHotlist(searchParams = new URLSearchParams()) {
   if (selected.error) return selected.error;
   const repo = gameAwareRepository(await resolveRepo(ctx, scopeFor(ctx, game, selected.league)), game.id);
   if (!repo) return NO_DB;
+  const overrides = await loadIdentityOverrides(game.id, { config });
+  const names = identityWithOverrides(
+    identityByGame[game.id] ?? { names: CORE_NAMES, icons: {}, categories: {} },
+    overrides,
+  ).names;
   const body = await withDbRetry(() =>
     buildHotlistPayload({
       repo,
       anchors: game.anchors,
       shortlist: config.shortlist,
-      names: identityByGame[game.id]?.names ?? CORE_NAMES,
+      names,
       radarMaxHotTargets: config.radarMaxHotTargets,
       now: Date.now(),
     }),
@@ -961,12 +1017,23 @@ export async function getStatus() {
   // read the same resolved default as everything else — not the env constant.
   const { league, source } = await resolveDefaultLeague(config.poeGame, { config });
   const repo = await resolveRepo(ctx, { ...ctx.scope, league });
+  // How much of the currency identity is coming from the database rather than
+  // the committed snapshot, and how much the daily job still cannot label. Both
+  // numbers fall out of the SAME cached read the radar already does — no extra
+  // query, and no `cx_identity_runs` table to keep in sync. `unresolvedObserved`
+  // counts stored rows that still have no icon, which is exactly the set the
+  // job's retry window will pick up again.
+  const identityState = await readIdentityOverridesCached(config.poeGame, { config });
   const base = {
     providerMode: config.providerMode,
     ingestProviderMode: config.ingestProviderMode,
     league,
     defaultLeagueSource: source,
     sourceMode: sourceMode(config),
+    identity: {
+      overrides: identityState.overrides.size,
+      unresolvedObserved: identityState.unresolved,
+    },
   };
   if (!repo) return { status: 200, body: { ...base, radar: { configured: false, reason: "no-database" } } };
   const [state, candles] = await withDbRetry(() =>

@@ -10,7 +10,7 @@
  */
 
 import { isPublicLeague } from "../../../src/domain/cx-market.js";
-import { isPermanentLeague } from "../../../src/domain/league-meta.js";
+import { isPermanentLeague } from "../../../src/domain/league-default.js";
 
 const WINDOW_DAYS = 30;
 const MAX_HOURS_PER_PAIR = 48;
@@ -78,6 +78,13 @@ export function createMemoryRepository(scope, { windowDays = WINDOW_DAYS, maxHou
   }
 
   /**
+   * NOTE: the three league-meta methods below are exercised by tests only. The
+   * cron's refreshLeagueDefaults builds its repository with `repository()`
+   * (Postgres or nothing), not with `resolveRepo()`, so the offline fixture
+   * fallback never reaches them — with no database it reports a skip instead.
+   * They exist so the orchestration can be tested without a Postgres, and they
+   * mirror the SQL semantics exactly for that reason.
+   *
    * The in-memory twin of createRadarRepository.refreshLeagueMeta: the same
    * per-league aggregate (first/last hour, distinct pairs, distinct completed
    * hours) over the same window, with the same least()/greatest() merge on the

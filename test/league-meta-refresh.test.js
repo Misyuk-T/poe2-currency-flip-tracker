@@ -8,7 +8,7 @@ delete process.env.LEAGUE;
 delete process.env.POE1_LEAGUE;
 
 import { createRadarRepository } from "../src/storage/radar-repository.js";
-import { chooseDefaultLeague } from "../src/domain/league-meta.js";
+import { chooseDefaultLeague } from "../src/domain/league-default.js";
 import { createMemoryRepository } from "../apps/web/lib/memory-repo.js";
 import {
   readLeagueMetaCached,
@@ -196,16 +196,30 @@ test("with no database at all the cron step reports a skip, not an error", async
   assert.deepEqual(results, [{ game: "poe2", skipped: "no-database" }]);
 });
 
+/** A stored league_meta row; `pairCount: 0` means "observed but unpriced". */
+function metaRow(league, extra = {}) {
+  return {
+    league,
+    firstSeenAt: NOW,
+    lastSeenAt: NOW,
+    pairCount: 500,
+    completedHours: 168,
+    isPublic: true,
+    isPermanent: false,
+    isDefault: false,
+    ...extra,
+  };
+}
+const repoWith = (...rows) => () => ({ readLeagueMeta: async () => rows });
+
 test("resolver precedence: env override beats the database, which beats the fallback", async () => {
-  const withDefault = (league) => () => ({
-    readLeagueMeta: async () => [
-      { league, firstSeenAt: NOW, lastSeenAt: NOW, pairCount: 500, completedHours: 168, isPublic: true, isPermanent: false, isDefault: true },
-    ],
-  });
+  // Both candidate leagues carry real depth, so the unpriced guard stays out of
+  // the way and this test is about precedence alone.
+  const makeRepo = repoWith(metaRow("Forbidden Rites", { isDefault: true }), metaRow("Pinned League"));
 
   resetLeagueMetaCache();
   assert.deepEqual(
-    await resolveDefaultLeague("poe2", { config: CONFIG, makeRepo: withDefault("Forbidden Rites") }),
+    await resolveDefaultLeague("poe2", { config: CONFIG, makeRepo }),
     { league: "Forbidden Rites", source: "db" },
   );
 
@@ -213,23 +227,20 @@ test("resolver precedence: env override beats the database, which beats the fall
   try {
     resetLeagueMetaCache();
     assert.deepEqual(
-      await resolveDefaultLeague("poe2", { config: CONFIG, makeRepo: withDefault("Forbidden Rites") }),
+      await resolveDefaultLeague("poe2", { config: CONFIG, makeRepo }),
       { league: "Pinned League", source: "env" },
     );
     // A blank env var is not an override.
     process.env.LEAGUE = "   ";
     resetLeagueMetaCache();
-    assert.equal(
-      (await resolveDefaultLeague("poe2", { config: CONFIG, makeRepo: withDefault("Forbidden Rites") })).source,
-      "db",
-    );
+    assert.equal((await resolveDefaultLeague("poe2", { config: CONFIG, makeRepo })).source, "db");
   } finally {
     delete process.env.LEAGUE;
   }
 
   resetLeagueMetaCache();
   assert.deepEqual(
-    await resolveDefaultLeague("poe2", { config: CONFIG, makeRepo: () => ({ readLeagueMeta: async () => [] }) }),
+    await resolveDefaultLeague("poe2", { config: CONFIG, makeRepo: repoWith() }),
     { league: "Runes of Aldur", source: "fallback" },
   );
 
@@ -239,6 +250,91 @@ test("resolver precedence: env override beats the database, which beats the fall
     await resolveDefaultLeague("poe1", { config: CONFIG, makeRepo: () => null }),
     { league: "Standard", source: "fallback" },
   );
+});
+
+test("a default with no priced candles is superseded by the best league that has them", async () => {
+  const traced = [];
+  const trace = (phase, details) => traced.push({ phase, ...details });
+  // setDefaultLeague can record a league that has no candles at all (an env or
+  // code fallback). /api/config already drops such a league; the resolver must
+  // agree, or /api/radar would serve a different default than /api/config names.
+  const makeRepo = repoWith(
+    metaRow("Ghost League", { pairCount: 0, completedHours: 0, isDefault: true }),
+    metaRow("Standard", { isPermanent: true }),
+    metaRow("Runes of Aldur", { firstSeenAt: NOW - 500 * HOUR }),
+    metaRow("Forbidden Rites", { firstSeenAt: NOW - 100 * HOUR }),
+  );
+  resetLeagueMetaCache();
+  assert.deepEqual(await resolveDefaultLeague("poe2", { config: CONFIG, makeRepo, trace }), {
+    league: "Forbidden Rites",
+    source: "db",
+    unpricedFallbackFrom: "Ghost League",
+  });
+  assert.deepEqual(traced.map((e) => e.phase), ["league-meta.default.unpriced"]);
+  // Unlike the read errors, this path runs on cache hits too — it must not log
+  // once per request.
+  await resolveDefaultLeague("poe2", { config: CONFIG, makeRepo, trace });
+  await resolveDefaultLeague("poe2", { config: CONFIG, makeRepo, trace });
+  assert.equal(traced.length, 1, "the substitution is traced once per cache entry, not per resolve");
+
+  // An env pin to a league we hold no prices for is superseded the same way —
+  // pinning a league before its first candle lands is exactly the day-one
+  // re-scope the rule exists to prevent. The pin applies once data arrives.
+  process.env.LEAGUE = "Ghost League";
+  try {
+    resetLeagueMetaCache();
+    const pinned = await resolveDefaultLeague("poe2", { config: CONFIG, makeRepo, trace: () => {} });
+    assert.equal(pinned.league, "Forbidden Rites");
+    assert.equal(pinned.source, "env");
+    assert.equal(pinned.unpricedFallbackFrom, "Ghost League");
+
+    resetLeagueMetaCache();
+    const priced = await resolveDefaultLeague("poe2", {
+      config: CONFIG,
+      trace: () => {},
+      makeRepo: repoWith(metaRow("Ghost League"), metaRow("Forbidden Rites")),
+    });
+    assert.deepEqual(priced, { league: "Ghost League", source: "env" });
+  } finally {
+    delete process.env.LEAGUE;
+  }
+
+  // Only permanent leagues have data: still better than serving nothing.
+  resetLeagueMetaCache();
+  const permanentOnly = await resolveDefaultLeague("poe2", {
+    config: CONFIG,
+    trace: () => {},
+    makeRepo: repoWith(metaRow("Standard", { isPermanent: true, isDefault: true, pairCount: 0 }), metaRow("Hardcore", { isPermanent: true })),
+  });
+  assert.equal(permanentOnly.league, "Hardcore");
+
+  // Nothing anywhere has data: keep the chosen league rather than inventing one.
+  resetLeagueMetaCache();
+  assert.deepEqual(
+    await resolveDefaultLeague("poe2", { config: CONFIG, trace: () => {}, makeRepo: repoWith(metaRow("Ghost League", { pairCount: 0, isDefault: true })) }),
+    { league: "Ghost League", source: "db" },
+  );
+});
+
+test("a cold burst issues one read, not one per concurrent request", async () => {
+  let reads = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const makeRepo = () => ({
+    readLeagueMeta: async () => {
+      reads += 1;
+      await gate;
+      return [metaRow("Forbidden Rites", { isDefault: true })];
+    },
+  });
+  resetLeagueMetaCache();
+  const burst = Promise.all(
+    Array.from({ length: 8 }, () => resolveDefaultLeague("poe2", { config: CONFIG, makeRepo })),
+  );
+  release();
+  const resolved = await burst;
+  assert.equal(reads, 1, "the in-flight promise must be cached, not just its result");
+  assert.ok(resolved.every((r) => r.league === "Forbidden Rites"));
 });
 
 test("a missing league_meta table falls back silently to the code default, with a trace", async () => {

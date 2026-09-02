@@ -1,6 +1,10 @@
 /**
  * The default (landing) league rule.
  *
+ * Named league-default, not league-meta: `apps/web/lib/league-meta.js` and
+ * `/api/league-meta` are an unrelated, pre-existing reader of GGG's legacy
+ * league-dates endpoint. Only the TABLE is called `league_meta`.
+ *
  * The default league scopes the SEO currency pages, the currency index, the
  * sitemap and the hourly snapshot priority, so flipping it is an expensive,
  * user-visible act: it re-points 600+ indexed pages at a different economy.
@@ -24,12 +28,17 @@ export const PERMANENT_LEAGUES = {
 };
 
 /**
- * Name prefixes GGG uses for the permanent-style variants of a challenge league
- * ("HC Runes of Aldur", "SSF Standard", "Hardcore Forbidden Rites"). The softcore
- * trade league is the one the product defaults to, so every variant is excluded
- * — deliberately, not incidentally.
+ * Name affixes GGG uses for the hardcore / SSF / Ruthless variants of a
+ * challenge league. The plain softcore trade league is the one the product
+ * defaults to, so every variant is excluded — deliberately, not incidentally.
+ *
+ * Both spellings of the Ruthless variant are covered because the two games name
+ * it differently: PoE 1 prefixes ("Ruthless Allflame"), PoE 2 suffixes
+ * ("Runes of Aldur Ruthless"). A Ruthless economy is a fraction of the size of
+ * its parent league and must never become the SEO scope.
  */
-export const PERMANENT_LEAGUE_PREFIXES = ["HC ", "SSF ", "Hardcore "];
+export const PERMANENT_LEAGUE_PREFIXES = ["HC ", "SSF ", "Hardcore ", "Ruthless "];
+export const PERMANENT_LEAGUE_SUFFIXES = [" Ruthless"];
 
 const ALL_PERMANENT = [...new Set(Object.values(PERMANENT_LEAGUES).flat())];
 
@@ -40,7 +49,8 @@ export function isPermanentLeague(league, game = null) {
   if (!name) return false;
   const names = PERMANENT_LEAGUES[game] ?? ALL_PERMANENT;
   if (names.includes(name)) return true;
-  return PERMANENT_LEAGUE_PREFIXES.some((prefix) => name.startsWith(prefix));
+  if (PERMANENT_LEAGUE_PREFIXES.some((prefix) => name.startsWith(prefix))) return true;
+  return PERMANENT_LEAGUE_SUFFIXES.some((suffix) => name.endsWith(suffix));
 }
 
 /** Accepts Date | ISO string | epoch ms; returns epoch ms or null. */

@@ -10,7 +10,7 @@
  */
 
 import { canonicalizeCandle, isPublicLeague } from "../domain/cx-market.js";
-import { isPermanentLeague } from "../domain/league-meta.js";
+import { isPermanentLeague } from "../domain/league-default.js";
 
 const WINDOW_DAYS = 7;
 // How far back the RADAR read looks. The Free-plan store retains seven days;

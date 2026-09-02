@@ -30,7 +30,7 @@ import {
 } from "../../../src/server/radar-core.js";
 import { CORE_CURRENCY_IDS, ingestFixtures, ingestFixtureIncrement, ingestLiveStreams, translatorForGame } from "../../../src/server/radar-ingest.js";
 import { createCxapiProvider } from "../../../src/providers/create-cxapi-provider.js";
-import { chooseDefaultLeague } from "../../../src/domain/league-meta.js";
+import { chooseDefaultLeague } from "../../../src/domain/league-default.js";
 import { getSql, resetSql, withDbRetry } from "./db.js";
 import { readLeagueMetaCached, resetLeagueMetaCache, resolveDefaultLeague } from "./default-league.js";
 import { createMemoryRepository } from "./memory-repo.js";
@@ -120,31 +120,32 @@ export function gameConfigs(config) {
 }
 
 /**
- * gameConfigs with each enabled game's `activeLeague` replaced by the RESOLVED
- * default league (env override > league_meta.is_default > code fallback), plus
- * the `defaultLeagueSource` that produced it.
- *
- * Every read surface that used to take `config.league` at face value goes
- * through here, so there is exactly one answer per process per minute. The
- * resolved league is unioned into `leagues` so resolveLeague still accepts it
- * even when the env allow-list predates it.
+ * One gameConfigs entry with `activeLeague` replaced by the RESOLVED default
+ * league (env override > league_meta.is_default > code fallback), plus the
+ * `defaultLeagueSource` that produced it. The resolved league is unioned into
+ * `leagues` so resolveLeague still accepts it even when the env allow-list
+ * predates it.
+ */
+async function withResolvedDefault(game, config, trace) {
+  if (!game.enabled) return { ...game, defaultLeagueSource: "fallback" };
+  // No trace on a read path: the resolver's own default logger takes over, so a
+  // degraded default league is never invisible outside the cron.
+  const { league, source } = await resolveDefaultLeague(game.id, trace ? { config, trace } : { config });
+  return {
+    ...game,
+    activeLeague: league,
+    defaultLeagueSource: source,
+    leagues: [...new Set([league, ...game.leagues])],
+  };
+}
+
+/**
+ * Every enabled game's resolved config. Only /api/config and the cron need all
+ * of them; a single-game read route resolves just the game it was asked for
+ * (resolveRequestedGame) rather than paying for both.
  */
 export async function resolveGameConfigs(config, { trace = null } = {}) {
-  const definitions = gameConfigs(config);
-  return Promise.all(
-    definitions.map(async (game) => {
-      if (!game.enabled) return { ...game, defaultLeagueSource: "fallback" };
-      // No trace on a read path: the resolver's own default logger takes over,
-      // so a degraded default league is never invisible outside the cron.
-      const { league, source } = await resolveDefaultLeague(game.id, trace ? { config, trace } : { config });
-      return {
-        ...game,
-        activeLeague: league,
-        defaultLeagueSource: source,
-        leagues: [...new Set([league, ...game.leagues])],
-      };
-    }),
-  );
+  return Promise.all(gameConfigs(config).map((game) => withResolvedDefault(game, config, trace)));
 }
 
 export function resolveGame(searchParams, config, definitions = gameConfigs(config)) {
@@ -159,6 +160,18 @@ export function resolveGame(searchParams, config, definitions = gameConfigs(conf
     };
   }
   return { game };
+}
+
+/**
+ * resolveGame for the single-game read routes: validate the requested game
+ * first, then resolve the default league for THAT game only. The other game's
+ * league metadata is irrelevant to this response and reading it would put a
+ * second database round trip on the request path.
+ */
+export async function resolveRequestedGame(searchParams, config, { trace = null } = {}) {
+  const selected = resolveGame(searchParams, config);
+  if (selected.error) return selected;
+  return { game: await withResolvedDefault(selected.game, config, trace) };
 }
 
 let contextPromise;
@@ -387,7 +400,7 @@ function finalizeRadarBody(body, game, league) {
 export async function getRadar(searchParams) {
   const ctx = await context();
   const { config } = ctx;
-  const selectedGame = resolveGame(searchParams, config, await resolveGameConfigs(config));
+  const selectedGame = await resolveRequestedGame(searchParams, config);
   if (selectedGame.error) return selectedGame.error;
   const { game } = selectedGame;
   const selected = await resolveLeagueAccess(searchParams, game, async (requestedLeague) => {
@@ -720,7 +733,7 @@ export async function getHistory(searchParams) {
   if (!/^[\p{L}\p{N}_\-/]{1,128}\|[\p{L}\p{N}_\-/]{1,128}$/u.test(pair)) {
     return { status: 400, body: { error: { code: "invalid-pair", message: "invalid market pair" } } };
   }
-  const selectedGame = resolveGame(searchParams, config, await resolveGameConfigs(config));
+  const selectedGame = await resolveRequestedGame(searchParams, config);
   if (selectedGame.error) return selectedGame.error;
   const { game } = selectedGame;
   const selected = await resolveLeagueAccess(searchParams, game, async (requestedLeague) => {
@@ -742,7 +755,7 @@ export async function getHistory(searchParams) {
 export async function getHotlist(searchParams = new URLSearchParams()) {
   const ctx = await context();
   const { config, identityByGame } = ctx;
-  const selectedGame = resolveGame(searchParams, config, await resolveGameConfigs(config));
+  const selectedGame = await resolveRequestedGame(searchParams, config);
   if (selectedGame.error) return selectedGame.error;
   const { game } = selectedGame;
   const selected = await resolveLeagueAccess(searchParams, game, async (requestedLeague) => {
@@ -841,6 +854,12 @@ export async function getConfig() {
     const enabledLeagueIds = leagues.filter((entry) => entry.enabled).map((entry) => entry.id);
     return {
       ...game,
+      // Belt and braces, no longer a second opinion: resolveDefaultLeague now
+      // applies the same "no priced candles -> best league that has them" rule
+      // using league_meta depth, so the read routes and this response agree.
+      // This keeps the live EXISTS probe as the last word for the narrow window
+      // where hourly league_meta and the candle table disagree (a league pruned
+      // since the last cron run).
       activeLeague: enabledLeagueIds.includes(game.activeLeague)
         ? game.activeLeague
         : enabledLeagueIds[0] ?? game.activeLeague,

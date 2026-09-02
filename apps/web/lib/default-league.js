@@ -190,9 +190,12 @@ function bestPricedLeague(rows, game) {
     minPairs: 1,
   });
   if (eligible) return eligible;
-  const publicPriced = priced.filter((row) => row.isPublic ?? isPublicLeague(row.league));
+  // Stored flags were computed when the row was written, so a variant spelling
+  // we only learned to recognise later still carries the old verdict until the
+  // next refresh: either source saying "private"/"permanent" disqualifies.
+  const publicPriced = priced.filter((row) => row.isPublic !== false && isPublicLeague(row.league));
   const challenge = publicPriced.filter(
-    (row) => !(row.isPermanent ?? isPermanentLeague(row.league, game)),
+    (row) => !row.isPermanent && !isPermanentLeague(row.league, game),
   );
   const candidates = challenge.length ? challenge : publicPriced;
   if (!candidates.length) return null;

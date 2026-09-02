@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   chooseDefaultLeague,
+  isEligibleDefaultLeague,
   isPermanentLeague,
   PERMANENT_LEAGUE_PREFIXES,
   PERMANENT_LEAGUE_SUFFIXES,
@@ -174,4 +175,31 @@ test("thresholds are configurable and applied as inclusive minimums", () => {
   assert.equal(chooseDefaultLeague(rows, base), "Runes of Aldur");
   assert.equal(chooseDefaultLeague(rows, { ...base, minCompletedHours: 24, minPairs: 200 }), "Forbidden Rites");
   assert.equal(chooseDefaultLeague(rows, { ...base, minCompletedHours: 24, minPairs: 201 }), "Runes of Aldur");
+});
+
+test("a suffix-spelled hardcore variant never becomes the default, however deep", () => {
+  // "HC Runes of Aldur" (prefix) was already covered; GGG also ships the suffix
+  // spelling, and a hardcore economy must never become the SEO scope.
+  const suffixed = [
+    row("Forbidden Rites HC", { hoursAgo: 100, completedHours: 168, pairCount: 900 }),
+    row("Forbidden Rites SSF", { hoursAgo: 100, completedHours: 168, pairCount: 900 }),
+    row("Forbidden Rites Hardcore", { hoursAgo: 100, completedHours: 168, pairCount: 900 }),
+  ];
+  for (const variant of suffixed) {
+    assert.equal(isPermanentLeague(variant.league, "poe2"), true, variant.league);
+    assert.equal(isEligibleDefaultLeague(variant, "poe2"), false, variant.league);
+  }
+  // Newer and deeper than the incumbent, and still not the default.
+  assert.equal(
+    chooseDefaultLeague([...suffixed, RUNES], { game: "poe2", currentDefault: "Runes of Aldur", now: NOW }),
+    "Runes of Aldur",
+  );
+  // The plain league of the same name is still perfectly eligible.
+  assert.equal(
+    chooseDefaultLeague(
+      [...suffixed, RUNES, row("Forbidden Rites", { hoursAgo: 100, completedHours: 168, pairCount: 900 })],
+      { game: "poe2", currentDefault: "Runes of Aldur", now: NOW },
+    ),
+    "Forbidden Rites",
+  );
 });

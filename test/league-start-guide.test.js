@@ -5,6 +5,7 @@ import {
   announcedLeague,
   buildFaqs,
   pickGuideLeague,
+  plural,
   resolveGuideLeague,
 } from "../apps/web/lib/league-start-guide.js";
 
@@ -38,9 +39,9 @@ function metaRow(league, extra = {}) {
 const OLD_LEAGUE = metaRow("Runes of Aldur", { firstSeenAt: ANNOUNCED_START - 900 * HOUR });
 const ANNOUNCED_ROW = metaRow(announcedLeague.name, { firstSeenAt: ANNOUNCED_START + HOUR });
 const NEXT_LEAGUE = metaRow("Wraeclast Reborn", {
-  firstSeenAt: NOW - 20 * HOUR,
+  firstSeenAt: NOW - 30 * HOUR,
   pairCount: 137,
-  completedHours: 19,
+  completedHours: 29,
 });
 
 const kindOf = (rows) => pickGuideLeague(rows, { now: NOW });
@@ -82,8 +83,8 @@ test("a newer, different league is reported as observed, with depth and no mecha
   ]);
   assert.equal(resolved.league.name, "Wraeclast Reborn");
   assert.equal(resolved.league.pairCount, 137);
-  assert.equal(resolved.league.completedHours, 19);
-  assert.equal(resolved.league.firstSeenAt, new Date(NOW - 20 * HOUR).toISOString());
+  assert.equal(resolved.league.completedHours, 29);
+  assert.equal(resolved.league.firstSeenAt, new Date(NOW - 30 * HOUR).toISOString());
   // We know nothing about this league beyond what we priced: no mechanics, no
   // announced start, no source links leaking in from the curated facts.
   assert.equal(JSON.stringify(resolved.league).includes(announcedLeague.mechanics), false);
@@ -224,5 +225,65 @@ test("every source link is an official pathofexile.com post", () => {
     assert.equal(url.protocol, "https:");
     assert.equal(url.hostname, "www.pathofexile.com");
     assert.match(url.pathname, /^\/forum\/view-thread\/\d+$/, `${field} should point at a forum thread`);
+  }
+});
+
+test("counts are pluralised, so a day-one league never reads \"1 markets\"", () => {
+  assert.equal(plural(1, "market"), "1 market");
+  assert.equal(plural(0, "market"), "0 markets");
+  assert.equal(plural(137, "market"), "137 markets");
+  assert.equal(plural(1, "completed hour"), "1 completed hour");
+  assert.equal(plural(24, "completed hour"), "24 completed hours");
+
+  // The thinnest league we are willing to name: one market, one hour of it.
+  const thinnest = coverage(
+    kindOf([metaRow("Wraeclast Reborn", { firstSeenAt: NOW - 30 * HOUR, pairCount: 1, completedHours: 24 })]),
+  );
+  assert.match(thinnest, /with 1 market across 24 completed hours/);
+  assert.doesNotMatch(thinnest, /\b1 markets\b|\b1 completed hours\b/);
+});
+
+test("a league too thin to trust is not named as the current one", () => {
+  // 23 completed hours is a league we have barely seen; the honest thing to
+  // publish is still the announcement, not a name we half-observed.
+  const thin = metaRow("Wraeclast Reborn", { firstSeenAt: NOW - 30 * HOUR, completedHours: 23 });
+  assert.equal(kindOf([ANNOUNCED_ROW, thin]).kind, "announced");
+  assert.equal(kindOf([ANNOUNCED_ROW, { ...thin, completedHours: 24 }]).kind, "observed");
+});
+
+test("a first-seen hour clamped to the aggregate window is not published", () => {
+  // Reseed hazard: refreshLeagueMeta aggregates a 7-day window, so a cold
+  // league_meta table records first_seen_at at the window floor. A long-running
+  // old league would otherwise look brand new and outrank the announcement.
+  const windowFloor = NOW - 7 * 24 * HOUR;
+  const reseeded = metaRow("Runes of Aldur", { firstSeenAt: windowFloor, completedHours: 168 });
+  assert.equal(kindOf([reseeded]).kind, "announced");
+  // Within the tolerance band either way, because the floor is "now"-relative.
+  assert.equal(kindOf([{ ...reseeded, firstSeenAt: windowFloor + HOUR }]).kind, "announced");
+  assert.equal(kindOf([{ ...reseeded, firstSeenAt: windowFloor - HOUR }]).kind, "announced");
+  // A genuine first-seen hour drifts away from the moving floor and is fine.
+  assert.equal(kindOf([{ ...reseeded, firstSeenAt: windowFloor + 6 * HOUR, league: "Wraeclast Reborn" }]).kind, "observed");
+});
+
+test("a hardcore/SSF variant is never the league the guide names", () => {
+  for (const name of ["Forbidden Rites HC", "Forbidden Rites SSF", "Forbidden Rites Hardcore", "HC Wraeclast Reborn"]) {
+    const rows = [ANNOUNCED_ROW, metaRow(name, { firstSeenAt: NOW - 30 * HOUR, completedHours: 29 })];
+    const resolved = kindOf(rows);
+    assert.equal(resolved.kind, "confirmed", name);
+    assert.equal(resolved.league.name, announcedLeague.name);
+  }
+});
+
+test("the announced mechanics prose lives on announcedLeague alone", () => {
+  // The page renders it only under the "Previously announced: <name>
+  // (<version>)" heading once a newer league is trading; nothing the resolver
+  // returns for that newer league may carry it.
+  for (const word of ["Ritual", "Wildwood", "Sacred Bloom", "Trial of Chaos"]) {
+    assert.ok(announcedLeague.mechanics.includes(word), `announced mechanics should mention ${word}`);
+  }
+  const observed = kindOf([ANNOUNCED_ROW, NEXT_LEAGUE]);
+  const rendered = JSON.stringify(observed.league) + buildFaqs(observed).map((f) => f.a).join(" ");
+  for (const word of ["Ritual", "Wildwood", "Sacred Bloom", "Trial of Chaos"]) {
+    assert.equal(rendered.includes(word), false, `observed copy must not claim ${word}`);
   }
 });

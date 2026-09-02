@@ -1,6 +1,6 @@
 import { siteUrl } from "../../../lib/market.js";
 import GuideLayout from "../../../components/GuideLayout.jsx";
-import { announcedLeague, buildFaqs, resolveGuideLeague } from "../../../lib/league-start-guide.js";
+import { announcedLeague, buildFaqs, plural, resolveGuideLeague } from "../../../lib/league-start-guide.js";
 
 // Evergreen slug on purpose: no league name and no patch version in the URL or
 // the title, so this page keeps accumulating authority across 0.5.5, 1.0 and
@@ -65,15 +65,23 @@ export default async function LeagueStartCurrencyGuide() {
           price.
         </p>
         {observed ? (
-          <p>
-            It is written to be league-agnostic on purpose. The newest league our own hourly data has seen on the{" "}
-            <a href="/poe2">exchange</a> is <strong>{observed.name}</strong>, first priced on{" "}
-            <time dateTime={observed.firstSeenAt}>{observed.firstSeenAtUtc}</time>, with {observed.pairCount} markets
-            across {observed.completedHours} completed hours so far. That is what we observed in the exchange feed, not
-            an announcement: we hold no official details for it, so the league notes just below still describe the
-            previously announced {announcedLeague.name} league. Nothing else on this page depends on either — the same
-            supply-and-demand mechanics show up at every launch.
-          </p>
+          <>
+            <p>
+              It is written to be league-agnostic on purpose. The newest league our own hourly data has seen on the{" "}
+              <a href="/poe2">exchange</a> is <strong>{observed.name}</strong>, first priced on{" "}
+              <time dateTime={observed.firstSeenAt}>{observed.firstSeenAtUtc}</time>, with{" "}
+              {plural(observed.pairCount, "market")} across {plural(observed.completedHours, "completed hour")} so far.
+              That is what we observed in the exchange feed, not an announcement: we hold no official details for it, so
+              the mechanics of {observed.name} are not described anywhere on this page. Nothing else here depends on
+              which league is running — the same supply-and-demand mechanics show up at every launch.
+            </p>
+            {/* Kept in the flow, under its own heading, rather than hidden in a
+                <details>: it is still true, still sourced, and still crawlable —
+                it is simply no longer the league this guide is pointing at. */}
+            <h2>
+              Previously announced: {announcedLeague.name} ({announcedLeague.version})
+            </h2>
+          </>
         ) : null}
         <p>
           {observed
@@ -92,10 +100,15 @@ export default async function LeagueStartCurrencyGuide() {
               Our own hourly data first saw it priced on the exchange on{" "}
               <time dateTime={resolved.league.firstSeenAt}>{confirmedFirstSeen}</time>.
             </>
-          ) : null}{" "}
-          Note that it does not replace the existing {announcedLeague.parallelLeague} league, which GGG has said keeps
-          running alongside it — so check which league a price belongs to before comparing anything.
-          {observed ? null : " Nothing below depends on either of them: the same supply-and-demand mechanics show up at every launch."}
+          ) : null}
+          {observed ? null : (
+            <>
+              {" "}
+              Note that it does not replace the existing {announcedLeague.parallelLeague} league, which GGG has said
+              keeps running alongside it — so check which league a price belongs to before comparing anything. Nothing
+              below depends on either of them: the same supply-and-demand mechanics show up at every launch.
+            </>
+          )}
         </p>
         <p>
           By GGG&rsquo;s own{" "}

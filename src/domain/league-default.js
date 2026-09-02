@@ -38,7 +38,10 @@ export const PERMANENT_LEAGUES = {
  * its parent league and must never become the SEO scope.
  */
 export const PERMANENT_LEAGUE_PREFIXES = ["HC ", "SSF ", "Hardcore ", "Ruthless "];
-export const PERMANENT_LEAGUE_SUFFIXES = [" Ruthless"];
+// Suffix spellings too: GGG has shipped both "HC Runes of Aldur" and
+// "Forbidden Rites HC" across games and events, and either way it is a fraction
+// of the parent league's economy.
+export const PERMANENT_LEAGUE_SUFFIXES = [" Ruthless", " HC", " Hardcore", " SSF"];
 
 const ALL_PERMANENT = [...new Set(Object.values(PERMANENT_LEAGUES).flat())];
 

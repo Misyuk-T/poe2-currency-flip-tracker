@@ -57,8 +57,33 @@ export function formatUtcInstant(value) {
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${hh}:${mm} UTC`;
 }
 
+/**
+ * "1 market", "137 markets". A day-one league has exactly one of things often
+ * enough that "1 markets across 1 completed hours" would ship on launch day.
+ */
+export function plural(count, singular, many = `${singular}s`) {
+  return `${count} ${Math.abs(count) === 1 ? singular : many}`;
+}
+
 const sameLeagueName = (a, b) =>
   typeof a === "string" && typeof b === "string" && a.trim().toLowerCase() === b.trim().toLowerCase();
+
+// refreshLeagueMeta aggregates candles over a 7-day window, so a league_meta row
+// written from a COLD table has its first_seen_at clamped to that window's floor
+// rather than to the league's real first hour. (`least(existing, new)` keeps the
+// true value once recorded, so this only bites a wiped or freshly seeded table.)
+// Without a guard, a reseed long after a league started would make an OLD league
+// look newer than the announced start and get published as one we just saw
+// appear. A genuine first_seen_at is fixed and drifts away from the moving floor;
+// a clamped one tracks it forever — which is exactly what this detects.
+const AGGREGATE_WINDOW_MS = 7 * 24 * 3_600_000;
+const CLAMP_TOLERANCE_MS = 2 * 3_600_000;
+const looksClampedToWindow = (firstSeenMs, now) =>
+  Math.abs(firstSeenMs - (now - AGGREGATE_WINDOW_MS)) <= CLAMP_TOLERANCE_MS;
+
+// A real new league prices this many hours inside its first day. Anything
+// thinner is not something we are willing to name as the current league.
+const MIN_OBSERVED_HOURS = 24;
 
 /**
  * The newest public, non-permanent league in a set of league_meta rows, by the
@@ -72,8 +97,12 @@ function newestObservedLeague(rows, now) {
     .filter(({ row, firstSeenMs }) => {
       if (!row || typeof row.league !== "string" || !row.league.trim()) return false;
       if (firstSeenMs == null || firstSeenMs > now) return false;
-      if (!(row.isPublic ?? isPublicLeague(row.league))) return false;
-      return !(row.isPermanent ?? isPermanentLeague(row.league, "poe2"));
+      // The stored flags were computed when the row was WRITTEN, so a league
+      // whose variant spelling we only learned to recognise later still carries
+      // the old verdict until the next hourly refresh. Either source saying
+      // "private" or "permanent" is enough to disqualify it.
+      if (row.isPublic === false || !isPublicLeague(row.league)) return false;
+      return !row.isPermanent && !isPermanentLeague(row.league, "poe2");
     });
   if (!candidates.length) return null;
   return candidates.reduce((winner, candidate) => {
@@ -104,12 +133,19 @@ export function pickGuideLeague(rows, { now = Date.now(), announced = announcedL
   const firstSeenAt = new Date(firstSeenMs).toISOString();
   const firstSeenAtUtc = formatUtcInstant(firstSeenMs);
 
+  // A first-seen hour we cannot trust is simply not published: the curated
+  // announcement is always a correct thing to say.
+  if (looksClampedToWindow(firstSeenMs, now)) return fallback;
+
   if (sameLeagueName(row.league, announced.name)) {
     return { kind: "confirmed", league: { ...announced, firstSeenAt, firstSeenAtUtc } };
   }
 
   const announcedStartMs = toEpochMs(announced.startsAtIso);
   if (announcedStartMs != null && firstSeenMs <= announcedStartMs) return fallback;
+  // Naming a league GGG never announced is the strongest claim this page makes,
+  // so it waits until a day of real hours sits behind it.
+  if ((Number(row.completedHours) || 0) < MIN_OBSERVED_HOURS) return fallback;
 
   return {
     kind: "observed",
@@ -162,7 +198,8 @@ function leagueCoverageAnswer(resolved) {
     const o = resolved.league;
     return (
       `${evergreen} The newest league our own hourly data has seen on the exchange is ${o.name}, first priced on ` +
-      `${o.firstSeenAtUtc}, with ${o.pairCount} markets across ${o.completedHours} completed hours so far. That is an ` +
+      `${o.firstSeenAtUtc}, with ${plural(o.pairCount, "market")} across ` +
+      `${plural(o.completedHours, "completed hour")} so far. That is an ` +
       `observation from the exchange feed, not an announcement: we do not have official details for it, so the ` +
       `league notes further down still describe ${a.name} (${a.version}), the last league we hold official sources ` +
       `for. The mechanics described here are meant to carry over to whatever launches after that.`

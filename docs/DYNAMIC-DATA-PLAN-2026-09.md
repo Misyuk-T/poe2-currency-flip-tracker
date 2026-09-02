@@ -78,6 +78,19 @@ which could in principle pick a day-one league. Part 2 (sourcing the guide's
   permanent leagues never default; env override wins).
 
 ### Phase B — currency identity from data (M)
+**STATUS (2026-09-02):** shipped in `75741ae` (merge of `feat/cx-identity-db`;
+migration 010 applied ~19:58Z, pg_cron job `cx-identity-daily` 04:20 UTC live).
+Two review rounds: observed ids are reverse-mapped to Metadata paths before
+resolution; only official/learned taxonomy sources are stored as `category`;
+`subcategory` stays null; upserts batched by 50; `/api/status.identity =
+{ overrides, iconlessRows }`. **What it does NOT do:** no new SEO pages —
+currency URLs are short ids canonicalised at ingest from committed JSON.
+Follow-ups: (B2, review-gated) ingest-time canonicalisation from `cx_identity`
+(re-keys `pair_id`, mints URLs — needs a backfill plan); defensive dedupe in
+`upsertCxIdentity`; unify the PoE1 build script's inline trade-static parse.
+Also: the "monthly PR safety net" `.github/workflows/data-refresh.yml` exists
+only locally (untracked 2026-07-25, push token lacked `workflow` scope) — Taras
+to add it via GitHub UI or accept that Phase B/C replace it.
 - Job (daily-guarded step in the cron, or a separate `/api/cron/identity` on pg_cron)
   lists Metadata ids observed in candles that have no identity, fetches RePoE
   `base_items` + GGG `trade2/data/static`, resolves, writes `cx_identity(game, metadata_id,

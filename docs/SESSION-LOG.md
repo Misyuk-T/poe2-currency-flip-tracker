@@ -935,3 +935,25 @@ Analytics; форумний тред pathofexile.com + каталоги; 04.09 �
   його покривають тести refresh). **Змержено в main (75741ae)**, 396/396.
   DECISIONS-запис Phase B виправлено (`iconlessRows`, subcategory null,
   guard rails, межа для SEO + B2). Міграція 010 застосовується, код пушиться.
+- **Phase B на проді:** міграція 010 застосована (~19:58Z), `cron.job` має
+  3 задачі (prune 03:17, radar-ingest xx:05, **cx-identity-daily 04:20**).
+  Ручний запуск джобу через `net.http_post` з боку Supabase (обхід per-IP
+  challenge): **200**, `poe2 scanned 668 / unresolved 0`, `poe1 scanned 1073 /
+  unresolved 0`, written 0 — усі спостережені id вже покриті committed JSON,
+  `cx_identity` порожня до появи нових id від GGG (очікувано; саме для цього
+  джоб і щоденний).
+- **Крон 20:05Z — Phase A підтверджена на проді:** `league_meta` має 13+ ліг
+  (poe2: Runes of Aldur pairs 1315 / hours 167 **is_default**, HC Runes of
+  Aldur, Standard, Hardcore; poe1: Standard, Allflame, Hardcore Allflame,
+  Ruthless Allflame, HC Ruthless Allflame, Hardcore, Ruthless, Ancestors,
+  Phrecia, Hardcore Ancestors — усі виявлені зі свічок). `/api/config`:
+  `defaultLeagueSource: "db"`, poe2 activeLeague = Runes of Aldur (без змін),
+  **poe1 activeLeague = Allflame** (перемкнувся з постійного Standard, як
+  задумано). Per-IP challenge вже знято (curl знову проходить).
+- **Підсумок дня:** задеплоєно 6 гілок (sitemap CDN-кеш, гайд Forbidden Rites,
+  снапшоти всіх ліг, Vercel Analytics, Phase A league_meta + гайд з даних,
+  Phase B cx_identity), 2 міграції (009, 010), 396 тестів; кожна гілка через
+  незалежне Opus-ревю (7 раундів правок). Відкрито для Тараса: GSC resubmit
+  sitemap, форумний тред, Reddit 04.09, `data-refresh.yml` через GitHub UI,
+  лист GGG про `service:leagues` (Phase D). Далі по плану: Phase C (layout/gold
+  у БД), B2 (канонізація при інжесті — review-gated).

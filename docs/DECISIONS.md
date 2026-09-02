@@ -28,7 +28,21 @@ in the worst case exceed any fixed reserve, and the gate can stop starting work
 but cannot interrupt it; the active snapshot is durably written before pass 2,
 so an overrun costs telemetry, not data.
 
-## 2026-09-02 — Keep `LEAGUE` (default) on Runes of Aldur through the 0.5.5 launch
+## 2026-09-02 — Default league is data-driven (`league_meta` + rule); env `LEAGUE` is an emergency pin
+Shipped 6985783 + migration 009. The hourly cron aggregates candles into
+`league_meta` (first/last seen, pair count, completed hours) and
+`chooseDefaultLeague` picks the newest public, non-permanent league with
+≥48 completed hours and ≥200 priced pairs, forward-only, else keeps the current
+default. Readers resolve env pin > DB `is_default` > code fallback with a 2s
+timeout, single-flight and 60s TTL; a missing table degrades to the fallback.
+**Why:** "динаміка на все" (Taras): leagues should never need an env edit or a
+redeploy. Thresholds encode the earlier product rule (no re-scoping 600 SEO pages
+onto a day-1 economy) instead of a human remembering to flip a switch later.
+Consequence for Forbidden Rites: earliest flip ≈ 2026-09-06 20:00Z. Supersedes
+the "keep `LEAGUE` on Runes of Aldur" decision below (still true in effect, now
+enforced by data, not by env). PoE1 also loses its hardcoded league list.
+
+## 2026-09-02 — Keep `LEAGUE` (default) on Runes of Aldur through the 0.5.5 launch — SUPERSEDED same day, see above
 Ingest and league discovery are automatic (see `docs/LEAGUE-LAUNCH-RUNBOOK.md`);
 only the default league is a manual switch, and it scopes the 600+ SEO currency
 pages and the sitemap. **Why:** flipping it on day 1 would re-scope pages that

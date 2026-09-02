@@ -20,8 +20,8 @@ the league-launch trace in `LEAGUE-LAUNCH-RUNBOOK.md`.
 
 | Piece | Where | Why it exists | Blocker |
 | --- | --- | --- | --- |
-| Default league `LEAGUE` | `src/server/config.js:35-38`; scopes SEO pages/index/sitemap (`currency-summary.js:22-27,199-204`) | June-era stub, never removed | none technical; product rule: don't re-scope 600 pages onto a day-1 economy |
-| Allow-list `LEAGUES`, PoE1 fallback list | `config.js:39-40`, `.env.example:58-63` | same | none |
+| Default league `LEAGUE` | **shipped 2026-09-02** (`6985783`) — `resolveDefaultLeague` (`apps/web/lib/default-league.js`) resolves it per-request from `league_meta.is_default`; `LEAGUE`/`POE1_LEAGUE` is now an emergency pin, not the source | was a June-era stub | none — done |
+| Allow-list `LEAGUES`, PoE1 fallback list | `config.js:39-40`, `.env.example:58-63` | PoE1's hardcoded fallback list is gone (discovery + `POE1_LEAGUES` override); `LEAGUES` still widens the live selector | none |
 | PoE2 league metadata (name before first candle, start/end) | `league-meta` works for PoE1 only (`apps/web/app/api/league-meta/route.js:15-18`) | GGG legacy endpoint ignores `realm=poe2` | `service:leagues` OAuth = T1, external |
 | Guide `currentLeague` | `apps/web/lib/league-start-guide.js` (branch) | content const | facts need a source |
 | `cx-identity-*.json` (Metadata → name/icon/category) | `scripts/build-identity.mjs`, RePoE + GGG static | monthly PR (`data-refresh.yml`) — honesty rule | none technical |
@@ -49,6 +49,17 @@ the league-launch trace in `LEAGUE-LAUNCH-RUNBOOK.md`.
 ## Phases
 
 ### Phase A — leagues from data (S/M, first)
+**STATUS (2026-09-02):** part 1 shipped in `6985783` (merge of
+`feat/league-meta`; migration 009 applied to production ~19:30Z) — the
+`league_meta` table, the hourly refresh, `chooseDefaultLeague`,
+`resolveDefaultLeague` and the `/api/config`/`/api/status` fields below are
+all live. Two follow-ups came out of review and were accepted as-is rather
+than fixed, because both are only reachable when the resolved default has
+zero priced pairs: the last-resort "best priced league" fallback
+(`bestPricedLeague` in `apps/web/lib/default-league.js`) is not filtered by
+public/permanent, and it calls `chooseDefaultLeague` with `minPairs: 1`,
+which could in principle pick a day-one league. Part 2 (sourcing the guide's
+`currentLeague` facts from `league_meta`) is in progress.
 - New table `league_meta(game, realm, league, first_seen_at, last_seen_at, pair_count,
   completed_hours, is_permanent, is_public, is_default, source)`; refreshed inside the
   hourly cron after snapshots (one aggregate over candles per game — bounded).
@@ -89,12 +100,10 @@ the league-launch trace in `LEAGUE-LAUNCH-RUNBOOK.md`.
   `league_meta.official_name/start_at/end_at`, guide shows official dates, UI shows
   "ends in N days".
 
-## Decisions needed from Taras
-1. Default-league thresholds: 48 completed hours and ≥200 priced pairs (proposed).
-2. Honesty gate: auto-apply identity/layout (proposed yes), auto-apply gold behind
-   floors (proposed yes) — or keep PRs for gold.
-3. Order: Phase A right after the current three branches deploy; B and C next week;
-   D when GGG answers.
+## Decisions (Taras, 2026-09-02: "все так, го")
+1. Default-league thresholds: 48 completed hours and ≥200 priced pairs — **decided**.
+2. Honesty gate: identity/layout auto-apply; gold auto-applies behind floors — **decided**.
+3. Order: Phase A first (shipped), then B and C, D when GGG answers — **decided**.
 
 ## Out of scope
 - Per-league URLs for the 600 currency pages (a different SEO architecture; revisit

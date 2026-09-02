@@ -33,10 +33,13 @@ review job instead of staying silently stale:
 - **New leagues** — **automatic since c0d6c70 (2026-08-01), re-verified
   2026-09-02:** ingest takes every public league in the CX digest and
   `listPricedLeagues()` + `resolveLeagueAccess()` expose any league with
-  priced candles without an env edit or redeploy. Only the *default* league
-  (`LEAGUE` in `src/server/config.js`, which scopes the SEO pages + sitemap)
-  is still a manual, deliberate switch — see `docs/LEAGUE-LAUNCH-RUNBOOK.md`.
-  T3 (`service:leagues`) now only adds official metadata (names before the
+  priced candles without an env edit or redeploy. The *default* league (which
+  scopes the SEO pages + sitemap) is **now data-driven too, shipped
+  2026-09-02** (`6985783`): the hourly cron aggregates observed depth into
+  `league_meta` and `chooseDefaultLeague` flips the default forward once a
+  new league clears 48 completed hours and 200 priced pairs; `LEAGUE` env is
+  now only an emergency pin — see `docs/LEAGUE-LAUNCH-RUNBOOK.md`. T3
+  (`service:leagues`) now only adds official metadata (names before the
   first candle, start/end dates); blocked on T1.
 
 **Shipped 2026-07-25:** `.github/workflows/data-refresh.yml` — a monthly

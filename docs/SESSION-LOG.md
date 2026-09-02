@@ -749,3 +749,138 @@ Analytics; форумний тред pathofexile.com + каталоги; 04.09 �
   B — identity у БД з RePoE/GGG static, C — layout/gold у БД за floors,
   D — офіційні метадані після T1. Рішення потрібні від Тараса (пороги, гейт
   чесності, порядок).
+
+## 2026-09-02 (вечір) — "все так, го": merge + deploy, старт Phase A
+
+- Тарас затвердив: пороги дефолтної ліги 48h / ≥200 пар; identity/layout/gold
+  застосовуються автоматично за floors; порядок A → B/C → D.
+- **Змержено в main і запушено** (8310f8e): докси + `fix/sitemap-freshness` +
+  `content/forbidden-rites-league` + `feat/snapshots-all-leagues`. 328/328 на
+  змерженому main (після `npm install` — у root node_modules не було
+  `postgres`, той самий артефакт, що і в worktree). Vercel деплой запущено.
+- Запущено Opus: **Phase A part 1** (`feat/league-meta`): міграція 009
+  `league_meta`, `refreshLeagueMeta` одним агрегатом, чисте правило
+  `chooseDefaultLeague` (48h/200 пар, тільки вперед, постійні ліги ніколи),
+  резолвер env > db > fallback з TTL, всі читачі дефолту через нього, PoE1
+  без хардкод-списку, нові поля в `/api/config`. Гайд — окремо (part 2).
+- **Прод після деплою 8310f8e (READY 18:46Z), перевірено curl-ом:**
+  sitemap `<lastmod>` = 2026-09-02T17:00Z (478 URL) — **розморозився з 29.08**;
+  заголовки `cdn-cache-control: public, s-maxage=3600`, без swr; 635 URL.
+  Гайд: 10× "Forbidden Rites", `dateTime="2026-09-04T20:00:00Z"`, "20:00 UTC",
+  нуль "Viridian". `/api/config` activeLeague = Runes of Aldur (без змін).
+  Снапшоти для всіх ліг перевіряються після крону 19:05Z (radar_snapshots
+  poe2 Hardcore має оновитись).
+- **Vercel Web Analytics** — Тарас увімкнув у дашборді; Sonnet підключив
+  `@vercel/analytics@2.0.1` + `<Analytics />` у `apps/web/app/layout.jsx`
+  (репо — один пакет, не workspaces; CSP нема). 328/328, змержено і запушено
+  (424be3b). Перевірка скрипта `/_vercel/insights` на проді — фоном.
+- GSC: Тарас на сторінці Sitemaps; повторна подача = той самий URL у поле +
+  ПОДАТИ (востаннє прочитано 31.07).
+- **Phase A part 1 готова (Opus):** `feat/league-meta` @ 08ca593, 348/348.
+  Міграція 009 `league_meta` (RLS як 002, partial index на is_default);
+  `refreshLeagueMeta` одним `group by league` по PK-префіксу (7-денне вікно;
+  `first_seen_at` мержиться `least()` — не молодшає); `setDefaultLeague`
+  атомарно в `sql.begin`; правило в `src/domain/league-meta.js` (постійні
+  ліги як дані: Standard/Hardcore/Ruthless/SSF + префікси "HC "/"SSF "/
+  "Hardcore "); резолвер `apps/web/lib/default-league.js` env > db > fallback,
+  TTL 60s, 42P01 → трейс і fallback; крон `refreshLeagueDefaults` між інжестом
+  і снапшотами; PoE1 без хардкод-списку; `/api/config` + firstSeenAt/
+  lastSeenAt/pairCount/completedHours + `defaultLeagueSource`. Тест
+  день-1 Forbidden Rites → без перемикання, через 72h → перемикання.
+  Відправлено на Opus-ревю (фокус: латентність гарячого шляху, таймаут
+  читання резолвера, 42P01 через retry-обгортки).
+- **Opus-ревю Phase A: MERGE WITH FIXES.** HIGH: читання резолвера на
+  гарячому шляху успадковує 18s timeout + retry×2 (до ~20s у бюджеті 30s),
+  без `onTimeout` (висяча query тримає єдине з'єднання), без single-flight;
+  env-override робить правило інертним, якщо `LEAGUE` виставлено (перевірено
+  по `vercel env pull`: у проді є лише `LEAGUES`, `LEAGUE` нема — ок). MEDIUM:
+  `resolveGameConfigs` резолвить обидві гри на кожен запит; PoE1 дефолт
+  перемкнеться при першому кроні (прийнято як бажане, треба тест + "Ruthless"
+  суфікс); `getConfig` і `getRadar` можуть розійтись у дефолті без свічок.
+  LOW: колізія імен `src/domain/league-meta.js` vs `apps/web/lib/league-meta.js`
+  → перейменувати на `league-default.js`. Повернуто автору.
+- **Analytics live:** деплой 424be3b READY; у браузері `window.va` = function
+  (компонент змонтований; тег скрипта вставляється клієнтом, тому curl по
+  HTML його не бачить — поллінг "not live after 5 min" був хибним сигналом).
+- **Крон 19:05Z після деплою снапшотів для всіх ліг — підтверджено з БД:**
+  усі 11 ліг обох ігор (poe2: Runes of Aldur, HC Runes of Aldur, Standard,
+  Hardcore; poe1: Standard, Allflame, Hardcore Allflame, Ruthless Allflame,
+  HC Ruthless Allflame, Hardcore, Ruthless) мають `refreshed_at 19:05` — весь
+  прохід уклався в бюджет 120s. Для Phase A це означає: PoE1-дефолт при
+  першому кроні перемкнеться на Allflame (бажано), а "Ruthless Allflame"
+  має бути виключений суфіксом — вже в списку правок автору.
+- **Тайминги крону 19:05Z (Vercel logs):** увесь запуск 39,8 с (було ~30 с):
+  інжест 10,9 с (poe2 1175 свічок, poe1 1980), активна Runes of Aldur 5,7 с,
+  poe1 Standard 3,7 с, вторинні ліги 0,95–4,0 с кожна (Allflame 4,0 с з 2739
+  рядками — найважча), сума вторинних ≈ 18 с. Бюджет 120 с має ~6× запас;
+  оцінка "реальна ціна ліги невідома" закрита фактом.
+- **Phase A після ревю:** `feat/league-meta` @ 8a96bbd, 351/351. Резолвер:
+  `opTimeoutMs 2s`, `attempts 1`, `onTimeout resetSql`; single-flight через
+  кешування in-flight promise (тест: 8 конкурентних → 1 читання);
+  `resolveRequestedGame` резолвить лише запитану гру; "Ruthless " префікс +
+  " Ruthless" суфікс постійні; тест PoE1 першого запуску: Standard → Allflame,
+  Ruthless Allflame виключено; `bestPricedLeague()` вирівнює getConfig/getRadar
+  (дефолт без свічок → найкраща ліга зі свічками, застосовується і до env-піна,
+  трейс раз на TTL); перейменовано на `src/domain/league-default.js`;
+  `.env.example` оновлено. Дельта-ревю відправлено рецензенту.
+- **Дельта-ревю Phase A: MERGE** (351/351; резолвер 2s/1 спроба/resetSql на
+  всіх request-шляхах, single-flight з identity-check при reset, невалідна гра
+  — та сама помилка, unpriced-guard інертний доки Runes має пари; два
+  прийнятні ризики лише за нуля пар у дефолті — фолоу-ап: фільтр public/
+  permanent у last-resort reduce). **Змержено в main (6985783)**, міграція 009
+  застосовується `supabase db push --include-all`, код пушиться.
+- **Docs після Phase A (Sonnet):** ранбук переписано під data-driven дефолт
+  (чекліст, автоматичне/ручне, верифікація через `defaultLeagueSource` і
+  `league_meta`, rollback = env-пін); план Phase A — STATUS part 1 shipped +
+  два прийняті фолоу-апи; BACKLOG "New leagues" уточнено. DECISIONS: новий
+  запис про data-driven дефолт, попередній "тримати LEAGUE" позначено
+  superseded.
+- **Phase A на проді з 19:17Z:** `/api/config` віддає `defaultLeagueSource:
+  "fallback"`, `activeLeague: Runes of Aldur` (таблиця порожня до крону 20:05Z —
+  очікувано, поведінка для користувачів без змін). Фонова перевірка після
+  20:05 покаже `league_meta` і перехід на `"db"`.
+- Запущено **Phase B (Opus, `feat/cx-identity-db`)**: спільний модуль
+  резолюції identity для скрипта і рантайму, міграція 010 `cx_identity` +
+  pg_cron щоденно 04:20Z на `/api/cron/identity`, джоб з RePoE + GGG static
+  (cap 200 id, таймаути), read-time merge DB > JSON > humanized через
+  loader з TTL 10 хв, `identity` у `/api/status`.
+- **Phase A part 2 готова (Opus):** `feat/guide-league-from-data` @ 422a8e8,
+  359/359. `announcedLeague` (кураторські факти + `mechanics` — єдине місце
+  прози), `pickGuideLeague(rows)` (наймолодша публічна непостійна за
+  firstSeenAt), `resolveGuideLeague()` → announced / confirmed ("перша
+  прайснута година на біржі") / observed (нова ліга з даних, без механік,
+  чесна примітка); сторінка async + `revalidate 3600`, білд пререндерить
+  (`○ 1h`); `buildFaqs(resolved)`. Фолоу-ап з ревю A закрито: last-resort у
+  `bestPricedLeague()` — public non-permanent → public permanent → null
+  (приватні ніколи). Відправлено на Opus-ревю.
+- **Opus-ревю гайду з даних: MERGE WITH FIXES.** MEDIUM: "1 markets across 1
+  completed hours" у копії і в JSON-LD (день-1 ліги — саме той випадок, для
+  якого фіча). LOW: у observed лишилась фраза про "дві живі економіки";
+  суфіксні HC/SSF-варіанти назв не фільтруються; reseed-hazard (7-денне вікно
+  робить стару лігу "новою" після очищення таблиці) → guard 24h; продуктове
+  рішення — в observed прибрати механіки з основного потоку під заголовок
+  "Previously announced". Повернуто автору; ранбук: `currentLeague` →
+  `announcedLeague`.
+- **Phase B готова (Opus):** `feat/cx-identity-db` @ 1da37b8, 377/377 (+26).
+  `src/domain/identity-resolve.js` спільний для скриптів і рантайму (байт-
+  ідентичний вихід, offline round-trip тест на 40 id); міграція 010
+  `cx_identity` + `cron.schedule('cx-identity-daily','20 4 * * *')` за
+  патерном 008 (vault-секрет); джоб `identity-refresh.js` (distinct pair_id
+  по PK-префіксу, cap 200, RePoE + trade static 10s×2, floors ≥1000/≥100,
+  upsert без деградації полів); роут `/api/cron/identity` (той самий
+  CRON_SECRET); loader `identity-overrides.js` (TTL 10 хв, патерн Phase A),
+  `resolveCurrency(id, game, {overrides})`; wired у getRadar rebuild /
+  снапшоти / hotlist; `/api/status.identity`. **Свідомо не підключено до
+  currency pages / sitemap / OG:** вони ключуються short id, канонізованими
+  при інжесті з committed JSON — нові identity не стають URL. Це межа Phase B
+  для SEO; фолоу-ап B2 = канонізація при інжесті з БД (ризик зміни ключів
+  свічок). На Opus-ревю.
+- **Знахідка:** `.github/workflows/data-refresh.yml` існує лише локально —
+  коміт 3560395 "untrack data-refresh workflow (push token lacks workflow
+  scope)". Місячний PR-рефреш ніколи не крутився на GitHub; докси (BACKLOG,
+  план) вважали його живим. Потрібно: Тарас пушить workflow з токеном зі
+  scope `workflow`, або визнаємо, що страховки нема (Phase B її заміщає для
+  identity; catalog/gold лишаються без автоматики до Phase C).
+- Live `cron.job`: 1 prune-old-storage 03:17, 2 radar-ingest-hourly xx:05 —
+  міграція 010 додасть третю (cx-identity-daily 04:20) через `cron.schedule`
+  з ім'ям; перевірити ідемпотентність у ревю перед застосуванням.

@@ -11,6 +11,7 @@ const {
   getStatus,
   getRadar,
   getHistory,
+  refreshRadarSnapshots,
   resolveGame,
   resolveLeague,
   resolveLeagueAccess,
@@ -190,4 +191,178 @@ test("offline fixture fallback serves a full synthetic radar without a database"
   } finally {
     delete process.env.RADAR_FIXTURE_FALLBACK;
   }
+});
+
+// --- Hourly snapshot refresh across every priced league -------------------
+//
+// League-launch day: several public PoE2 leagues are live at once and all of
+// them must be served from fresh hourly snapshots, not the slow on-demand
+// rebuild. The refresh is exercised with injected dependencies (a fake repo
+// factory + a fake clock) so the orchestration is testable without a database.
+
+const SNAPSHOT_CONFIG = {
+  poeGame: "poe2",
+  poeRealm: "poe2",
+  league: "Runes of Aldur",
+  leagues: ["Runes of Aldur"],
+  poe1League: "Standard",
+  poe1Leagues: ["Standard"],
+  anchorCurrency: "exalted",
+  anchors: ["exalted", "divine"],
+  shortlist: [],
+  providerMode: "live",
+  radarMaxHotTargets: 8,
+  // Only PoE2 is streamed here, so PoE1 stays disabled and out of the way.
+  cxapiStreams: [{ game: "poe2", realm: "poe2" }],
+};
+
+const SNAPSHOT_CTX = {
+  config: SNAPSHOT_CONFIG,
+  catalogManifest: [],
+  catalogById: new Map(),
+  identityByGame: { poe2: { names: {}, icons: {}, categories: {} } },
+  scope: { game: "poe2", realm: "poe2", league: "Runes of Aldur", mode: "live" },
+};
+
+/**
+ * Fake repo factory. `pricedLeagues` is what listPricedLeagues() reports,
+ * `failWriteFor` makes one league's snapshot write blow up, and every league
+ * build advances the fake clock by `leagueCostMs`.
+ */
+function snapshotHarness({ pricedLeagues = [], failWriteFor = null, leagueCostMs = 0 } = {}) {
+  const writes = [];
+  const state = { t: 0 };
+  const clock = () => state.t;
+  const makeRepo = (scope) => ({
+    async hasPricedCandles() {
+      state.t += leagueCostMs;
+      return true;
+    },
+    async listPricedLeagues() {
+      return pricedLeagues.map((league) => ({ league, newestCompletedHour: 1 }));
+    },
+    async readRadarSnapshot() {
+      return null;
+    },
+    async listAnchorCandidates() {
+      return [];
+    },
+    async readCandleWindow() {
+      return [];
+    },
+    async readPairCandles() {
+      return [];
+    },
+    async writeRadarSnapshots(snapshots) {
+      if (failWriteFor === scope.league) throw new Error(`write failed for ${scope.league}`);
+      writes.push({ league: scope.league, anchors: snapshots.map((s) => s.anchor) });
+      return snapshots.length;
+    },
+  });
+  return { writes, state, clock, makeRepo };
+}
+
+test("hourly snapshot refresh rebuilds the active league first, then every other priced league", async () => {
+  const harness = snapshotHarness({
+    pricedLeagues: ["Hardcore", "Runes of Aldur", "Forbidden Rites"],
+  });
+  const results = await refreshRadarSnapshots(SNAPSHOT_CTX, {
+    now: 0,
+    clock: harness.clock,
+    makeRepo: harness.makeRepo,
+  });
+
+  const built = harness.writes.map((w) => w.league);
+  assert.equal(built[0], "Runes of Aldur", "the default landing scope is always rebuilt first");
+  assert.deepEqual(built, ["Runes of Aldur", "Hardcore", "Forbidden Rites"]);
+  // The active league is never rebuilt twice even though discovery also lists it.
+  assert.equal(built.filter((league) => league === "Runes of Aldur").length, 1);
+  // Every league stores its per-anchor snapshots plus the merged "auto" view.
+  assert.ok(harness.writes.every((w) => w.anchors.includes("auto")));
+  assert.deepEqual(
+    results.map((r) => r.league),
+    ["Runes of Aldur", "Hardcore", "Forbidden Rites"],
+  );
+  assert.ok(results.every((r) => !r.error && !r.skipped));
+});
+
+test("hourly snapshot refresh ignores private league scopes reported by discovery", async () => {
+  const harness = snapshotHarness({ pricedLeagues: ["Forbidden Rites (PL12345)", "Hardcore"] });
+  await refreshRadarSnapshots(SNAPSHOT_CTX, {
+    now: 0,
+    clock: harness.clock,
+    makeRepo: harness.makeRepo,
+  });
+  assert.deepEqual(harness.writes.map((w) => w.league), ["Runes of Aldur", "Hardcore"]);
+});
+
+test("a secondary league failure is reported but never breaks the active league or the run", async () => {
+  const harness = snapshotHarness({
+    pricedLeagues: ["Hardcore", "Forbidden Rites"],
+    failWriteFor: "Hardcore",
+  });
+  const results = await refreshRadarSnapshots(SNAPSHOT_CTX, {
+    now: 0,
+    clock: harness.clock,
+    makeRepo: harness.makeRepo,
+  });
+
+  assert.deepEqual(harness.writes.map((w) => w.league), ["Runes of Aldur", "Forbidden Rites"]);
+  const hardcore = results.find((r) => r.league === "Hardcore");
+  assert.match(hardcore.error, /write failed for Hardcore/);
+  assert.equal(results.find((r) => r.league === "Runes of Aldur").error, undefined);
+  assert.equal(results.find((r) => r.league === "Forbidden Rites").error, undefined);
+});
+
+test("a secondary league discovery failure leaves the active league snapshot intact", async () => {
+  const harness = snapshotHarness();
+  const makeRepo = (scope, options) => ({
+    ...harness.makeRepo(scope, options),
+    listPricedLeagues: async () => {
+      throw new Error("discovery timeout");
+    },
+  });
+  const results = await refreshRadarSnapshots(SNAPSHOT_CTX, { now: 0, clock: harness.clock, makeRepo });
+  assert.deepEqual(harness.writes.map((w) => w.league), ["Runes of Aldur"]);
+  assert.equal(results.length, 1);
+  assert.equal(results[0].error, undefined);
+});
+
+test("secondary leagues stop once the cron wall-clock budget is spent", async () => {
+  // Each league build burns 60s of the fake clock; the active league's measured
+  // cost (with 1.5x headroom) becomes the reserve, so only the secondary leagues
+  // that still fit are started.
+  const harness = snapshotHarness({
+    pricedLeagues: ["Hardcore", "Forbidden Rites", "HC Forbidden Rites"],
+    leagueCostMs: 60_000,
+  });
+  const traced = [];
+  const results = await refreshRadarSnapshots(SNAPSHOT_CTX, {
+    now: 0,
+    clock: harness.clock,
+    budgetMs: 150_000,
+    makeRepo: harness.makeRepo,
+    trace: (phase, details) => traced.push({ phase, ...details }),
+  });
+
+  assert.deepEqual(harness.writes.map((w) => w.league), ["Runes of Aldur", "Hardcore"]);
+  assert.deepEqual(
+    results.filter((r) => r.skipped === "budget").map((r) => r.league),
+    ["Forbidden Rites", "HC Forbidden Rites"],
+  );
+  // The active league is built regardless of the budget.
+  assert.equal(results[0].league, "Runes of Aldur");
+  assert.equal(results[0].skipped, undefined);
+
+  // Every league in the run — built or skipped — emits one paired scope
+  // start/end, so the trace never shows an unterminated scope.
+  const starts = traced.filter((e) => e.phase === "snapshot.scope.start").map((e) => e.league);
+  const ends = traced.filter((e) => e.phase === "snapshot.scope.end").map((e) => e.league);
+  assert.deepEqual(starts, ["Runes of Aldur", "Hardcore", "Forbidden Rites", "HC Forbidden Rites"]);
+  assert.deepEqual(ends, starts);
+  assert.deepEqual(
+    traced.filter((e) => e.phase === "snapshot.scope.end" && e.skipped === "budget").map((e) => e.league),
+    ["Forbidden Rites", "HC Forbidden Rites"],
+  );
+  assert.equal(traced.some((e) => e.phase === "snapshot.scope.skipped"), false);
 });

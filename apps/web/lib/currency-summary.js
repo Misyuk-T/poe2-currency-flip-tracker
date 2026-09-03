@@ -14,6 +14,7 @@ import { buildMarketRadar } from "../../../src/domain/market-radar.js";
 import { backtestRecommendations } from "../../../src/domain/paper-trade.js";
 import { isCompatibleRadarSnapshot } from "../../../src/domain/radar-snapshot.js";
 import { createRadarRepository, groupCandlesByPair } from "../../../src/storage/radar-repository.js";
+import { shouldIndexCurrencyPage } from "./currency-indexability.js";
 import { getSql } from "./db.js";
 import { resolveDefaultLeague } from "./default-league.js";
 
@@ -128,6 +129,13 @@ export function buildCurrencyIndex(candlesByPair, { anchor, sourceMode = "fixtur
  * do NOT enumerate all catalog ids: a URL only earns a sitemap entry once it has
  * real, unique data behind it, which avoids hundreds of thin, near-duplicate
  * pages. Framework-agnostic (returns ms, not Date) so it is trivially testable.
+ *
+ * Data alone is not quite the whole bar: an entry must also pass
+ * classifyCurrencyPage, the same rule the page's own robots metadata reads, so
+ * a URL we tell crawlers not to index is never advertised here. Today that
+ * removes exactly one class — ids that are not a single URL path segment, whose
+ * emitted URL 404s. It is deliberately not a thin-content threshold; see
+ * apps/web/lib/currency-indexability.js for why the audit rejected one.
  */
 export function currencySitemapUrls(index, { popularIds = [] } = {}) {
   const byId = new Map();
@@ -138,7 +146,9 @@ export function currencySitemapUrls(index, { popularIds = [] } = {}) {
   for (const [id, stat] of Object.entries(index?.byId ?? {})) {
     byId.set(id, Number.isFinite(stat?.latestCompletedHourMs) ? stat.latestCompletedHourMs : index?.latestCompletedHourMs ?? null);
   }
-  return [...byId.entries()].map(([id, lastModifiedMs]) => ({ id, lastModifiedMs }));
+  return [...byId.entries()]
+    .filter(([id]) => shouldIndexCurrencyPage({ id }))
+    .map(([id, lastModifiedMs]) => ({ id, lastModifiedMs }));
 }
 
 /**

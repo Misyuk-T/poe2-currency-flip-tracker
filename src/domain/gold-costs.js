@@ -87,6 +87,65 @@ export function mergeGoldRecords(committed, stored) {
 }
 
 /**
+ * What the gold numbers behind a payload actually ARE, so the client can label
+ * them instead of guessing.
+ *
+ * Three cases, and they are genuinely different claims:
+ *
+ *  - `placeholder` — {@link createFlatGoldRegistry}: ONE uniform invented number
+ *    on every item. Nothing about it is sourced, and it must be labelled as a
+ *    placeholder wherever it is shown.
+ *  - `committed`   — the versioned table in src/data/gold-costs-poe2.js: real
+ *    per-item values observed from the public Currency Exchange listing on
+ *    `effectiveFrom`.
+ *  - `database`    — the same, with `gold_costs` rows layered on top per item
+ *    ({@link mergeGoldRecords}). `storedRows` says how many rows the table
+ *    contributed; the rest of `rows` is still the committed table.
+ *
+ * `effectiveFrom` is the NEWEST observation date backing any number in the
+ * payload — for a stored row that is the day the value was scraped upstream,
+ * not the day the job ran. ISO dates compare correctly as strings.
+ *
+ * This describes provenance only. It never changes a gold number, and nothing
+ * downstream of it may.
+ *
+ * @param {{
+ *   placeholder?: boolean,
+ *   goldPerUnit?: number|null,
+ *   records?: import("../data/gold-costs-poe2.js").GoldCostRecord[],
+ *   storedRows?: number,
+ * }} [input]
+ */
+export function describeGoldProvenance(input = {}) {
+  const { placeholder = false, goldPerUnit = null, records = [], storedRows = 0 } = input;
+  if (placeholder) {
+    return {
+      source: "placeholder",
+      goldPerUnit: Number.isFinite(goldPerUnit) ? goldPerUnit : null,
+      effectiveFrom: null,
+      patchOrVersion: null,
+      rows: 0,
+      storedRows: 0,
+    };
+  }
+  let newest = null;
+  for (const record of records) {
+    const from = record?.effectiveFrom;
+    if (typeof from !== "string") continue;
+    if (!newest || from > newest.effectiveFrom) newest = record;
+  }
+  const stored = Number.isFinite(storedRows) && storedRows > 0 ? storedRows : 0;
+  return {
+    source: stored ? "database" : "committed",
+    goldPerUnit: null,
+    effectiveFrom: newest?.effectiveFrom ?? null,
+    patchOrVersion: newest?.patchOrVersion ?? null,
+    rows: records.length,
+    storedRows: stored,
+  };
+}
+
+/**
  * Demo/pre-live PLACEHOLDER registry: a single flat gold-per-unit for EVERY id.
  *
  * This is intentionally NOT sourced per-currency data — it is a uniform stand-in

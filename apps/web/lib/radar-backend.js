@@ -16,7 +16,12 @@ import {
   identityNames,
 } from "../../../src/domain/cx-identity.js";
 import { applyExchangeLayout, exchangeLayoutCategories } from "../../../src/domain/exchange-layout.js";
-import { createGoldRegistry, createFlatGoldRegistry, mergeGoldRecords } from "../../../src/domain/gold-costs.js";
+import {
+  createGoldRegistry,
+  createFlatGoldRegistry,
+  describeGoldProvenance,
+  mergeGoldRecords,
+} from "../../../src/domain/gold-costs.js";
 import { canonicalPairId, isPublicLeague } from "../../../src/domain/cx-market.js";
 import { selectAutomaticAnchors } from "../../../src/domain/market-anchor.js";
 import { RADAR_PAYLOAD_VERSION, isCompatibleRadarSnapshot } from "../../../src/domain/radar-snapshot.js";
@@ -236,6 +241,9 @@ function context() {
         // a table that is neither honest nor labelled. Fixture mode keeps the
         // flat stand-in, live mode gets the merge.
         goldPlaceholder: usePlaceholder,
+        // The flat stand-in's actual value, so the payload can say what the
+        // number IS rather than only that it is one. Null outside demo mode.
+        goldPlaceholderPerUnit: usePlaceholder ? placeholderPerUnit : null,
         catalogManifest: manifest,
         catalogById: new Map(manifest.map((item) => [item.id, item])),
         identityByGame: { poe1: poe1Identity, poe2: poe2Identity },
@@ -449,16 +457,33 @@ export function identityWithOverrides(identity, overrides) {
  */
 const goldManifestCache = new WeakMap();
 export function catalogWithGold(ctx, goldRecords) {
-  const base = { catalogManifest: ctx.catalogManifest, catalogById: ctx.catalogById };
+  // `gold` describes which of the three sources actually produced the numbers in
+  // this manifest — the only place that is knowable, because this is the only
+  // place the merge happens. It is carried to the client so the UI can label the
+  // numbers instead of guessing; it never changes one.
+  const base = {
+    catalogManifest: ctx.catalogManifest,
+    catalogById: ctx.catalogById,
+    gold: describeGoldProvenance({
+      placeholder: Boolean(ctx.goldPlaceholder),
+      goldPerUnit: ctx.goldPlaceholderPerUnit ?? null,
+      records: POE2_GOLD_COSTS,
+    }),
+  };
   if (ctx.goldPlaceholder || !goldRecords?.length || !ctx.catalog) return base;
   const cached = goldManifestCache.get(goldRecords);
   if (cached?.base === ctx.catalogManifest) return cached.value;
   const game = ctx.config.poeGame;
   const scoped = goldRecords.filter((record) => (record?.game ?? game) === game);
   if (!scoped.length) return base;
-  const registry = createGoldRegistry(mergeGoldRecords(POE2_GOLD_COSTS, scoped), { game });
+  const merged = mergeGoldRecords(POE2_GOLD_COSTS, scoped);
+  const registry = createGoldRegistry(merged, { game });
   const catalogManifest = buildManifest(ctx.catalog, registry);
-  const value = { catalogManifest, catalogById: new Map(catalogManifest.map((item) => [item.id, item])) };
+  const value = {
+    catalogManifest,
+    catalogById: new Map(catalogManifest.map((item) => [item.id, item])),
+    gold: describeGoldProvenance({ records: merged, storedRows: scoped.length }),
+  };
   goldManifestCache.set(goldRecords, { base: ctx.catalogManifest, value });
   return value;
 }
@@ -494,12 +519,17 @@ function radarBuildInput(ctx, game, repo, now = Date.now(), anchors = game.ancho
  * category list does not contain renders as an empty group — which is why both
  * calls take the same array.
  */
-function finalizeRadarBody(body, game, league, layout = null) {
+function finalizeRadarBody(body, game, league, layout = null, gold = null) {
   body.rows = applyExchangeLayout(tradableRows(body.rows), game.id, { overrides: layout });
   body.payloadVersion = RADAR_PAYLOAD_VERSION;
   body.league = league;
   body.game = game.id;
   body.realm = game.realm;
+  // Additive: an older stored snapshot simply has no `gold` key and the client
+  // then states the number without claiming a source, which is why this does not
+  // need a RADAR_PAYLOAD_VERSION bump. Only PoE2 rows carry gold at all
+  // (radarBuildInput empties the catalog for PoE1), so only PoE2 gets the label.
+  if (gold && game.id === "poe2") body.gold = gold;
   body.exchangeLayout = {
     source: "game-client-layout",
     categories: exchangeLayoutCategories(game.id, { overrides: layout }),
@@ -586,9 +616,12 @@ export async function getRadar(searchParams) {
   const built = await withDbRetry(() =>
     buildRadarPayloads(radarBuildInput(ctx, game, repo, Date.now(), requestedAnchors, { identity: overrides, layout: null, gold: null })),
   );
+  // Built from the committed files on this path (gold: null above), and the
+  // provenance says exactly that rather than inheriting the cron's.
+  const rebuiltGold = catalogWithGold(ctx, null).gold;
   const payloads = Object.fromEntries(Object.entries(built).map(([payloadAnchor, payload]) => [
     payloadAnchor,
-    finalizeRadarBody(payload, game, selected.league, null),
+    finalizeRadarBody(payload, game, selected.league, null, rebuiltGold),
   ]));
   const body = bestView
     ? mergeRadarPayloads(payloads, { preferredAnchor: requestedAnchor })
@@ -713,9 +746,12 @@ export async function refreshRadarSnapshots(ctx, {
       const payloads = await withDbRetry(() =>
         buildRadarPayloads(radarBuildInput(ctx, game, repo, now, anchorPlan.anchors, { identity: overrides, gold })),
       );
+      // Memoized against the same records array the build used, so this is the
+      // merge's own verdict on which source won, not a second guess at it.
+      const goldSource = catalogWithGold(ctx, gold).gold;
       const snapshots = Object.entries(payloads).map(([anchor, payload]) => ({
         anchor,
-        payload: finalizeRadarBody(payload, game, league, layout),
+        payload: finalizeRadarBody(payload, game, league, layout, goldSource),
       }));
       snapshots.push({
         anchor: "auto",

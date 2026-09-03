@@ -12,6 +12,7 @@ import { keyCurrencyCards, sparklinePoints } from "../lib/key-currencies.js";
 import { convertMarketPrice, currentPriceGuidance, quoteFromAnchor, workingPrice } from "../lib/price-guidance.js";
 import { unitRates } from "../lib/market-units.js";
 import { sortByExchangeOrder, sortByFamily } from "../lib/item-family.js";
+import { goldTooltip } from "../lib/gold-provenance.js";
 import { compareMarketRows, DEFAULT_MARKET_SORT, nextMarketSort, rowSpread } from "../lib/market-sort.js";
 import { CATEGORY_ICON_IDS } from "../lib/category-icons.js";
 import { useScrollLock } from "../lib/use-scroll-lock.js";
@@ -297,25 +298,6 @@ function goldMetrics(row, goldPerAnchor) {
     goldPerFlip: totalGold,
     profitPer100k: Number.isFinite(totalGold) && totalGold > 0 ? (profit / totalGold) * 100_000 : null,
   };
-}
-
-/**
- * Hover text for the Profit cell — moves the gold-efficiency detail out of a
- * dedicated column and into a tooltip: exalted profit per 100k gold of trade
- * tax, plus the raw gold cost of one round-trip flip. Falls back gracefully
- * when gold data is missing.
- */
-function goldTooltip(row) {
-  const parts = [
-    "Distance from the hour's lowest reported price to its highest. GGG does not publish which came first, so this is the size of the opportunity, not a completed round trip.",
-  ];
-  if (Number.isFinite(row?._profitPer100k)) {
-    parts.push(`≈ ${formatNumber(row._profitPer100k, { maximumFractionDigits: 1 })} exalted profit per 100,000 gold of trade tax.`);
-  }
-  if (Number.isFinite(row?._goldPerFlip)) {
-    parts.push(`Gold cost per 1-unit flip ≈ ${formatNumber(row._goldPerFlip, { maximumFractionDigits: 0 })} (placeholder).`);
-  }
-  return parts.join(" ");
 }
 
 /**
@@ -684,6 +666,10 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   }, [categories, category]);
 
   const defaultGoldPerAnchor = radar?.goldPerAnchor;
+  // What the payload says its gold numbers actually are, so the Profit tooltip
+  // can name the source instead of calling every number a placeholder. Absent on
+  // a pre-provenance snapshot, and the tooltip then claims nothing.
+  const goldSource = radar?.gold ?? null;
   const filteredRows = useMemo(() => {
     const inCategory = category === "all" ? searched : searched.filter((row) => (row.category || "Other") === category);
     // Attach gold-aware metrics once, so the table cells and the sort read the
@@ -1254,7 +1240,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                         </td>
                         <td className="right cell-profit">
                           {Number.isFinite(spread) ? (
-                            <strong className="profit-pos" title={goldTooltip(row)}>
+                            <strong className="profit-pos" title={goldTooltip(row, goldSource)}>
                               {formatPercent(spread, { signed: false })}
                             </strong>
                           ) : (

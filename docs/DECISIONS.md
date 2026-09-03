@@ -2,6 +2,33 @@
 
 Newest first. Each entry: **what** was decided, **why**, and the date.
 
+## 2026-09-03 — Coverage floors are the point, not a formality
+poe2db changed one HTML attribute and the gold-cost parse silently fell from
+651 items to 1. The `MIN_MATCHED = 500` floor refused the batch, so the stored
+values stood and users saw nothing wrong. **Why it matters:** every scraped
+source in this repo now writes to the database on a schedule, unattended. A
+floor that keeps the previous known-good rows is the difference between "the
+job logged a rejection" and "the site quietly served one gold cost". Every new
+scraped pipeline gets one, and the rejection must be visible in `/api/status`.
+Corollary, learned the same morning: round-trip tests that render their input
+from the parser's own regexes cannot catch a changed page — they pass a wrong
+model happily. Each scraped parser needs at least one fixture captured from the
+real page (`test/fixtures/poe2db-currency-exchange.html`).
+
+## 2026-09-03 — Bounded loaders get their own connection
+`db.js` pools at `max: 1`, and the short-budget override loaders reset the
+client on timeout. A repository captured that client before the loader ran, so
+a >2s cold connect let a loader destroy the connection an in-flight rebuild was
+about to use; `CONNECTION_DESTROYED` is retryable, so the retry hit the same
+dead object and `/api/radar` 502'd — precisely the league-launch path, where a
+new league has no snapshot and every cold request rebuilds. Fixed in two parts:
+`getSql()` hands out a stable handle that resolves the client per call (so a
+holder survives a reset), and the loaders moved to a separate `getLoaderSql()`
+client so their timeouts cannot reach request or ingest work at all. **Why both:**
+the handle fixes captured references, the second pool fixes queries already in
+flight, which no handle can relocate. Found by review, not by production.
+
+
 ## 2026-09-03 — `getSql()` hands out a stable handle; the radar rebuild loads no identity
 Two changes, both aimed at the 2026-09-04 20:00Z launch hour. (1) `getSql()` now
 returns a Proxy that resolves the module-cached client **per call** instead of

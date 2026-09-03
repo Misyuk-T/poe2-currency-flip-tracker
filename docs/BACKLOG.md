@@ -3,6 +3,21 @@
 Ideas parked for later. Not committed work — candidates to pull into a phase.
 Newest first.
 
+
+## Follow-ups from the 2026-09-03 db-layer hot-fix
+- **Test gap:** `test/loader-connection-cascade.test.js` drives `tx(batch)`
+  rather than `${sql(batch)}` through the `getSql()` handle, so a broken
+  non-tagged proxy `apply` could still pass. Add a direct fragment assertion.
+  (Codex review, low.)
+- **Proxy → thunk cleanup:** the stable-handle Proxy in `apps/web/lib/db.js`
+  could be replaced by having `createRadarRepository` take a `getSql` thunk and
+  resolve per operation (~5 call sites, no metaprogramming). Deliberately not
+  done on hot-fix day; both reviewers judged the Proxy correct against
+  postgres.js 3.4.9.
+- **Supavisor headroom:** the loader client doubles worst-case CLIENT sessions
+  (instances × 2), not backend connections. Check the pooler's client-session
+  cap before any big traffic event.
+
 ## Data freshness — what's automatic vs manual (2026-07-25)
 Only the hourly price ratios are a live, always-on pipeline (Supabase
 pg_cron -> pg_net -> `/api/cron/radar`, ingesting from the CX CDN). Item

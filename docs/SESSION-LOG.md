@@ -957,3 +957,123 @@ Analytics; форумний тред pathofexile.com + каталоги; 04.09 �
   sitemap, форумний тред, Reddit 04.09, `data-refresh.yml` через GitHub UI,
   лист GGG про `service:leagues` (Phase D). Далі по плану: Phase C (layout/gold
   у БД), B2 (канонізація при інжесті — review-gated).
+
+## 2026-09-03 — нічна перевірка + старт Phase C
+
+- **Прод пережив ніч чисто.** `net._http_response`: щогодинний інжест 200
+  кожну годину (03:05–07:05, вставки 1052–1618 свічок); **джоб identity
+  відпрацював за розкладом 04:20** — 200, poe2 scanned 667 / poe1 1072,
+  unresolved 0, written 0 (нових id від GGG нема, `cx_identity` порожня —
+  очікувано). `league_meta` стабільна: дефолти poe2 Runes of Aldur (1315 пар),
+  poe1 Allflame (2009 пар), обидва 167 годин.
+- **Sitemap тримає свіжість через добу:** lastmod = 2026-09-03T06:00Z
+  (439 URL), заголовок `cdn-cache-control: public, s-maxage=3600`, 636 URL.
+  Фікс від 02.09 працює стабільно, не разово.
+- Запущено **Phase C (Opus, `feat/layout-gold-db`)**: міграція 011
+  (`exchange_layout`, `gold_costs`, `cron.schedule('data-refresh-daily',
+  '40 4 * * *')` за патерном 010), спільний парсинг зі скриптами, джоби з
+  флорами (layout ≥80% від committed, gold `MIN_MATCHED` + волатильність
+  "не більше 5% значень зі стрибком >50%"), лоадери DB > committed,
+  `/api/status.layout` і `.gold`.
+- **Phase C готова (Opus):** `feat/layout-gold-db` @ 89efa42, 452/452 (+56).
+  Міграція 011: `exchange_layout` (PK game+item_key, де item_key =
+  metadata_id ?? normalized_name — інакше два різні PoE1 "Delirium Orb"
+  злилися б), `gold_costs` (item_key = trade short id), `cron.schedule(
+  'data-refresh-daily','40 4 * * *')`. Парсери винесено зі скриптів у
+  `src/domain/exchange-layout-parse.js` і `gold-costs-parse.js` (спільна
+  реалізація, committed-файли байт-ідентичні; round-trip тести на 1795
+  позицій layout і 651 gold). Джоби з флорами: layout ≥80% позицій і секцій,
+  gold MIN_MATCHED 500 + 3 якірні id + волатильність. Лоадери
+  `layout-overrides.js`/`gold-overrides.js`; `catalogWithGold()` перебудовує
+  маніфест (gold доходить до радара лише через `catalogManifest.goldPerUnit`).
+  PoE2 layout і gold — одна URL, тіло качається раз. На Opus-ревю з окремим
+  питанням: деплоїти сьогодні чи після старту ліги 04.09.
+- **Opus-ревю Phase C: MERGE WITH FIXES + "HOLD до після старту ліги".**
+  Знайдено HIGH-баг, який **уже живе на main** (не в цій гілці): при `max: 1`
+  у пулі лоадер із бюджетом 2 с на таймауті робить `resetSql({timeout:0})` і
+  вбиває той самий клієнт, який щойно захопив rebuild-шлях `getRadar`;
+  `CONNECTION_DESTROYED` ретраїться на мертвому об'єкті → **502**. Спрацьовує
+  саме в умовах 04.09: нова ліга без снапшота → rebuild, холодні інстанси,
+  пік трафіку. Phase C потроює поверхню тригера, тому деплой Phase C —
+  після вихідних.
+- **Запущено терміновий фікс на main** (`fix/loader-connection-cascade`):
+  спершу відтворити каскад тестом, далі не запускати identity-лоадер на
+  rebuild-шляху (снапшоти крону вже несуть identity) + зробити знищення
+  спільного клієнта безпечним (re-acquire у `withDbRetry` або лічильник
+  in-flight у `db.js`).
+- Phase C-агенту віддано правки: пропуск обох лоадерів на rebuild-шляху,
+  мінімальна вибірка для правила волатильності (одна змінена позиція, що
+  подвоїлась = 1/1 = 100% → gold замерз би назавжди), фільтр gold-записів за
+  грою, обмеження round-trip тестів.
+- **Phase C після ревю — готова, ПРИПАРКОВАНА:** `feat/layout-gold-db` @
+  7948580, 458/458. Лоадери layout/gold тепер **лише в кроні** (rebuild-шлях
+  передає null) — уся цінність зберігається, ризик на request-шляху нульовий;
+  волатильність стала трирівневою (<20 змінених → дозволити; далі >5% зі
+  стрибком >50% → відмова; абсолютний cap >50 великих рухів → відмова
+  незалежно від частки), із тестами на всі чотири випадки; gold-записи
+  фільтруються за грою перед `createGoldRegistry`; обмеження round-trip
+  тестів задокументовано в самих тестах. **Мерж — після 04.09.** Перша
+  ознака, що БД реально доходить до людей: ненульові `layout.rows`/`gold.rows`
+  у `/api/status` І снапшот, перебудований після того крону.
+- **Фікс каскаду готовий:** `fix/loader-connection-cascade` @ 66e01ea,
+  400/400. Відтворення — `test/loader-connection-cascade.test.js` +
+  `test/fixtures/fake-postgres.js` (фейковий драйвер через
+  `module.registerHooks`, без сокета й тестових швів у проді): 3 кейси, усі
+  падають на main з `write CONNECTION_DESTROYED`. Фікс: `getSql()` віддає
+  стабільний **Proxy**, що резолвить закешований клієнт на кожен виклик, тож
+  тримачі посилання переживають `resetSql` і перепідключаються; плюс
+  rebuild-шлях `getRadar` більше не кличе identity-лоадер. Автор перевірив:
+  `getStatus` і `getHotlist` теж були вразливі (repo створюється до лоадера),
+  тепер прикриті глобально; крон-снапшоти identity далі несуть.
+  Відправлено на прискіпливе ревю саме щодо Proxy (теговані шаблони,
+  `sql(rows)`-фрагменти, `sql.begin`, рівність посилань, `.code` помилок).
+- **Подвійне ревю фікса каскаду (Opus + Codex/GPT-5.6 Sol).** Обидва
+  емпірично перевірили Proxy проти справжнього драйвера: теговані шаблони →
+  `Query`, `sql(rows)` → `Builder`, `sql("col")` → `Identifier`, вкладені
+  фрагменти компілюються, `sql.json` → `Parameter`, `begin` тримається однієї
+  транзакції, `.code` зберігається, `resetSql` завершує сирий клієнт без
+  рекурсії, порівнянь ідентичності клієнта в коді нема. Обидва підтвердили,
+  що репро падає на main 3/3.
+  - **БЛОКЕР (обидва, спостережено):** CI пінить Node 20, де нема
+    `module.registerHooks` → новий тест валиться синтаксично, CI червоний.
+    `.nvmrc` 22.23.1, engines `>=20`, Vercel 24.x — усе неузгоджене.
+  - **HIGH (Codex):** Proxy лікує клас "захоплене посилання", але не
+    "запит уже в польоті": `resetSql` і далі вбиває процесний клієнт
+    `max: 1`, а створений `Query` чи `tx` із `sql.begin` перенести
+    неможливо — тайм-аут лоадера все ще може обірвати сусідній запит або
+    транзакцію інжесту. Рішення: окремий клієнт для двох коротких лоадерів.
+  - **MEDIUM (Codex):** пропуск overrides на rebuild втрачає і `category` →
+    "Needs classification", і такий payload зберігається як валідний
+    шестигодинний снапшот. Рішення: непідвантажувальний peek у теплий кеш.
+  - LOW: `sql.begin`/`sql(rows)` через Proxy не покриті тестом; `bind` губить
+    власні властивості (`sql.types`/`sql.typed`).
+  Повернуто авторові.
+- **Дельта-ревю Codex: SHIP TODAY.** Аудит пулів: лоадерний клієнт лише в
+  `default-league.js:91` і `identity-overrides.js:81`; усі записи, транзакції,
+  крон identity, снапшоти і звичайні читання — на request-клієнті; без
+  `DATABASE_URL` обидва хендли віддають null; обидва reset завершують сирий
+  клієнт без рекурсії. `peekIdentityOverrides` не віддає часткові дані і не
+  воскрешає прострочений запис. `Object.assign(value.bind(live), value)`
+  безпечний для всіх callable у postgres.js 3.4.9. Два пули подвоюють
+  клієнтські сесії Supavisor, не бекенд-з'єднання (idle_timeout 20 с).
+  Node 22.17.1: 403/403, білд ок; на 22.12.0 падає гучно, як і має.
+  LOW (не блокують): тест ганяє `tx(batch)`, а не `${sql(batch)}` через
+  хендл; коментарі в `identity-overrides.js` і `radar-backend.js` досі
+  обіцяють, що overrides рятують "Needs classification" — насправді ні
+  (це `applyExchangeLayout`), рятуються лише targetName/targetIcon/
+  tradeCategory.
+- **Змержено і задеплоєно: `416489d` → main, пуш `f571061`.** 403/403.
+  **Пуш workflow-файлів відхилено GitHub** (`refusing to allow an OAuth App
+  to update workflow ci.yml without workflow scope`) — та сама причина, що і
+  з `data-refresh.yml` у 3560395. Тому `node-version: 20 → 22` у трьох
+  workflow (`ci.yml`, `exchange-layout-refresh.yml`, `live-canary.yml`)
+  **має зробити Тарас через GitHub UI**; `engines.node >= 22.15` у
+  package.json уже в main. Доки цього нема, CI впаде на новому тесті —
+  на прод це не впливає (Vercel має власний Node 24.x).
+- Дві LOW-зауваги ревю закрито головою: коментарі в `identity-overrides.js`
+  і `radar-backend.js` більше не обіцяють, що overrides рятують
+  "Needs classification" (це `applyExchangeLayout`; overrides повертають
+  `targetName`/`targetIcon`/`tradeCategory`). Прогалина в тесті (`tx(batch)`
+  замість `${sql(batch)}` через хендл) — у беклог, не блокує.
+- **Прод після деплою f571061 (READY):** `/api/status` 200,
+  `defaultLeagueSource: "db"`, identity 0/0, останній інжест 07:00Z.

@@ -186,10 +186,11 @@ export async function loadIdentityOverrides(game, options = {}) {
  * an in-flight load both answer "nothing", instantly.
  *
  * For paths that want the better answer when it is free but must not pay for it:
- * getRadar's on-demand rebuild. Skipping the overrides there drops `category`
- * as well as name and icon, so an unmapped long-tail id renders "Needs
- * classification" — and the rebuild PERSISTS its payload as a snapshot, so that
- * degradation can outlive the cron run that would have fixed it. A warm
+ * getRadar's on-demand rebuild. Skipping the overrides there costs `targetName`,
+ * `targetIcon` and `tradeCategory` — and the rebuild PERSISTS its payload as a
+ * snapshot, so that degradation can outlive the cron run that would have fixed
+ * it. (The wire-level `category`/`subcategory` come from applyExchangeLayout,
+ * not from identity: an unmapped id reads "Needs classification" either way.) A warm
  * instance (the common case once anything has served a hotlist, /api/status, or
  * a cron build in the last ten minutes) hands the rebuild the same map the cron
  * would have used, for free.

@@ -509,10 +509,12 @@ export async function getRadar(searchParams) {
   // `repo` — captured above, before the loader ran — was about to query, which
   // surfaced as CONNECTION_DESTROYED and a 502.
   //
-  // Peeking instead of skipping matters because the overrides carry `category`,
-  // not just name and icon: without them an unmapped long-tail id renders "Needs
-  // classification", and this payload is PERSISTED as a snapshot below, so that
-  // degradation would outlive the cron run that should have fixed it. A warm
+  // Peeking instead of skipping matters because this payload is PERSISTED as a
+  // snapshot below, so a degraded rebuild would outlive the cron run that should
+  // have fixed it. What the overrides restore is `targetName`, `targetIcon` and
+  // `tradeCategory` — NOT the wire-level `category`/`subcategory`, which come
+  // from applyExchangeLayout and read "Needs classification" for an unmapped id
+  // either way. A warm
   // instance therefore rebuilds with exactly what the cron would have used, and
   // a cold one accepts the committed catalog for one snapshot rather than
   // putting a database read back on the slowest request path there is.

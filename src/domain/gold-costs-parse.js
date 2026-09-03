@@ -35,10 +35,19 @@ export const MIN_MATCHED = 500;
  */
 export const REQUIRED_IDS = Object.freeze(["exalted", "divine", "chaos"]);
 
-// `data-hover="?s=Data%5CBaseItemTypes%2FMetadata%2FItems%2F...">Name</a><span>123</span>` —
-// the second (text) <a> for each item is immediately followed by its gold <span>;
-// the first (image) <a> is followed by an <img>, so this pattern only matches once per item.
-const ITEM_RE = /data-hover="\?s=([^"]+)"\s+href="[^"]*">([^<]+)<\/a><span>(\d+)<\/span>/g;
+// `data-hover="<anything>" href="...">Name</a><span>123</span>` — the second
+// (text) <a> for each item is immediately followed by its gold <span>; the first
+// (image) <a> is followed by an <img>, so this pattern matches once per item.
+//
+// The hover attribute is deliberately NOT constrained. It used to be a query
+// string (`?s=Data%5CBaseItemTypes%2FMetadata%2FItems%2F...`) and the pattern
+// required that literal `?s=`; on 2026-09-03 poe2db switched it to a full cache
+// URL (`https://cdn.poe2db.tw/cache2/us/Poe_Data_BaseItemTypes_hover/<sha>`) and
+// the parse silently collapsed from 651 items to 1 — the coverage floor caught
+// it, but only because the floor exists. What actually identifies an item here
+// is the name and the gold <span>; the hover attribute never was, and
+// `metadataPath` has no consumer (matchGoldCosts joins on the display name).
+const ITEM_RE = /data-hover="([^"]+)"\s+href="[^"]*">([^<]+)<\/a><span>(\d+)<\/span>/g;
 
 /** Exact-name join key. Trimmed and lowercased, nothing else — see the honesty rule. */
 export function goldNameKey(name) {
@@ -72,6 +81,8 @@ export function parseGoldCostsHtml(html) {
     } catch {
       // A malformed escape on a third-party page must not abort the whole parse.
     }
+    // Only the legacy `?s=` hover carried one; a cache-URL hover yields null,
+    // which is fine — nothing downstream reads it.
     const metaIdx = decoded.indexOf("Metadata/");
     const metadataPath = metaIdx === -1 ? null : decoded.slice(metaIdx);
     const name = decodeEntities(rawName);

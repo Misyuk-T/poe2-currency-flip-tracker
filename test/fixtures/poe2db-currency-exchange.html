@@ -1,0 +1,38 @@
+<!--
+  REAL markup captured from https://poe2db.tw/us/Currency_Exchange on 2026-09-03,
+  trimmed to a handful of items. Not synthesised from our own regex — that is the
+  entire point of this file.
+
+  Our parser modelled the hover attribute as a query string (`data-hover="?s=..."`)
+  because that is what the page emitted when the scraper was written on 2026-07-25.
+  Some time before 2026-09-03 poe2db switched it to a full CDN cache URL. The parse
+  collapsed from 651 items to 1, and the only reason nothing was corrupted is that
+  the coverage floor refused the batch. The round-trip tests could not catch it:
+  they render input from the parser's own regexes, so a shared wrong model of the
+  page passes them happily.
+
+  Both shapes are kept below: the current cache-URL form, and one legacy `?s=` item
+  ("Masterwork Rune" — the one item that still carried it on 2026-09-03), so the
+  parser stays compatible with whichever the page serves next.
+
+  Gold values are the live ones and match src/data/gold-costs-poe2.js exactly.
+-->
+<div class="row row-cols-4">
+  <div class="col"><div class="card"><div class="card-body p-1 ms-2 d-flex justify-content-between align-items-center"><a class="item_currency StackableCurrency" data-hover="https://cdn.poe2db.tw/cache2/us/Poe_Data_BaseItemTypes_hover/7a3ff9218db00f574779e0123647bc2959eca6c363589fc29bf09ebdd59779cc" href="Exalted_Orb">Exalted Orb</a><span>120</span></div></div></div>
+  <div class="col"><div class="card"><div class="card-body p-1 ms-2 d-flex justify-content-between align-items-center"><a class="item_currency StackableCurrency" data-hover="https://cdn.poe2db.tw/cache2/us/Poe_Data_BaseItemTypes_hover/1b0c5f2a9d4e7c81f3a06b5d8e2c94371ad6e0b8c5f9271e4a3b6d0c8e5f2a91" href="Divine_Orb">Divine Orb</a><span>800</span></div></div></div>
+  <div class="col"><div class="card"><div class="card-body p-1 ms-2 d-flex justify-content-between align-items-center"><a class="item_currency StackableCurrency" data-hover="https://cdn.poe2db.tw/cache2/us/Poe_Data_BaseItemTypes_hover/2c9e7f1b5a8d0364e7c2b9f14d6a83057e1c4b9a2f8d6350c7e9b1a4f2d80c63" href="Chaos_Orb">Chaos Orb</a><span>160</span></div></div></div>
+
+  <!-- the image <a> that precedes each text <a>: followed by an <img>, never by a
+       gold <span>, so it must not produce a second (wrong) match for the item -->
+  <div class="col"><div class="card"><a class="item_currency" data-hover="https://cdn.poe2db.tw/cache2/us/Poe_Data_BaseItemTypes_hover/9f4a2c7e0b6d183957c4e2a8f1b0d6395a7c2e8f4b1d09637a5c2e8f1b4d0967" href="Vaal_Orb"><img src="https://cdn.poe2db.tw/image/Art/2DItems/Currency/VaalOrb.png" alt="Vaal Orb"></a><a class="item_currency StackableCurrency" data-hover="https://cdn.poe2db.tw/cache2/us/Poe_Data_BaseItemTypes_hover/9f4a2c7e0b6d183957c4e2a8f1b0d6395a7c2e8f4b1d09637a5c2e8f1b4d0967" href="Vaal_Orb">Vaal Orb</a><span>90</span></div></div>
+
+  <!-- the same item is rendered twice by the page (a "Popular" block and its own
+       section) and both renderings agree; the parser dedupes on the triple -->
+  <div class="col"><div class="card"><div class="card-body"><a class="item_currency StackableCurrency" data-hover="https://cdn.poe2db.tw/cache2/us/Poe_Data_BaseItemTypes_hover/7a3ff9218db00f574779e0123647bc2959eca6c363589fc29bf09ebdd59779cc" href="Exalted_Orb">Exalted Orb</a><span>120</span></div></div></div>
+
+  <!-- legacy hover shape, still emitted for this one item on 2026-09-03 -->
+  <div class="col"><div class="card"><div class="card-body"><a class="item_currency" data-hover="?s=Data%5CBaseItemTypes%2FMetadata%2FItems%2FSoulCores%2FRuneUpgrade" href="Masterwork_Rune">Masterwork Rune</a><span>1500</span></div></div></div>
+
+  <!-- an entity-escaped display name, to pin decodeEntities -->
+  <div class="col"><div class="card"><div class="card-body"><a class="item_currency StackableCurrency" data-hover="https://cdn.poe2db.tw/cache2/us/Poe_Data_BaseItemTypes_hover/4d8b1f6a3c0e9752b8d1f4a7c2e0b9635d8a1f4c7b2e0d9635a8c1f4b7d2e0a96" href="Orb_of_Chance">Orb of Chance &#8212; Legacy</a><span>45</span></div></div></div>
+</div>

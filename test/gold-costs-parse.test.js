@@ -201,3 +201,29 @@ test("a stored row without a usable number is ignored rather than ranking a NaN"
   assert.equal(registry.goldPerUnit("chaos"), committed.goldPerUnit("chaos"));
   assert.equal(registry.goldPerUnit("divine"), committed.goldPerUnit("divine"));
 });
+
+test("parses the real poe2db markup, in both hover shapes", () => {
+  // A REAL captured page fragment, not markup rendered from our own regexes.
+  // The round-trip test above proves the parse is self-consistent; this one is
+  // the only thing in the suite that would have caught 2026-09-03, when poe2db
+  // changed `data-hover` from a `?s=` query string to a CDN cache URL and the
+  // parse silently fell from 651 items to 1.
+  const html = readFileSync(new URL("./fixtures/poe2db-currency-exchange.html", import.meta.url), "utf8");
+  const scraped = parseGoldCostsHtml(html);
+  const byName = new Map(scraped.map((row) => [row.name, row.goldPerUnit]));
+
+  assert.equal(byName.get("Exalted Orb"), 120, "cache-URL hover still yields the gold fee");
+  assert.equal(byName.get("Divine Orb"), 800);
+  assert.equal(byName.get("Chaos Orb"), 160);
+  assert.equal(byName.get("Vaal Orb"), 90, "the image <a> before the text <a> must not shadow it");
+  assert.equal(byName.get("Masterwork Rune"), 1500, "the legacy ?s= hover still parses");
+  assert.equal(byName.get("Orb of Chance — Legacy"), 45, "HTML entities are decoded in names");
+
+  // The page renders Exalted Orb twice; the triple-dedupe must collapse it.
+  assert.equal(scraped.filter((row) => row.name === "Exalted Orb").length, 1);
+
+  // Three of these values are load-bearing for the coverage floor's required ids.
+  for (const name of ["Exalted Orb", "Divine Orb", "Chaos Orb"]) {
+    assert.ok(Number.isFinite(byName.get(name)), `${name} must always parse`);
+  }
+});

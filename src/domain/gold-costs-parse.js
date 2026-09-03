@@ -136,30 +136,57 @@ export function checkGoldCoverage(matched, { minMatched = MIN_MATCHED, requiredI
 }
 
 /**
+ * Below this many CHANGED items the ratio rule is not applied at all: with a
+ * handful of changes it is noise, and a false refusal is self-perpetuating (a
+ * refused batch never advances the baseline). See checkGoldVolatility.
+ */
+export const MIN_CHANGED_SAMPLE = 20;
+
+/**
+ * Absolute ceiling on big moves, whatever the ratio says. 50 items rescaling by
+ * more than half is a broken page even on a day the page also changed thousands
+ * of other values.
+ */
+export const MAX_BIG_MOVES = 50;
+
+/**
  * The volatility guard (docs/DYNAMIC-DATA-PLAN-2026-09.md, Phase C).
  *
  * Gold is a number users act on, so a page that suddenly rescales its whole
  * table — a units change, a different column, a half-rendered response — must
- * not be allowed to apply. The rule, stated exactly:
+ * not be allowed to apply. The rule, stated exactly, over the items present in
+ * BOTH the baseline and the new batch whose value CHANGED at all:
  *
- *   Of the items present in BOTH the baseline and the new batch whose value
- *   CHANGED at all, if more than 5% moved by more than 50% (relative to the
- *   baseline value), the WHOLE batch is refused and the previous rows stand.
+ *   1. Fewer than MIN_CHANGED_SAMPLE changed  -> ALLOW. The ratio is meaningless
+ *      at that size, and refusing here is what freezes the table (see below).
+ *   2. Otherwise, more than 5% of the changed items moved by more than 50%
+ *      (relative to the baseline value) -> REFUSE the whole batch.
+ *   3. Regardless of ratio, more than MAX_BIG_MOVES big moves -> REFUSE. A
+ *      rescale large enough in absolute terms is a broken page even when the
+ *      page also changed thousands of other values, which is the one case rule
+ *      2's denominator would wave through.
  *
- * The denominator is deliberately "items that changed", not "all items": a
- * normal patch touches a handful of fees, and measuring big moves against the
- * full 651 would let a total rescale of 30 items slip through as 4.6%.
+ * The denominator in rule 2 is deliberately "items that changed", not "all
+ * items": a normal patch touches a handful of fees, and measuring big moves
+ * against the full 651 would let a total rescale of 30 items slip through as
+ * 4.6%.
  *
- * Consequences worth knowing rather than discovering:
+ * Rule 1 exists because the guard's failure mode is WORSE than the thing it
+ * guards against. Without it, ONE legitimately-changed item that doubles is
+ * 1/1 = 100% > 5%, so the batch is refused — and because a refused batch never
+ * advances the baseline, every later run compares against the same stale
+ * numbers and refuses identically. Gold would freeze at the committed July
+ * table forever with nothing but a cron trace as the signal. A league patch
+ * retuning a few fees (very likely at a launch) is exactly that shape. Below
+ * the sample floor the coverage floor and rule 3 are the gates.
+ *
+ * Other consequences worth knowing rather than discovering:
  *   - First run (no baseline rows at all) has nothing to compare against, so it
  *     is ALWAYS accepted — the coverage floor is the only gate there. The
  *     runtime job therefore seeds its baseline from the committed file, so the
  *     first DB write is still compared against the last known-good table.
  *   - An item present in only one side is not a "change"; it is coverage, and
  *     the coverage floor already governs that.
- *   - With a very small number of changes the ratio is coarse (one changed item
- *     that doubles is 100% > 5%, so it refuses). That is the intended bias: a
- *     refused batch costs a day of staleness, an applied bad batch costs money.
  *
  * @param {[string, string, number][]} matched
  * @param {Map<string, number>|Record<string, number>} baseline itemId -> gold per unit
@@ -167,7 +194,12 @@ export function checkGoldCoverage(matched, { minMatched = MIN_MATCHED, requiredI
  *             ratio: number, examples: {itemId:string, from:number, to:number}[],
  *             reason: string|null }}
  */
-export function checkGoldVolatility(matched, baseline, { maxBigMoveRatio = 0.05, bigMoveFactor = 0.5 } = {}) {
+export function checkGoldVolatility(matched, baseline, {
+  maxBigMoveRatio = 0.05,
+  bigMoveFactor = 0.5,
+  minChangedSample = MIN_CHANGED_SAMPLE,
+  maxBigMoves = MAX_BIG_MOVES,
+} = {}) {
   const previous = baseline instanceof Map ? baseline : new Map(Object.entries(baseline ?? {}));
   let compared = 0;
   let changed = 0;
@@ -187,16 +219,17 @@ export function checkGoldVolatility(matched, baseline, { maxBigMoveRatio = 0.05,
     if (examples.length < 5) examples.push({ itemId, from: before, to: goldPerUnit });
   }
   const ratio = changed ? bigMoves / changed : 0;
-  const ok = changed === 0 || ratio <= maxBigMoveRatio;
-  return {
-    ok,
-    compared,
-    changed,
-    bigMoves,
-    ratio,
-    examples,
-    reason: ok
-      ? null
-      : `${bigMoves}/${changed} changed items moved by more than ${bigMoveFactor * 100}% (${(ratio * 100).toFixed(1)}% > ${maxBigMoveRatio * 100}%)`,
-  };
+  // Rule 3 first: an absolute cap is a statement about the page being broken and
+  // does not care how many other values moved.
+  const overCap = bigMoves > maxBigMoves;
+  // Rule 1: too small a sample for the ratio to mean anything.
+  const tooFewToJudge = changed < minChangedSample;
+  const overRatio = !tooFewToJudge && ratio > maxBigMoveRatio;
+  const ok = !overCap && !overRatio;
+  const reason = overCap
+    ? `${bigMoves} items moved by more than ${bigMoveFactor * 100}% (absolute cap is ${maxBigMoves})`
+    : overRatio
+      ? `${bigMoves}/${changed} changed items moved by more than ${bigMoveFactor * 100}% (${(ratio * 100).toFixed(1)}% > ${maxBigMoveRatio * 100}%)`
+      : null;
+  return { ok, compared, changed, bigMoves, ratio, examples, reason };
 }

@@ -27,6 +27,20 @@ const escapeText = (value) =>
  * Only the shapes the parser keys on are reproduced: the h4 anchor, h5 category
  * headings, the subtitle divs that open a section, and the item row whose text
  * anchor is immediately followed by its gold span.
+ *
+ * KNOWN LIMITATION, so nobody reads more into a green run than is there: this
+ * renderer was written from the parser's own regexes, not captured from the live
+ * page. It proves the parse is STABLE and that the committed snapshots are
+ * exactly what the shared code produces — a real regression guard for the move
+ * out of scripts/ and for the job and script sharing one implementation — but it
+ * cannot prove the model of PoEDB's markup is right. If both drift together,
+ * this still passes. The live-page contract is checked at run time instead: the
+ * job's >= 80% coverage floor refuses a page whose shape we no longer
+ * understand, and the parser's own plausibility checks (>= 2 categories, >= 20
+ * items, a "Currency" category, no "Popular") fail loudly in
+ * scripts/build-exchange-layouts.mjs. Committing a captured page snippet would
+ * close the gap; it needs a real network fetch to obtain and is deliberately not
+ * done from inside a test run.
  */
 function layoutHtmlFromSnapshot(snap) {
   const parts = ["<h4>Currency Exchange</h4>"];

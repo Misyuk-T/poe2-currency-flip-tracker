@@ -433,6 +433,15 @@ export function identityWithOverrides(identity, overrides) {
  * A stored row only ever replaces the number for an id it actually has. An item
  * the table has never seen keeps its committed cost; an item neither source
  * knows stays `unknown-gold-cost` and unrankable, never guessed.
+ *
+ * Records are filtered to the configured game BEFORE they reach the registry.
+ * `createGoldRegistry` THROWS on a record whose `game` disagrees with the
+ * registry's — a deliberate refusal to mix PoE1 and PoE2 gold tables — and this
+ * is on the payload-build path, so one stray `game='poe1'` row would turn every
+ * rebuild into a 502. Today only PoE2 is ever written (GOLD_GAMES in
+ * data-refresh.js), which makes the filter cheap insurance rather than dead
+ * code: the day a PoE1 table exists it must arrive as a second registry, not as
+ * extra rows in this one.
  */
 const goldManifestCache = new WeakMap();
 export function catalogWithGold(ctx, goldRecords) {
@@ -440,10 +449,10 @@ export function catalogWithGold(ctx, goldRecords) {
   if (ctx.goldPlaceholder || !goldRecords?.length || !ctx.catalog) return base;
   const cached = goldManifestCache.get(goldRecords);
   if (cached?.base === ctx.catalogManifest) return cached.value;
-  const registry = createGoldRegistry(
-    mergeGoldRecords(POE2_GOLD_COSTS, goldRecords),
-    { game: ctx.config.poeGame },
-  );
+  const game = ctx.config.poeGame;
+  const scoped = goldRecords.filter((record) => (record?.game ?? game) === game);
+  if (!scoped.length) return base;
+  const registry = createGoldRegistry(mergeGoldRecords(POE2_GOLD_COSTS, scoped), { game });
   const catalogManifest = buildManifest(ctx.catalog, registry);
   const value = { catalogManifest, catalogById: new Map(catalogManifest.map((item) => [item.id, item])) };
   goldManifestCache.set(goldRecords, { base: ctx.catalogManifest, value });
@@ -547,25 +556,44 @@ export async function getRadar(searchParams) {
   // migration or if the hourly snapshot refresh failed. It is deliberately not
   // the normal path anymore.
   //
-  // The three runtime override sets are loaded HERE and not above the snapshot
-  // short circuit on purpose: a served snapshot already carries the names,
-  // icons, sections and gold costs that were resolved when the cron built it, so
-  // paying a cold read to decorate rows nobody is about to rebuild would put
-  // latency on the one path that is currently fast. On this path they are three
-  // bounded queries for a request that is already doing several, issued in
-  // parallel, and their worst case is bounded by the loaders' shared 2s budget
-  // rather than summed.
-  const [overrides, layout, gold] = await Promise.all([
-    loadIdentityOverrides(game.id, { config }),
-    loadLayoutOverrides(game.id, { config }),
-    loadGoldOverrides(game.id, { config }),
-  ]);
+  // The identity overrides are loaded HERE and not above the snapshot short
+  // circuit on purpose: a served snapshot already carries the names and icons
+  // that were resolved when the cron built it, so paying a cold 2s read to
+  // decorate rows nobody is about to rebuild would put latency on the one path
+  // that is currently fast. On this path the read is one bounded query for a
+  // request that is already doing several, and its worst case is bounded by the
+  // loader's own 2s budget.
+  //
+  // THE PHASE C LOADERS ARE DELIBERATELY *NOT* CALLED HERE (layout = null,
+  // gold = null below). Not an oversight, and not a latency decision:
+  //
+  //   db.js opens the client with `max: 1`, so every repository on this instance
+  //   shares ONE connection, and each override loader builds its repo with
+  //   `onTimeout: () => resetSql({ timeout: 0 })` — which DESTROYS that shared
+  //   client. `repo` above has already captured it for the rebuild. On a cold
+  //   instance a >2s connect makes a loader tear the client out from under the
+  //   rebuild; `CONNECTION_DESTROYED` matches withDbRetry's retryable pattern,
+  //   so the retry re-runs against the dead object and /api/radar 502s. Adding
+  //   two more callers of that reset multiplies an existing hazard on the one
+  //   path a user is actually waiting on.
+  //
+  // Nothing is lost. This is the self-healing fallback for a missing or stale
+  // snapshot, not the normal path: refreshRadarSnapshots loads all three sets
+  // hourly and bakes them into the snapshots /api/radar actually serves, so the
+  // stored layout and gold reach users through the fast path either way. The
+  // only degradation is that a payload rebuilt on demand between cron runs is
+  // grouped and priced from the committed files — which is exactly what it did
+  // before Phase C, and is corrected on the next hourly build.
+  //
+  // Revisit once the db.js / withDbRetry connection-destroy hazard is fixed on
+  // main; the loaders are unchanged and ready to be threaded back in here.
+  const overrides = await loadIdentityOverrides(game.id, { config });
   const built = await withDbRetry(() =>
-    buildRadarPayloads(radarBuildInput(ctx, game, repo, Date.now(), requestedAnchors, { identity: overrides, gold })),
+    buildRadarPayloads(radarBuildInput(ctx, game, repo, Date.now(), requestedAnchors, { identity: overrides, gold: null })),
   );
   const payloads = Object.fromEntries(Object.entries(built).map(([payloadAnchor, payload]) => [
     payloadAnchor,
-    finalizeRadarBody(payload, game, selected.league, layout),
+    finalizeRadarBody(payload, game, selected.league, null),
   ]));
   const body = bestView
     ? mergeRadarPayloads(payloads, { preferredAnchor: requestedAnchor })

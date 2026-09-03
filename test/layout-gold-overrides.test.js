@@ -6,7 +6,7 @@ import {
   committedExchangeLayout,
   exchangeLayoutCategories,
 } from "../src/domain/exchange-layout.js";
-import { catalogWithGold } from "../apps/web/lib/radar-backend.js";
+import { catalogWithGold, getRadar } from "../apps/web/lib/radar-backend.js";
 import {
   loadLayoutOverrides,
   readLayoutOverridesCached,
@@ -299,4 +299,63 @@ test("the merged manifest is built once per loader TTL, not once per request", (
   };
   const records = [{ game: "poe2", itemId: "chaos", goldPerUnit: 7 }];
   assert.equal(catalogWithGold(ctx, records), catalogWithGold(ctx, records));
+});
+
+
+test("a stray PoE1 row cannot 502 a PoE2 rebuild", () => {
+  // createGoldRegistry THROWS rather than mixing two games' gold tables, and
+  // this runs on the payload-build path — so a single mis-scoped row would turn
+  // every rebuild into a 502. Records are filtered to the configured game first.
+  const ctx = {
+    config: CONFIG,
+    catalog: { items: [{ id: "chaos", name: "Chaos Orb", category: "Currency" }] },
+    goldPlaceholder: false,
+    catalogManifest: [{ id: "chaos" }],
+    catalogById: new Map(),
+  };
+  const mixed = [
+    { game: "poe2", itemId: "chaos", goldPerUnit: 11 },
+    { game: "poe1", itemId: "chaos", goldPerUnit: 22 },
+  ];
+  const { catalogById } = catalogWithGold(ctx, mixed);
+  assert.equal(catalogById.get("chaos").goldPerUnit, 11, "the PoE2 row applies, the PoE1 row is dropped");
+
+  // Nothing survives the filter -> the warm-instance manifest is reused as-is.
+  const onlyOtherGame = catalogWithGold(ctx, [{ game: "poe1", itemId: "chaos", goldPerUnit: 22 }]);
+  assert.equal(onlyOtherGame.catalogManifest, ctx.catalogManifest);
+});
+
+test("the /api/radar rebuild path does not read exchange_layout or gold_costs", async () => {
+  // Not a latency call: db.js is `max: 1`, and each loader's repo carries
+  // `onTimeout: resetSql` — which DESTROYS the client the rebuild has already
+  // captured. Adding two more callers of that reset to the one path a user waits
+  // on can turn a slow cold connect into a 502. refreshRadarSnapshots still
+  // loads both hourly, so the stored rows reach users through the snapshot.
+  resetLayoutOverridesCache();
+  resetGoldOverridesCache();
+  delete process.env.DATABASE_URL;
+  process.env.RADAR_FIXTURE_FALLBACK = "1";
+  try {
+    const radar = await getRadar(new URLSearchParams("anchor=exalted"));
+    assert.equal(radar.status, 200, "the rebuild path really did run");
+  } finally {
+    delete process.env.RADAR_FIXTURE_FALLBACK;
+  }
+
+  // If getRadar had loaded either set, its (empty) entry would still be inside
+  // the 10-minute TTL and these counting repos would never be consulted.
+  let layoutReads = 0;
+  let goldReads = 0;
+  await loadLayoutOverrides("poe2", {
+    config: CONFIG,
+    trace: silent,
+    makeRepo: layoutRepo([], { onRead: () => { layoutReads += 1; } }),
+  });
+  await loadGoldOverrides("poe2", {
+    config: CONFIG,
+    trace: silent,
+    makeRepo: goldRepo([], { onRead: () => { goldReads += 1; } }),
+  });
+  assert.equal(layoutReads, 1, "getRadar must not have populated the layout cache");
+  assert.equal(goldReads, 1, "getRadar must not have populated the gold cache");
 });

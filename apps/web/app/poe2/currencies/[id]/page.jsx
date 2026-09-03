@@ -1,5 +1,7 @@
 import { currencyName, iconUrl, popularCurrencies, siteUrl, formatNumber, formatPercent, displayDigits } from "../../../../lib/market.js";
 import { contentFor } from "../../../../lib/currency-content.js";
+import { currencyPagePath } from "../../../../lib/currency-indexability.js";
+import { currencyPageMetadata } from "../../../../lib/currency-page-metadata.js";
 
 // Incremental Static Regeneration: prerender popular currencies, refresh hourly
 // so each page is crawlable static HTML that still tracks the latest stored hour.
@@ -11,15 +13,7 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }) {
   const { id } = await params;
-  const name = currencyName(id);
-  return {
-    title: `${name} Price — PoE2 Hourly Market Data`,
-    // Deliberately no live figure: at this crawl rate a baked-in price would sit
-    // stale in the SERP for weeks, and Google rewrites most descriptions anyway.
-    // Live numbers belong in the body and JSON-LD.
-    description: `Hourly ${name} price, range and 24h move in Path of Exile 2, with conservative flip planning.`,
-    alternates: { canonical: `${siteUrl}/poe2/currencies/${id}` },
-  };
+  return currencyPageMetadata({ id });
 }
 
 function priceLine(summary) {
@@ -82,7 +76,7 @@ export default async function CurrencyPage({ params }) {
           summary.sourceMode === "fixture" ? " — sample data" : ""
         }.`
       : `Hourly market context and trade planning page for ${name} in Path of Exile 2.`,
-    url: `${siteUrl}/poe2/currencies/${id}`,
+    url: `${siteUrl}${currencyPagePath(id)}`,
   };
 
   const breadcrumbLd = {
@@ -91,7 +85,7 @@ export default async function CurrencyPage({ params }) {
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "Home", item: `${siteUrl}/` },
       { "@type": "ListItem", position: 2, name: "PoE2 currencies", item: `${siteUrl}/poe2/currencies` },
-      { "@type": "ListItem", position: 3, name, item: `${siteUrl}/poe2/currencies/${id}` },
+      { "@type": "ListItem", position: 3, name, item: `${siteUrl}${currencyPagePath(id)}` },
     ],
   };
 

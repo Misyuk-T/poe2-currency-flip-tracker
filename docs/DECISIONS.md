@@ -2,6 +2,38 @@
 
 Newest first. Each entry: **what** was decided, **why**, and the date.
 
+## 2026-09-03 — No thin-page threshold; only unroutable URLs are hidden
+The thin-page audit set out to deindex the shallow tail and **disproved its own
+premise**: 84% of currency pages have 3+ days of hourly history, and only 26 of
+627 have under half a day. A `samples < 3` rule was built, measured (39 of 636
+URLs) and withdrawn on review. **Why:** `samples` counts priced hours in the 24h
+before a market's OWN latest priced hour, so a long-dead market keeps its last
+healthy count while a new listing scores 1 — the rule catches NEW items, not
+dead ones (`temporalis`, `the-arbiters-reliquary-key`, `aldurs-saga`), which is
+exactly the `<item> price` long tail that earns this site its few clicks. 25
+markets this league took over 24h (worst 102h) to reach three priced hours, and
+with `/poe2/currencies` linking 6 of 628 pages the sitemap is their only
+discovery path. "Renders — for the 24h move" is not evidence a reader was
+harmed. So the 2026-06-27 data-only bar stands, and no page is hidden for lack
+of data.
+
+What did ship is one unambiguous defect: eight ids are still raw
+`Metadata/Items/...` paths, so `${siteUrl}/poe2/currencies/${id}` emitted a
+multi-segment URL that 404s — while the percent-encoded form returns 200 with a
+canonical pointing at the 404 (verified on a production build). Those URLs leave
+the sitemap and their pages are `noindex, follow`, and `currencyPagePath()` now
+backs the canonical and the JSON-LD so a resolving page never advertises one
+that does not. Routable ids are emitted verbatim — 620 live canonicals must not
+churn for cosmetics. A workaround, not the fix: those eight are among the
+busiest markets on the site, and the real repair is giving them short ids
+(filed in the audit doc), after which the guard simply stops matching.
+
+The audit's lasting value is what it pointed at instead: `/poe2/currencies`
+links 6 of 628 currency pages, so 614 are sitemap-only — a far better fit for
+Google's 280 "Discovered – currently not indexed" than thinness ever was.
+Measurements, SQL and the threshold sensitivity table:
+`docs/THIN-PAGE-AUDIT-2026-09.md`.
+
 ## 2026-09-03 — Coverage floors are the point, not a formality
 poe2db changed one HTML attribute and the gold-cost parse silently fell from
 651 items to 1. The `MIN_MATCHED = 500` floor refused the batch, so the stored

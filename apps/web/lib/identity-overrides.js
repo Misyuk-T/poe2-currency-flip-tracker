@@ -8,8 +8,11 @@
  *   - single-flight (the in-flight PROMISE is cached before it is awaited), so a
  *     cold burst of N concurrent requests issues one read, not N serialized
  *     behind the instance's single pooled connection
- *   - 2s, `attempts: 1`, and `onTimeout: resetSql` — postgres.js would otherwise
- *     keep the abandoned query holding the sole max:1 connection
+ *   - 2s, `attempts: 1`, and `onTimeout: resetLoaderSql` — postgres.js would
+ *     otherwise keep the abandoned query holding the connection. That reset is
+ *     safe to fire only because this loader runs on the LOADER client
+ *     (getLoaderSql), isolated from the one the request or cron is working on;
+ *     see the two-client note in db.js for what sharing it used to cost
  *   - a missing table (code deployed ahead of migration 010) is a distinct,
  *     expected, TRACED phase that degrades to an empty map
  *
@@ -36,7 +39,7 @@
 
 import { loadConfig } from "../../../src/server/config.js";
 import { createRadarRepository } from "../../../src/storage/radar-repository.js";
-import { getSql, resetSql, withDbRetry } from "./db.js";
+import { getLoaderSql, resetLoaderSql, withDbRetry } from "./db.js";
 import { fallbackLeague, realmForGame } from "./default-league.js";
 
 // Ten minutes: identity changes at most daily (the cron runs at 04:20 UTC), and
@@ -75,13 +78,13 @@ export function resetIdentityOverridesCache(game = null) {
 }
 
 function defaultMakeRepo(scope) {
-  const sql = getSql();
+  const sql = getLoaderSql();
   return sql
     ? createRadarRepository({
         sql,
         scope,
         opTimeoutMs: RESOLVE_TIMEOUT_MS,
-        onTimeout: () => resetSql({ timeout: 0 }),
+        onTimeout: () => resetLoaderSql({ timeout: 0 }),
       })
     : null;
 }
@@ -152,7 +155,12 @@ export async function readIdentityOverridesCached(game, {
   if (cached && cached.expiresAt > now) return cached.entry;
 
   const entry = loadOverrides(game, { config, trace, makeRepo });
-  cache.set(game, { expiresAt: now + RESOLVE_TTL_MS, entry });
+  const record = { expiresAt: now + RESOLVE_TTL_MS, entry, settled: null };
+  cache.set(game, record);
+  // Record the resolved state alongside the promise so peekIdentityOverrides()
+  // can answer synchronously without awaiting a read that may still be in
+  // flight (or about to blow its budget).
+  entry.then((value) => { record.settled = value; }, () => {});
   try {
     return await entry;
   } catch (error) {
@@ -170,4 +178,24 @@ export async function readIdentityOverridesCached(game, {
  */
 export async function loadIdentityOverrides(game, options = {}) {
   return (await readIdentityOverridesCached(game, options)).overrides;
+}
+
+/**
+ * The overrides this instance ALREADY has for one game, or an empty map. Never
+ * issues a read, never awaits, never populates the cache — a cold instance and
+ * an in-flight load both answer "nothing", instantly.
+ *
+ * For paths that want the better answer when it is free but must not pay for it:
+ * getRadar's on-demand rebuild. Skipping the overrides there drops `category`
+ * as well as name and icon, so an unmapped long-tail id renders "Needs
+ * classification" — and the rebuild PERSISTS its payload as a snapshot, so that
+ * degradation can outlive the cron run that would have fixed it. A warm
+ * instance (the common case once anything has served a hotlist, /api/status, or
+ * a cron build in the last ten minutes) hands the rebuild the same map the cron
+ * would have used, for free.
+ */
+export function peekIdentityOverrides(game, { now = Date.now() } = {}) {
+  const cached = cache.get(game);
+  if (!cached || cached.expiresAt <= now) return EMPTY;
+  return cached.settled?.overrides ?? EMPTY;
 }

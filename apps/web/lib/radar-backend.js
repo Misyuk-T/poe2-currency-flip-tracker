@@ -33,7 +33,11 @@ import { createCxapiProvider } from "../../../src/providers/create-cxapi-provide
 import { chooseDefaultLeague } from "../../../src/domain/league-default.js";
 import { getSql, resetSql, withDbRetry } from "./db.js";
 import { readLeagueMetaCached, resetLeagueMetaCache, resolveDefaultLeague } from "./default-league.js";
-import { loadIdentityOverrides, readIdentityOverridesCached } from "./identity-overrides.js";
+import {
+  loadIdentityOverrides,
+  peekIdentityOverrides,
+  readIdentityOverridesCached,
+} from "./identity-overrides.js";
 import { createMemoryRepository } from "./memory-repo.js";
 
 const NO_DB = {
@@ -493,26 +497,27 @@ export async function getRadar(searchParams) {
   // migration or if the hourly snapshot refresh failed. It is deliberately not
   // the normal path anymore.
   //
-  // Deliberately NO identity-override read on this path — `null` means "commit-
-  // ted snapshot only", which is what identityWithOverrides already treats an
-  // empty map as.
+  // A cache PEEK, never a load: whatever this instance already resolved within
+  // the identity TTL, or an empty map. No database read, no await, on this path.
   //
   // This is the path a league launch lands on: a brand-new league has no stored
   // snapshot until the first hourly cron, so every cold request rebuilds, and it
   // does so on the day's heaviest traffic. Paying a bounded-but-cold 2s read to
   // decorate names here bought very little (the cron's own build loads identity,
   // so the snapshot it writes minutes later carries the overrides anyway) and
-  // cost a great deal: the loader's onTimeout destroys the shared max:1 client
-  // that `repo` — captured above, before the loader ran — is about to query,
-  // which surfaced as CONNECTION_DESTROYED and a 502. db.js's stable handle now
-  // makes that survivable, but the read still has no business being on the one
-  // request path that only runs when things are already slow.
+  // cost a great deal: the loader's onTimeout destroyed the max:1 client that
+  // `repo` — captured above, before the loader ran — was about to query, which
+  // surfaced as CONNECTION_DESTROYED and a 502.
   //
-  // User-visible difference: a currency the committed catalog does not name
-  // renders its humanized leaf, without a database-supplied name/icon, until the
-  // next hourly snapshot replaces this payload. Everything the catalog answers
-  // — which is everything the exchange lays out — is unchanged.
-  const built = await withDbRetry(() => buildRadarPayloads(radarBuildInput(ctx, game, repo, Date.now(), requestedAnchors, null)));
+  // Peeking instead of skipping matters because the overrides carry `category`,
+  // not just name and icon: without them an unmapped long-tail id renders "Needs
+  // classification", and this payload is PERSISTED as a snapshot below, so that
+  // degradation would outlive the cron run that should have fixed it. A warm
+  // instance therefore rebuilds with exactly what the cron would have used, and
+  // a cold one accepts the committed catalog for one snapshot rather than
+  // putting a database read back on the slowest request path there is.
+  const overrides = peekIdentityOverrides(game.id);
+  const built = await withDbRetry(() => buildRadarPayloads(radarBuildInput(ctx, game, repo, Date.now(), requestedAnchors, overrides)));
   const payloads = Object.fromEntries(Object.entries(built).map(([payloadAnchor, payload]) => [
     payloadAnchor,
     finalizeRadarBody(payload, game, selected.league),

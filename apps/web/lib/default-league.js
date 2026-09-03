@@ -28,7 +28,7 @@ import { isPublicLeague } from "../../../src/domain/cx-market.js";
 import { chooseDefaultLeague, isPermanentLeague } from "../../../src/domain/league-default.js";
 import { FALLBACK_LEAGUES, envLeagueOverride, loadConfig } from "../../../src/server/config.js";
 import { createRadarRepository } from "../../../src/storage/radar-repository.js";
-import { getSql, resetSql, withDbRetry } from "./db.js";
+import { getLoaderSql, resetLoaderSql, withDbRetry } from "./db.js";
 
 const RESOLVE_TTL_MS = 60_000;
 // Postgres: undefined_table. Expected before migration 009 is applied.
@@ -81,19 +81,20 @@ export function fallbackLeague(game, config = null) {
 
 /**
  * Postgres-backed repository for one stream, or null with no DATABASE_URL.
- * Tightly budgeted (see RESOLVE_TIMEOUT_MS) and, like every other call site,
- * destroying the cached client on timeout — postgres.js would otherwise keep the
- * abandoned query holding the instance's single pooled connection (max: 1) until
- * the function is killed.
+ * Tightly budgeted (see RESOLVE_TIMEOUT_MS) and destroying its client on
+ * timeout — postgres.js would otherwise keep the abandoned query holding the
+ * connection until the function is killed. It runs on the dedicated LOADER
+ * client (getLoaderSql), so that destroy can never reach a read or an ingest
+ * transaction in flight on the request client; see the note in db.js.
  */
 function defaultMakeRepo(scope) {
-  const sql = getSql();
+  const sql = getLoaderSql();
   return sql
     ? createRadarRepository({
         sql,
         scope,
         opTimeoutMs: RESOLVE_TIMEOUT_MS,
-        onTimeout: () => resetSql({ timeout: 0 }),
+        onTimeout: () => resetLoaderSql({ timeout: 0 }),
       })
     : null;
 }

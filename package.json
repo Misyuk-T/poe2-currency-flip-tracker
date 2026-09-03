@@ -5,7 +5,7 @@
   "description": "Honest, testable backend-driven MVP of a Path of Exile 2 currency opportunity tracker.",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.15"
   },
   "scripts": {
     "web:dev": "next dev apps/web",

@@ -13,6 +13,7 @@ import {
   runDataRefresh,
 } from "../apps/web/lib/data-refresh.js";
 import { POE2_GOLD_COSTS } from "../src/data/gold-costs-poe2.js";
+import { checkGoldVolatility } from "../src/domain/gold-costs-parse.js";
 
 const NOW = Date.parse("2026-09-03T04:40:00Z");
 
@@ -340,15 +341,38 @@ test("without a database both jobs report no-database instead of pretending", as
   assert.equal((await refreshGoldCosts({ ...options, game: "poe2" })).reason, "no-database");
 });
 
-test("goldBaseline falls back to the committed table only while nothing is stored", () => {
+test("goldBaseline lays stored rows over the committed table, never replacing it", () => {
   const committedBaseline = goldBaseline([]);
   assert.equal(committedBaseline.size, POE2_GOLD_COSTS.length);
   assert.equal(committedBaseline.get("chaos"), POE2_GOLD_COSTS.find((r) => r.itemId === "chaos").goldPerUnit);
 
   const stored = goldBaseline([{ itemKey: "chaos", goldPerUnit: 42 }]);
-  assert.deepEqual([...stored], [["chaos", 42]], "one stored row means the DB is the baseline, not the file");
+  assert.equal(stored.get("chaos"), 42, "a stored row wins for its own key");
+  assert.equal(stored.size, POE2_GOLD_COSTS.length, "and does not drop the rest of the table");
+
   // A row with no usable number cannot become a baseline entry.
-  assert.equal(goldBaseline([{ itemKey: "chaos", goldPerUnit: null }]).size, POE2_GOLD_COSTS.length);
+  assert.equal(goldBaseline([{ itemKey: "chaos", goldPerUnit: null }]).get("chaos"),
+    POE2_GOLD_COSTS.find((r) => r.itemId === "chaos").goldPerUnit);
+});
+
+test("an interrupted first write cannot disarm the volatility guard", () => {
+  // Upserts commit in independent batches, so a run that times out midway leaves
+  // the table NON-EMPTY but PARTIAL. If that partial map were taken as the whole
+  // baseline, every item it never reached would have no `before` value —
+  // checkGoldVolatility skips those rather than counting them — and a rescaled
+  // scrape would walk past the guard for exactly those items.
+  const [first, ...rest] = POE2_GOLD_COSTS.filter((r) => Number.isFinite(r.goldPerUnit) && r.goldPerUnit > 0);
+  const partiallyStored = [{ itemKey: first.itemId, goldPerUnit: first.goldPerUnit }];
+  const baseline = goldBaseline(partiallyStored);
+
+  const rescaled = rest.slice(0, 60).map((r) => [r.itemId, r.itemId, r.goldPerUnit * 10]);
+  const verdict = checkGoldVolatility(rescaled, baseline);
+  assert.equal(verdict.ok, false, "the items the interrupted run never wrote are still guarded");
+
+  // The old either/or rule would have compared nothing at all here.
+  const partialOnly = new Map(partiallyStored.map((r) => [r.itemKey, r.goldPerUnit]));
+  assert.equal(checkGoldVolatility(rescaled, partialOnly).ok, true,
+    "pinning the regression: a partial-only baseline sees zero changed items and waves it through");
 });
 
 test("PoE2's layout and gold are one page, fetched once per run", async () => {

@@ -299,17 +299,30 @@ export async function refreshExchangeLayout({
 }
 
 /**
- * The baseline the volatility guard compares against: what is stored now, or —
- * on the very first run, when nothing is stored — the committed table.
+ * The baseline the volatility guard compares against: the committed table with
+ * whatever is stored now laid over it, key by key.
  *
- * Falling back to the committed file rather than to "no baseline" is the point:
- * without it the first DB write would be unguarded, which is precisely the write
- * most likely to be wrong (new code, new table, first contact with the page).
+ * NOT "stored if any rows exist, else committed". Upserts commit in independent
+ * batches, so a run that times out midway leaves the table NON-EMPTY but
+ * PARTIAL. Under the either/or rule the next run would take that partial map as
+ * its whole baseline, and every item missing from it would have no `before`
+ * value — which `checkGoldVolatility` skips rather than counts. A badly rescaled
+ * scrape would then walk straight past the guard for exactly the items the
+ * interrupted run had not reached yet. Overlaying keeps a baseline for every
+ * item we have ever known, so the guard sees the whole table on every run, and
+ * the first DB write is still compared against the last known-good numbers
+ * rather than being unguarded.
  */
 export function goldBaseline(storedRows, committedRecords = POE2_GOLD_COSTS) {
-  const stored = (storedRows ?? []).filter((row) => Number.isFinite(row?.goldPerUnit));
-  if (stored.length) return new Map(stored.map((row) => [row.itemKey, row.goldPerUnit]));
-  return new Map((committedRecords ?? []).map((record) => [record.itemId, record.goldPerUnit]));
+  const baseline = new Map(
+    (committedRecords ?? [])
+      .filter((record) => Number.isFinite(record?.goldPerUnit))
+      .map((record) => [record.itemId, record.goldPerUnit]),
+  );
+  for (const row of storedRows ?? []) {
+    if (Number.isFinite(row?.goldPerUnit)) baseline.set(row.itemKey, row.goldPerUnit);
+  }
+  return baseline;
 }
 
 /**

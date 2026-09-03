@@ -46,6 +46,12 @@ export function buildManifest(catalog, goldRegistry) {
       catalogOrder: taxonomy.catalogOrder,
       icon: `icons/${it.id}.png`, // local path; UI falls back if not downloaded
       goldPerUnit: hasGold ? goldRegistry.goldPerUnit(it.id) : null,
+      // The day THIS item's cost was observed upstream, carried per item because
+      // the committed table and the `gold_costs` rows are merged per item: one
+      // payload can legitimately hold values of different ages, and a single
+      // payload-wide date would put the newest one on every row. Null for the
+      // flat placeholder registry, which observed nothing.
+      goldEffectiveFrom: hasGold ? goldRegistry.record?.(it.id)?.effectiveFrom ?? null : null,
       status: hasGold ? "supported" : "unknown-gold-cost",
     };
   });

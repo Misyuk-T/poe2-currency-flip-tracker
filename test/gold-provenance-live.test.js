@@ -29,10 +29,18 @@ test("a non-placeholder build reports the committed table, not a placeholder", a
 
     const priced = radar.body.rows.find((row) => row?.gold?.status === "supported");
     assert.ok(priced, "the fixture radar priced at least one row from the committed table");
+    // Each row is dated by its own record, and the anchor leg carries its own.
+    assert.equal(priced.gold.effectiveFrom, "2026-07-25");
+    assert.equal(priced.anchorGoldEffectiveFrom, "2026-07-25");
+    assert.equal(radar.body.goldAnchorEffectiveFrom, "2026-07-25");
 
-    const tooltip = goldTooltip({ _goldPerFlip: 1240 }, radar.body.gold);
-    assert.match(tooltip, /the in-game exchange fee to receive one unit, observed 2026-07-25\./);
+    const tooltip = goldTooltip(
+      { _goldPerFlip: 4600, _goldObservedFrom: priced.gold.effectiveFrom },
+      radar.body.gold,
+    );
+    assert.match(tooltip, /both legs of the round trip; gold costs observed 2026-07-25\./);
     assert.doesNotMatch(tooltip, /placeholder/i);
+    assert.doesNotMatch(tooltip, /fee to receive one unit/i);
   } finally {
     delete process.env.RADAR_FIXTURE_FALLBACK;
   }

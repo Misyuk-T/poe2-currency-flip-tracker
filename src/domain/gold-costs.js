@@ -96,15 +96,22 @@ export function mergeGoldRecords(committed, stored) {
  *    on every item. Nothing about it is sourced, and it must be labelled as a
  *    placeholder wherever it is shown.
  *  - `committed`   — the versioned table in src/data/gold-costs-poe2.js: real
- *    per-item values observed from the public Currency Exchange listing on
- *    `effectiveFrom`.
+ *    per-item values observed from the public Currency Exchange listing.
  *  - `database`    — the same, with `gold_costs` rows layered on top per item
  *    ({@link mergeGoldRecords}). `storedRows` says how many rows the table
  *    contributed; the rest of `rows` is still the committed table.
  *
- * `effectiveFrom` is the NEWEST observation date backing any number in the
- * payload — for a stored row that is the day the value was scraped upstream,
- * not the day the job ran. ISO dates compare correctly as strings.
+ * `effectiveFrom` here is a FLOOR, not the date of any particular number: the
+ * OLDEST observation date backing anything in the payload. It has to be the
+ * oldest, because a partial refresh (upsertGoldCosts rewrites only the rows it
+ * matched) leaves older values sitting next to newer ones, and reporting the
+ * newest would put a fresh date on a stale number. "At least this old" is
+ * honest; "at most this old" is not. Per-ITEM dates travel separately, on each
+ * manifest entry's `goldEffectiveFrom` (see buildManifest) and on each payload
+ * row's `gold.effectiveFrom` — that is what dates a specific row.
+ *
+ * `rows` counts records in the merged gold table, which is NOT the same as
+ * catalog items: the table may carry ids the catalog does not list.
  *
  * This describes provenance only. It never changes a gold number, and nothing
  * downstream of it may.
@@ -128,18 +135,19 @@ export function describeGoldProvenance(input = {}) {
       storedRows: 0,
     };
   }
-  let newest = null;
+  // ISO dates compare correctly as strings.
+  let oldest = null;
   for (const record of records) {
     const from = record?.effectiveFrom;
-    if (typeof from !== "string") continue;
-    if (!newest || from > newest.effectiveFrom) newest = record;
+    if (typeof from !== "string" || !from) continue;
+    if (!oldest || from < oldest.effectiveFrom) oldest = record;
   }
   const stored = Number.isFinite(storedRows) && storedRows > 0 ? storedRows : 0;
   return {
     source: stored ? "database" : "committed",
     goldPerUnit: null,
-    effectiveFrom: newest?.effectiveFrom ?? null,
-    patchOrVersion: newest?.patchOrVersion ?? null,
+    effectiveFrom: oldest?.effectiveFrom ?? null,
+    patchOrVersion: oldest?.patchOrVersion ?? null,
     rows: records.length,
     storedRows: stored,
   };

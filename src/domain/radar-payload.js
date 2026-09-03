@@ -40,7 +40,7 @@ function noTradeRow(item, anchor) {
     activityScore: null,
     arbitrageScore: null,
     hotlist: null,
-    gold: { status: item.status, goldPerUnit: item.goldPerUnit },
+    gold: { status: item.status, goldPerUnit: item.goldPerUnit, effectiveFrom: item.goldEffectiveFrom ?? null },
   };
 }
 
@@ -74,9 +74,13 @@ export function buildRadarResponse({
       subcategory: item?.subcategory ?? item?.category ?? row.subcategory ?? row.category ?? null,
       catalogOrder: item?.catalogOrder ?? 999999,
       gold: item
-        ? { status: item.status, goldPerUnit: item.goldPerUnit }
-        : { status: "unknown-catalog-item", goldPerUnit: null },
+        ? { status: item.status, goldPerUnit: item.goldPerUnit, effectiveFrom: item.goldEffectiveFrom ?? null }
+        : { status: "unknown-catalog-item", goldPerUnit: null, effectiveFrom: null },
       anchorGoldPerUnit: catalogById.get(row.anchor ?? anchor)?.goldPerUnit ?? null,
+      // A flip's gold is TWO legs (entry on the target, exit on the anchor), so
+      // dating the figure honestly needs both observation dates, not just the
+      // target's.
+      anchorGoldEffectiveFrom: catalogById.get(row.anchor ?? anchor)?.goldEffectiveFrom ?? null,
     };
   });
   const trackedIds = new Set(tracked.map((row) => row.target));
@@ -97,6 +101,7 @@ export function buildRadarResponse({
     // of a round trip (gold is charged on the anchor received when selling back).
     // Placeholder-flat today; real per-currency value once live gold data lands.
     goldPerAnchor: catalogById.get(anchor)?.goldPerUnit ?? null,
+    goldAnchorEffectiveFrom: catalogById.get(anchor)?.goldEffectiveFrom ?? null,
     units: { divineInExalted: currentDivineInExalted },
     generatedAt: new Date(now).toISOString(),
     source,

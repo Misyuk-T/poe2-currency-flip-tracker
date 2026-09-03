@@ -12,7 +12,7 @@ import { keyCurrencyCards, sparklinePoints } from "../lib/key-currencies.js";
 import { convertMarketPrice, currentPriceGuidance, quoteFromAnchor, workingPrice } from "../lib/price-guidance.js";
 import { unitRates } from "../lib/market-units.js";
 import { sortByExchangeOrder, sortByFamily } from "../lib/item-family.js";
-import { goldTooltip } from "../lib/gold-provenance.js";
+import { goldTooltip, olderDate } from "../lib/gold-provenance.js";
 import { compareMarketRows, DEFAULT_MARKET_SORT, nextMarketSort, rowSpread } from "../lib/market-sort.js";
 import { CATEGORY_ICON_IDS } from "../lib/category-icons.js";
 import { useScrollLock } from "../lib/use-scroll-lock.js";
@@ -666,6 +666,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   }, [categories, category]);
 
   const defaultGoldPerAnchor = radar?.goldPerAnchor;
+  const defaultGoldAnchorFrom = radar?.goldAnchorEffectiveFrom ?? null;
   // What the payload says its gold numbers actually are, so the Profit tooltip
   // can name the source instead of calling every number a placeholder. Absent on
   // a pre-provenance snapshot, and the tooltip then claims nothing.
@@ -675,11 +676,23 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     // Attach gold-aware metrics once, so the table cells and the sort read the
     // same computed values (no double computation, no drift).
     const enriched = inCategory.map((row) => {
-      const rowGoldPerAnchor = Number.isFinite(row.anchorGoldPerUnit)
+      const hasRowAnchorGold = Number.isFinite(row.anchorGoldPerUnit);
+      const rowGoldPerAnchor = hasRowAnchorGold
         ? row.anchorGoldPerUnit
         : row.anchor === anchorCurrency ? defaultGoldPerAnchor : null;
+      // The date must follow the SAME source the cost came from, and cover both
+      // legs: goldMetrics sums an entry cost and an exit cost, so the figure is
+      // only as fresh as the older of the two observations.
+      const rowAnchorFrom = hasRowAnchorGold
+        ? row.anchorGoldEffectiveFrom ?? null
+        : row.anchor === anchorCurrency ? defaultGoldAnchorFrom : null;
       const { goldPerFlip, profitPer100k } = goldMetrics(row, rowGoldPerAnchor);
-      return { ...row, _goldPerFlip: goldPerFlip, _profitPer100k: profitPer100k };
+      return {
+        ...row,
+        _goldPerFlip: goldPerFlip,
+        _profitPer100k: profitPer100k,
+        _goldObservedFrom: olderDate(row.gold?.effectiveFrom, rowAnchorFrom),
+      };
     });
     const ordered = sort.startsWith("game:")
       ? sortByExchangeOrder(enriched)
@@ -687,7 +700,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
         ? sortByFamily(enriched)
         : enriched.sort((a, b) => compareMarketRows(a, b, sort, { displayCurrency, rates }));
     return ordered;
-  }, [searched, category, sort, anchorCurrency, defaultGoldPerAnchor, displayCurrency, rates]);
+  }, [searched, category, sort, anchorCurrency, defaultGoldPerAnchor, defaultGoldAnchorFrom, displayCurrency, rates]);
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const rows = useMemo(
     () => filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),

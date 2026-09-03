@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { buildRadarResponse } from "../src/domain/radar-payload.js";
 
 const manifest = [
-  { id: "divine", name: "Divine Orb", category: "Currency", subcategory: "Currency", catalogOrder: 1, status: "supported", goldPerUnit: 100 },
+  { id: "divine", name: "Divine Orb", category: "Currency", subcategory: "Currency", catalogOrder: 1, status: "supported", goldPerUnit: 100, goldEffectiveFrom: "2026-07-25" },
   { id: "chaos", name: "Chaos Orb", category: "Currency", subcategory: "Currency", catalogOrder: 2, status: "supported", goldPerUnit: 50 },
   { id: "vaal", name: "Vaal Orb", category: "Currency", subcategory: "Currency", catalogOrder: 3, status: "unknown-gold-cost", goldPerUnit: null },
 ];
@@ -36,7 +36,7 @@ test("buildRadarResponse merges radar rows with catalog metadata and display uni
 
   const divine = out.rows.find((row) => row.target === "divine");
   assert.equal(divine.category, "Currency");
-  assert.deepEqual(divine.gold, { status: "supported", goldPerUnit: 100 });
+  assert.deepEqual(divine.gold, { status: "supported", goldPerUnit: 100, effectiveFrom: "2026-07-25" });
   assert.deepEqual(divine.hotlist, { id: "divine", reason: "activity" });
   assert.equal(divine.displayPrice.unit, "divine");
   assert.ok(Math.abs(divine.displayPrice.value - 1) < 1e-9);
@@ -61,7 +61,7 @@ test("buildRadarResponse lists catalog items with no trades as no-trades-this-ho
   assert.equal(vaal.activityScore, null);
   assert.deepEqual(vaal.sparkline24h, []);
   assert.deepEqual(vaal.displayPrice, { value: null, unit: null });
-  assert.deepEqual(vaal.gold, { status: "unknown-gold-cost", goldPerUnit: null });
+  assert.deepEqual(vaal.gold, { status: "unknown-gold-cost", goldPerUnit: null, effectiveFrom: null });
 });
 
 test("buildRadarResponse marks radar rows missing from the catalog as unknown-catalog-item", () => {
@@ -73,7 +73,7 @@ test("buildRadarResponse marks radar rows missing from the catalog as unknown-ca
     now: 0,
   });
   const mystery = out.rows.find((row) => row.target === "mystery");
-  assert.deepEqual(mystery.gold, { status: "unknown-catalog-item", goldPerUnit: null });
+  assert.deepEqual(mystery.gold, { status: "unknown-catalog-item", goldPerUnit: null, effectiveFrom: null });
   // The anchor row is never duplicated, but every other catalog item still shows.
   assert.equal(out.trackedCount, 1);
   assert.equal(out.catalogCount, 1 + manifest.length); // mystery + all 3 catalog no-trade rows

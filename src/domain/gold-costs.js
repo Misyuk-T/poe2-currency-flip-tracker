@@ -53,6 +53,40 @@ export function createGoldRegistry(records, opts = {}) {
 }
 
 /**
+ * Committed gold records with stored `gold_costs` rows (migration 011) layered
+ * on top.
+ *
+ * Precedence is DB > committed, per ITEM. It is expressed as an explicit map
+ * override rather than by leaning on {@link createGoldRegistry}'s
+ * "newest effectiveFrom wins" rule, because that rule would silently invert if a
+ * clock skewed or a row were backdated — and this decides which number a user
+ * pays gold on.
+ *
+ * A committed item the database has no row for keeps its committed value: a
+ * partial refresh narrows coverage, it never blanks it. An item neither source
+ * knows stays absent and is reported as a coverage gap, never guessed.
+ *
+ * @param {import("../data/gold-costs-poe2.js").GoldCostRecord[]} committed
+ * @param {import("../data/gold-costs-poe2.js").GoldCostRecord[]} stored
+ */
+export function mergeGoldRecords(committed, stored) {
+  if (!stored?.length) return committed ?? [];
+  const byId = new Map((committed ?? []).map((record) => [record.itemId, record]));
+  for (const record of stored) {
+    if (!record?.itemId || !Number.isFinite(record.goldPerUnit)) continue;
+    const previous = byId.get(record.itemId);
+    byId.set(record.itemId, {
+      ...previous,
+      ...record,
+      // A stored row carries no display name for an item the catalog renamed;
+      // keep whatever label we already had rather than showing an empty one.
+      displayName: record.displayName ?? previous?.displayName ?? null,
+    });
+  }
+  return [...byId.values()];
+}
+
+/**
  * Demo/pre-live PLACEHOLDER registry: a single flat gold-per-unit for EVERY id.
  *
  * This is intentionally NOT sourced per-currency data — it is a uniform stand-in

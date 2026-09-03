@@ -1,5 +1,22 @@
 name: Currency Exchange layout refresh
 
+# FALLBACK, NOT PRIMARY (since Phase C, 2026-09-03).
+#
+# The layout is now refreshed at runtime: pg_cron -> /api/cron/data-refresh ->
+# refreshExchangeLayout (apps/web/lib/data-refresh.js) reparses the same pages
+# with the same shared parser (src/domain/exchange-layout-parse.js) and writes
+# the `exchange_layout` table (supabase/migrations/011_layout_gold.sql). Readers
+# merge DB > committed JSON, per item, so a new category reaches the site the
+# next morning instead of the next merged PR.
+#
+# This workflow stays as the safety net: it keeps the committed
+# src/data/exchange-layout-*.json snapshot — the cold-start fallback when there
+# is no database, the migration is unapplied, or the job has never run — from
+# going stale, and it is the way a layout change gets a human review. It does
+# NOT write to Supabase and needs no new secrets. If it and the DB job ever
+# disagree, the DB job wins at runtime; check /api/status `layout.fetchedAt` and
+# the `data-refresh` cron trace before assuming this PR flow is the problem.
+#
 # The in-game exchange table changes with patches and league launches. This
 # daily probe writes nothing when category/section/item content is unchanged;
 # when it does change, it opens a reviewable PR instead of silently deploying.

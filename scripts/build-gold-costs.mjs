@@ -21,23 +21,19 @@
 import { writeFile, rename, unlink } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-const SOURCE_URL = "https://poe2db.tw/us/Currency_Exchange";
+// The scrape, the exact-name join and the coverage floor are shared with the
+// runtime job that writes the same numbers to `gold_costs` (migration 011). One
+// implementation, two callers — see the header of gold-costs-parse.js.
+import {
+  GOLD_SOURCE_URL as SOURCE_URL,
+  checkGoldCoverage,
+  matchGoldCosts,
+  parseGoldCostsHtml,
+} from "../src/domain/gold-costs-parse.js";
+
 const UA = process.env.USER_AGENT ?? "poe2-currency-flip-tracker/0.1 (gold-cost build; non-commercial)";
 const OUT_PATH = fileURLToPath(new URL("../src/data/gold-costs-poe2.js", import.meta.url));
 const CATALOG_PATH = fileURLToPath(new URL("../src/data/catalog-poe2.json", import.meta.url));
-
-// Sanity floors — guard against a truncated/changed page silently shrinking coverage.
-const MIN_MATCHED = 500;
-const REQUIRED_IDS = ["exalted", "divine", "chaos"];
-
-// `data-hover="?s=Data%5CBaseItemTypes%2FMetadata%2FItems%2F...">Name</a><span>123</span>` —
-// the second (text) <a> for each item is immediately followed by its gold <span>;
-// the first (image) <a> is followed by an <img>, so this pattern only matches once per item.
-const ITEM_RE = /data-hover="\?s=([^"]+)"\s+href="[^"]*">([^<]+)<\/a><span>(\d+)<\/span>/g;
-
-function nameKey(name) {
-  return name.trim().toLowerCase();
-}
 
 function jsString(value) {
   return JSON.stringify(value);
@@ -52,49 +48,14 @@ async function main() {
   if (!res.ok) throw new Error(`poe2db.tw returned ${res.status}`);
   const html = await res.text();
 
-  const scraped = [];
-  const seen = new Set();
-  for (const match of html.matchAll(ITEM_RE)) {
-    const [, rawHover, rawName, rawGold] = match;
-    const decoded = decodeURIComponent(rawHover);
-    const metaIdx = decoded.indexOf("Metadata/");
-    const metadataPath = metaIdx === -1 ? null : decoded.slice(metaIdx);
-    const name = rawName
-      .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
-      .replace(/&amp;/g, "&")
-      .trim();
-    const goldPerUnit = Number(rawGold);
-    const key = `${metadataPath}|${name}|${goldPerUnit}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    scraped.push({ metadataPath, name, goldPerUnit });
-  }
+  const scraped = parseGoldCostsHtml(html);
   console.log(`Parsed ${scraped.length} scraped items.`);
 
   const { default: catalog } = await import(CATALOG_PATH, { with: { type: "json" } });
-  const nameToId = new Map();
-  for (const item of catalog.items ?? []) {
-    const key = nameKey(item.name);
-    if (!nameToId.has(key)) nameToId.set(key, [item.id]);
-    else nameToId.get(key).push(item.id);
-  }
+  const { matched, unmatched } = matchGoldCosts(scraped, catalog);
 
-  const matched = [];
-  const unmatched = [];
-  for (const item of scraped) {
-    const ids = nameToId.get(nameKey(item.name));
-    if (ids && ids.length === 1) matched.push([ids[0], item.name, item.goldPerUnit]);
-    else unmatched.push(item.name);
-  }
-  matched.sort((a, b) => a[0].localeCompare(b[0]));
-
-  if (matched.length < MIN_MATCHED) {
-    throw new Error(`only ${matched.length} matched items (< ${MIN_MATCHED}); refusing to overwrite`);
-  }
-  const matchedIds = new Set(matched.map((row) => row[0]));
-  for (const id of REQUIRED_IDS) {
-    if (!matchedIds.has(id)) throw new Error(`required id "${id}" missing from the match; refusing to overwrite`);
-  }
+  const coverage = checkGoldCoverage(matched);
+  if (!coverage.ok) throw new Error(`${coverage.reason}; refusing to overwrite`);
 
   const fetchedAt = new Date().toISOString().slice(0, 10);
   const tableBody = matched.map(([id, name, gold]) => `  [${jsString(id)}, ${jsString(name)}, ${gold}],`).join("\n");

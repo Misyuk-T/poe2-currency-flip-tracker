@@ -3,11 +3,15 @@
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
-import { parseExchangeLayoutHtml, preserveKnownMetadataIds } from "./lib/exchange-layout-parser.mjs";
+import {
+  LAYOUT_SOURCE_URLS,
+  parseExchangeLayoutHtml,
+  preserveKnownMetadataIds,
+} from "../src/domain/exchange-layout-parse.js";
 
 const TARGETS = [
-  { game: "poe1", sourceUrl: "https://poedb.tw/us/Currency_Exchange", output: new URL("../src/data/exchange-layout-poe1.json", import.meta.url) },
-  { game: "poe2", sourceUrl: "https://poe2db.tw/us/Currency_Exchange", output: new URL("../src/data/exchange-layout-poe2.json", import.meta.url) },
+  { game: "poe1", sourceUrl: LAYOUT_SOURCE_URLS.poe1, output: new URL("../src/data/exchange-layout-poe1.json", import.meta.url) },
+  { game: "poe2", sourceUrl: LAYOUT_SOURCE_URLS.poe2, output: new URL("../src/data/exchange-layout-poe2.json", import.meta.url) },
 ];
 
 const USER_AGENT = "poe-market-layout-refresh/1.0 (+https://github.com/Misyuk-T/poe2-currency-flip-tracker)";

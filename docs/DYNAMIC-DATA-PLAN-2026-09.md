@@ -102,6 +102,38 @@ to add it via GitHub UI or accept that Phase B/C replace it.
   fallback.
 
 ### Phase C — layouts and gold to DB (S/M)
+**STATUS (2026-09-03):** implemented on `feat/layout-gold-db`; migration 011 is
+written but **NOT applied**. Shape:
+- Migration `011_layout_gold.sql` — `exchange_layout(game, item_key, …)` keyed
+  by "Metadata id, else normalized name" (PoE1 ships two `Delirium Orb` rows that
+  differ only by Metadata id), and `gold_costs(game, item_key, gold_per_unit, …)`
+  keyed by trade short id. RLS + revokes as in 010; one
+  `cron.schedule('data-refresh-daily', '40 4 * * *')` posting to
+  `/api/cron/data-refresh` with the same vault secret and a 60s timeout.
+  The sidebar category tree is **derived** from the item rows (verified to
+  reproduce the committed `categories` byte-for-byte for both games), so there is
+  no third table.
+- Both parses were factored out of `scripts/` into
+  `src/domain/exchange-layout-parse.js` and `src/domain/gold-costs-parse.js`; the
+  build scripts and the job now share ONE implementation, round-trip-tested
+  against the committed files field-for-field (1795 layout items, 651 gold rows).
+- Guards: 10s fetch + one retry; layout ≥80% of the committed item AND section
+  counts; gold keeps `MIN_MATCHED=500` + required anchor ids, plus the volatility
+  rule — of the items present in both baseline and batch **whose value changed**,
+  refuse the whole batch if >5% moved by >50%. The baseline is the stored rows,
+  falling back to the committed table on the first run, so even the first DB
+  write is guarded. A refused batch keeps the previous rows.
+- Read paths merge DB > JSON per item/field via `apps/web/lib/layout-overrides.js`
+  and `gold-overrides.js` (2s, `attempts: 1`, `onTimeout: resetSql`,
+  single-flight, 10-minute TTL, 42P01 → traced empty), loaded once per request on
+  the /api/radar **rebuild** path only — the snapshot fast path still reads
+  nothing. `/api/status` gains `layout: { rows, fetchedAt }` and
+  `gold: { rows, fetchedAt }` from those same cached reads.
+- `.github/workflows/exchange-layout-refresh.yml` stays as the labelled fallback.
+- Open: the volatility denominator is "items that changed", so a single legit
+  >50% move on an otherwise-static day refuses the batch (deliberate bias, but
+  worth watching in the cron trace for the first weeks).
+
 - `exchange-layout-refresh.yml` writes to `exchange_layout` instead of opening a PR;
   `gold-costs` job writes to `gold_costs` behind `MIN_MATCHED` and a "≤5% of values
   changed by >50%" guard; failures keep the previous rows and surface in `/api/status`.

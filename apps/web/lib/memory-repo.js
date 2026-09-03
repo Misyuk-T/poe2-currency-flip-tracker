@@ -26,6 +26,8 @@ export function createMemoryRepository(scope, { windowDays = WINDOW_DAYS, maxHou
   const leagueMeta = new Map();
   // "<game>|<metadataId>" -> cx_identity row. Upsert-only, same merge rules.
   const cxIdentity = new Map();
+  const exchangeLayoutRows = new Map();
+  const goldCostRows = new Map();
   let cursor = null;
   let lastDigestId = null;
 
@@ -214,6 +216,80 @@ export function createMemoryRepository(scope, { windowDays = WINDOW_DAYS, maxHou
     return entries.length;
   }
 
+  /**
+   * The in-memory twins of exchange_layout and gold_costs (migration 011). Same
+   * coalesce-per-field merge and the same never-delete rule as the SQL upserts,
+   * so the refresh job's guards can be exercised without a Postgres.
+   */
+  const LAYOUT_FIELDS = [
+    "metadataId",
+    "name",
+    "normalizedName",
+    "href",
+    "category",
+    "categoryOrder",
+    "section",
+    "sectionOrder",
+    "itemOrder",
+    "source",
+  ];
+
+  async function readExchangeLayout({ game = scope.game, limit = 4_000 } = {}) {
+    return [...exchangeLayoutRows.values()]
+      .filter((row) => row.game === game)
+      .sort((a, b) =>
+        (a.categoryOrder ?? 0) - (b.categoryOrder ?? 0)
+        || (a.sectionOrder ?? 0) - (b.sectionOrder ?? 0)
+        || (a.itemOrder ?? 0) - (b.itemOrder ?? 0)
+        || a.itemKey.localeCompare(b.itemKey))
+      .slice(0, limit)
+      .map((row) => ({ ...row }));
+  }
+
+  async function upsertExchangeLayout(rows, { game = scope.game, now = Date.now(), batchSize } = {}) {
+    void batchSize;
+    const entries = (rows ?? []).filter((row) => typeof row?.itemKey === "string" && row.itemKey);
+    const at = now instanceof Date ? now.getTime() : Number(now);
+    for (const row of entries) {
+      const key = `${game}|${row.itemKey}`;
+      const previous = exchangeLayoutRows.get(key);
+      const next = { game, itemKey: row.itemKey, fetchedAt: at, updatedAt: at };
+      for (const field of LAYOUT_FIELDS) next[field] = row[field] ?? previous?.[field] ?? null;
+      exchangeLayoutRows.set(key, next);
+    }
+    return entries.length;
+  }
+
+  async function readGoldCosts({ game = scope.game, limit = 4_000 } = {}) {
+    return [...goldCostRows.values()]
+      .filter((row) => row.game === game)
+      .sort((a, b) => a.itemKey.localeCompare(b.itemKey))
+      .slice(0, limit)
+      .map((row) => ({ ...row }));
+  }
+
+  async function upsertGoldCosts(rows, { game = scope.game, now = Date.now(), batchSize } = {}) {
+    void batchSize;
+    const entries = (rows ?? []).filter(
+      (row) => typeof row?.itemKey === "string" && row.itemKey && Number.isFinite(row.goldPerUnit),
+    );
+    const at = now instanceof Date ? now.getTime() : Number(now);
+    for (const row of entries) {
+      const key = `${game}|${row.itemKey}`;
+      const previous = goldCostRows.get(key);
+      goldCostRows.set(key, {
+        game,
+        itemKey: row.itemKey,
+        displayName: row.displayName ?? previous?.displayName ?? null,
+        goldPerUnit: row.goldPerUnit ?? previous?.goldPerUnit ?? null,
+        source: row.source ?? previous?.source ?? null,
+        fetchedAt: at,
+        updatedAt: at,
+      });
+    }
+    return entries.length;
+  }
+
   return {
     readCandleWindow,
     readPairCandles,
@@ -225,5 +301,9 @@ export function createMemoryRepository(scope, { windowDays = WINDOW_DAYS, maxHou
     listObservedCurrencyIds,
     readCxIdentity,
     upsertCxIdentity,
+    readExchangeLayout,
+    upsertExchangeLayout,
+    readGoldCosts,
+    upsertGoldCosts,
   };
 }

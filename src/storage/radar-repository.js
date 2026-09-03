@@ -759,6 +759,173 @@ export function createRadarRepository({
     }
   }
 
+  /**
+   * Stored exchange layout for one game (migration 011).
+   *
+   * Ordered by the same key the covering index is built on, so the reader gets
+   * an index-ordered scan of one game's prefix and can build its category tree
+   * without sorting. `limit` is a design assertion, not a real bound: PoE1 ships
+   * ~1130 items and PoE2 ~670.
+   */
+  async function readExchangeLayout({ game = scope.game, limit = 4_000 } = {}) {
+    const rows = await withTimeout(
+      sql`
+        select item_key, metadata_id, name, normalized_name, href,
+               category, category_order, section, section_order, item_order, source,
+               extract(epoch from fetched_at) * 1000 as fetched_at
+        from exchange_layout
+        where game = ${game}
+        order by category_order asc, section_order asc, item_order asc, item_key asc
+        limit ${limit}`,
+      opTimeoutMs,
+      "exchange layout read",
+      onTimeout,
+    );
+    return rows.map((row) => ({
+      game,
+      itemKey: row.item_key,
+      metadataId: row.metadata_id ?? null,
+      name: row.name ?? null,
+      normalizedName: row.normalized_name ?? null,
+      href: row.href ?? null,
+      category: row.category ?? null,
+      categoryOrder: row.category_order == null ? null : Number(row.category_order),
+      section: row.section ?? null,
+      sectionOrder: row.section_order == null ? null : Number(row.section_order),
+      itemOrder: row.item_order == null ? null : Number(row.item_order),
+      source: row.source ?? null,
+      fetchedAt: row.fetched_at == null ? null : Number(row.fetched_at),
+    }));
+  }
+
+  /**
+   * Upsert layout rows in batches, keeping the better value per field.
+   *
+   * `coalesce(excluded.x, exchange_layout.x)` throughout, for the same reason
+   * upsertCxIdentity does it: a run that parsed a row without a Metadata id (the
+   * page swapped data-hover for an opaque cache URL) must not erase the id an
+   * earlier run captured. Rows are NEVER deleted here — a page that stops
+   * listing an item leaves the old ordering standing rather than dropping an
+   * item into "Needs classification".
+   */
+  async function upsertExchangeLayout(rows, { game = scope.game, now = new Date(), batchSize = 50 } = {}) {
+    const entries = (rows ?? []).filter((row) => typeof row?.itemKey === "string" && row.itemKey);
+    if (!entries.length) return 0;
+    const at = now instanceof Date ? now : new Date(now);
+    onPhase("db.exchangeLayout.upsert.start", { rows: entries.length });
+    for (let offset = 0; offset < entries.length; offset += batchSize) {
+      const batch = entries.slice(offset, offset + batchSize).map((row) => ({
+        game,
+        item_key: row.itemKey,
+        metadata_id: row.metadataId ?? null,
+        name: row.name ?? null,
+        normalized_name: row.normalizedName ?? null,
+        href: row.href ?? null,
+        category: row.category ?? null,
+        category_order: row.categoryOrder ?? null,
+        section: row.section ?? null,
+        section_order: row.sectionOrder ?? null,
+        item_order: row.itemOrder ?? null,
+        source: row.source ?? null,
+        fetched_at: at,
+        updated_at: at,
+      }));
+      await withTimeout(
+        sql`
+          insert into exchange_layout ${sql(batch)}
+          on conflict (game, item_key) do update set
+            metadata_id = coalesce(excluded.metadata_id, exchange_layout.metadata_id),
+            name = coalesce(excluded.name, exchange_layout.name),
+            normalized_name = coalesce(excluded.normalized_name, exchange_layout.normalized_name),
+            href = coalesce(excluded.href, exchange_layout.href),
+            category = coalesce(excluded.category, exchange_layout.category),
+            category_order = coalesce(excluded.category_order, exchange_layout.category_order),
+            section = coalesce(excluded.section, exchange_layout.section),
+            section_order = coalesce(excluded.section_order, exchange_layout.section_order),
+            item_order = coalesce(excluded.item_order, exchange_layout.item_order),
+            source = coalesce(excluded.source, exchange_layout.source),
+            fetched_at = coalesce(excluded.fetched_at, exchange_layout.fetched_at),
+            updated_at = excluded.updated_at`,
+        opTimeoutMs,
+        "exchange layout upsert",
+        onTimeout,
+      );
+    }
+    onPhase("db.exchangeLayout.upsert.end", { rows: entries.length });
+    return entries.length;
+  }
+
+  /** Stored gold costs for one game (migration 011), keyed by trade short id. */
+  async function readGoldCosts({ game = scope.game, limit = 4_000 } = {}) {
+    const rows = await withTimeout(
+      sql`
+        select item_key, display_name, gold_per_unit, source,
+               extract(epoch from fetched_at) * 1000 as fetched_at
+        from gold_costs
+        where game = ${game}
+        order by item_key asc
+        limit ${limit}`,
+      opTimeoutMs,
+      "gold costs read",
+      onTimeout,
+    );
+    return rows.map((row) => ({
+      game,
+      itemKey: row.item_key,
+      displayName: row.display_name ?? null,
+      // numeric comes back as a string from postgres.js; a gold cost that
+      // silently became NaN would rank markets wrongly, so it is coerced once,
+      // here, and validated by the reader.
+      goldPerUnit: row.gold_per_unit == null ? null : Number(row.gold_per_unit),
+      source: row.source ?? null,
+      fetchedAt: row.fetched_at == null ? null : Number(row.fetched_at),
+    }));
+  }
+
+  /**
+   * Upsert gold rows in batches.
+   *
+   * `gold_per_unit` is written with `coalesce` like every other column, so a row
+   * that arrives without a number cannot blank a stored one. The guards that
+   * decide whether the batch may be written AT ALL (coverage floor + volatility)
+   * live in the job, not here — this function is deliberately dumb, so there is
+   * exactly one place where "may these numbers apply" is decided.
+   */
+  async function upsertGoldCosts(rows, { game = scope.game, now = new Date(), batchSize = 50 } = {}) {
+    const entries = (rows ?? []).filter(
+      (row) => typeof row?.itemKey === "string" && row.itemKey && Number.isFinite(row.goldPerUnit),
+    );
+    if (!entries.length) return 0;
+    const at = now instanceof Date ? now : new Date(now);
+    onPhase("db.goldCosts.upsert.start", { rows: entries.length });
+    for (let offset = 0; offset < entries.length; offset += batchSize) {
+      const batch = entries.slice(offset, offset + batchSize).map((row) => ({
+        game,
+        item_key: row.itemKey,
+        display_name: row.displayName ?? null,
+        gold_per_unit: row.goldPerUnit,
+        source: row.source ?? null,
+        fetched_at: at,
+        updated_at: at,
+      }));
+      await withTimeout(
+        sql`
+          insert into gold_costs ${sql(batch)}
+          on conflict (game, item_key) do update set
+            display_name = coalesce(excluded.display_name, gold_costs.display_name),
+            gold_per_unit = coalesce(excluded.gold_per_unit, gold_costs.gold_per_unit),
+            source = coalesce(excluded.source, gold_costs.source),
+            fetched_at = coalesce(excluded.fetched_at, gold_costs.fetched_at),
+            updated_at = excluded.updated_at`,
+        opTimeoutMs,
+        "gold costs upsert",
+        onTimeout,
+      );
+    }
+    onPhase("db.goldCosts.upsert.end", { rows: entries.length });
+    return entries.length;
+  }
+
   return {
     readCandleWindow,
     readPairCandles,
@@ -770,6 +937,10 @@ export function createRadarRepository({
     listObservedCurrencyIds,
     readCxIdentity,
     upsertCxIdentity,
+    readExchangeLayout,
+    upsertExchangeLayout,
+    readGoldCosts,
+    upsertGoldCosts,
     listAnchorCandidates,
     readRadarSnapshot,
     writeRadarSnapshots,

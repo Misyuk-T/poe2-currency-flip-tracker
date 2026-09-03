@@ -2,6 +2,34 @@
 
 Newest first. Each entry: **what** was decided, **why**, and the date.
 
+## 2026-09-03 — `getSql()` hands out a stable handle; the radar rebuild loads no identity
+Two changes, both aimed at the 2026-09-04 20:00Z launch hour. (1) `getSql()` now
+returns a Proxy that resolves the module-cached client **per call** instead of
+returning the client itself, so `resetSql()` can no longer hand a destroyed
+client to a holder that captured it earlier. (2) `getRadar`'s on-demand rebuild
+passes `null` overrides — no `cx_identity` read on that path at all.
+**Why:** the bounded request-path loaders (`identity-overrides.js`,
+`default-league.js`) run at `opTimeoutMs: 2_000, attempts: 1` with
+`onTimeout: resetSql({ timeout: 0 })`, and `getRadar`/`getHotlist`/`getStatus`
+all capture their repository **before** those loaders run. A loader that blew its
+budget on a cold instance destroyed the sole `max: 1` client the in-flight
+rebuild was about to query; `CONNECTION_DESTROYED` is in `RETRYABLE_DB_ERROR`, so
+`withDbRetry` retried against the same dead object and `/api/radar` returned a
+502 — the same failure class as the documented candle-window incident, and the
+launch hour is exactly when it fires (a brand-new league has no snapshot until
+the first hourly cron, so every cold request rebuilds). Chosen over teaching
+`withDbRetry` to re-acquire between attempts (would need a repository *factory*
+at ~20 call sites and still loses attempt one) and over an in-flight counter in
+`resetSql` (the rebuild holds a *reference*, not an in-flight query, when the
+loader times out). Cost of (1): a reset during a burst may open one extra pooled
+connection, which is what Supavisor is for. Cost of (2): a rebuild renders
+committed-catalog identity only — an id the catalog does not name shows its
+humanized leaf until the next hourly snapshot, which does carry the overrides
+(`refreshRadarSnapshots` still loads them per game). Reproduced end-to-end in
+`test/loader-connection-cascade.test.js`: the real `db.js`/repository/`getRadar`
+over a fake `postgres` driver installed with `module.registerHooks` — no socket,
+no database, no test-only seams in production code.
+
 ## 2026-09-02 — Phase B: currency identity is DB-first, committed JSON is the fallback
 New table `cx_identity(game, metadata_id, name, icon, category, subcategory [always null],
 short_id, source, resolved_at, updated_at)` (migration 010) plus a daily

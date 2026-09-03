@@ -10,8 +10,10 @@ import postgres from "postgres";
  * instead of throwing at import time (e.g. local dev without a database).
  */
 let client;
+let handle;
 
-export function getSql() {
+/** The live module-cached client, created on first use. Null without a URL. */
+function liveClient() {
   const url = process.env.DATABASE_URL;
   if (!url) return null;
   if (!client) {
@@ -33,10 +35,59 @@ export function getSql() {
   return client;
 }
 
+function requireClient() {
+  const live = liveClient();
+  if (!live) throw new Error("DATABASE_URL is not configured");
+  return live;
+}
+
+/**
+ * A STABLE handle over the module-cached client, not the client itself.
+ *
+ * Everything that touches Postgres captures this once — createRadarRepository
+ * stores it for the life of the repository object — and then queries through it
+ * later, sometimes much later. resetSql() can fire in between: a repository
+ * built for a rebuild, then a bounded loader (identity overrides, league meta)
+ * that blows its 2s budget and destroys the shared max:1 client, then the
+ * rebuild's first query — on a client that no longer exists. That threw
+ * CONNECTION_DESTROYED, which withDbRetry retried against the SAME dead object,
+ * and /api/radar turned into a 502. Exactly the launch-hour path: a brand-new
+ * league has no snapshot yet, so every cold request rebuilds.
+ *
+ * Resolving the client per call instead of per capture removes that whole class:
+ * a destroyed client is simply never handed out again, and the next query opens
+ * a fresh connection the way a warm instance's first query already does. The
+ * only cost is that a reset during an in-flight burst can open one extra
+ * connection, which is what the Supavisor pooler is there to absorb.
+ *
+ * Chosen over the alternatives because it is the smallest change that is also
+ * global: teaching withDbRetry to re-acquire between attempts would mean every
+ * one of its ~20 call sites handing it a repository FACTORY rather than a
+ * closure (and would not help the first attempt at all), and an in-flight
+ * counter in resetSql does not help here either — the rebuild holds a reference,
+ * not an in-flight query, at the moment the loader times out.
+ */
+export function getSql() {
+  if (!process.env.DATABASE_URL) return null;
+  handle ??= new Proxy(function sql() {}, {
+    apply: (_target, _thisArg, args) => Reflect.apply(requireClient(), undefined, args),
+    get: (_target, prop) => {
+      const live = requireClient();
+      const value = live[prop];
+      return typeof value === "function" ? value.bind(live) : value;
+    },
+    has: (_target, prop) => prop in requireClient(),
+  });
+  return handle;
+}
+
 /**
  * Destroy the cached client after an operation timeout. Promise.race by itself
  * only rejects the caller; postgres.js may otherwise keep the underlying query,
  * transaction, and sole max:1 connection alive until Vercel kills the function.
+ *
+ * The handle returned by getSql() deliberately survives this: holders keep a
+ * working reference and simply resolve the next client on their next query.
  */
 export async function resetSql({ timeout = 0 } = {}) {
   const stale = client;

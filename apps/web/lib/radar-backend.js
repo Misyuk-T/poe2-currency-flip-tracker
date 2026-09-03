@@ -493,15 +493,26 @@ export async function getRadar(searchParams) {
   // migration or if the hourly snapshot refresh failed. It is deliberately not
   // the normal path anymore.
   //
-  // The identity overrides are loaded HERE and not above the snapshot short
-  // circuit on purpose: a served snapshot already carries the names and icons
-  // that were resolved when the cron built it, so paying a cold 2s read to
-  // decorate rows nobody is about to rebuild would put latency on the one path
-  // that is currently fast. On this path the read is one bounded query for a
-  // request that is already doing several, and its worst case is bounded by the
-  // loader's own 2s budget.
-  const overrides = await loadIdentityOverrides(game.id, { config });
-  const built = await withDbRetry(() => buildRadarPayloads(radarBuildInput(ctx, game, repo, Date.now(), requestedAnchors, overrides)));
+  // Deliberately NO identity-override read on this path — `null` means "commit-
+  // ted snapshot only", which is what identityWithOverrides already treats an
+  // empty map as.
+  //
+  // This is the path a league launch lands on: a brand-new league has no stored
+  // snapshot until the first hourly cron, so every cold request rebuilds, and it
+  // does so on the day's heaviest traffic. Paying a bounded-but-cold 2s read to
+  // decorate names here bought very little (the cron's own build loads identity,
+  // so the snapshot it writes minutes later carries the overrides anyway) and
+  // cost a great deal: the loader's onTimeout destroys the shared max:1 client
+  // that `repo` — captured above, before the loader ran — is about to query,
+  // which surfaced as CONNECTION_DESTROYED and a 502. db.js's stable handle now
+  // makes that survivable, but the read still has no business being on the one
+  // request path that only runs when things are already slow.
+  //
+  // User-visible difference: a currency the committed catalog does not name
+  // renders its humanized leaf, without a database-supplied name/icon, until the
+  // next hourly snapshot replaces this payload. Everything the catalog answers
+  // — which is everything the exchange lays out — is unchanged.
+  const built = await withDbRetry(() => buildRadarPayloads(radarBuildInput(ctx, game, repo, Date.now(), requestedAnchors, null)));
   const payloads = Object.fromEntries(Object.entries(built).map(([payloadAnchor, payload]) => [
     payloadAnchor,
     finalizeRadarBody(payload, game, selected.league),

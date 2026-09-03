@@ -454,6 +454,120 @@ a.currency-card strong {
 .currency-stat .price { color: var(--ink); }
 .currency-stat em { font-style: normal; }
 
+/* --- /poe2/currencies: the full, crawlable market index ------------------
+   ~600 server-rendered links grouped like the in-game Currency Exchange. The
+   dense list is a real table (column headers announced by screen readers, and
+   the price/24h columns actually line up) rather than 600 icon cards: icon
+   cards would mean 600 hotlinked GGG images on one page. */
+
+.ci-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.ci-jump a {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 13px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.ci-jump a:hover,
+.ci-jump a:focus-visible {
+  border-color: rgba(246, 197, 120, 0.66);
+  color: #fff5df;
+}
+
+.ci-jump a span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.ci-group { scroll-margin-top: 16px; }
+
+.ci-group .ci-table + .ci-table { margin-top: 26px; }
+
+.ci-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-variant-numeric: tabular-nums;
+}
+
+.ci-table caption {
+  padding-bottom: 9px;
+  color: #f2eadc;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.08rem;
+  text-align: left;
+}
+
+.ci-table thead th {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  color: rgba(238, 229, 213, 0.5);
+  font-size: 0.66rem;
+  font-weight: 850;
+  letter-spacing: 0.07em;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.ci-table :is(th, td):first-child { text-align: left; }
+
+.ci-table :is(th, td):nth-child(2) { width: 22%; }
+/* Widest thing on the page: a four-figure move like "+2,532%". */
+.ci-table :is(th, td):nth-child(3) { width: 17%; }
+
+.ci-table tbody :is(th, td) {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+  font-size: 0.93rem;
+  font-weight: 500;
+  text-align: right;
+}
+
+.ci-table tbody th {
+  color: var(--ink);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* `table-layout: fixed` stops a long value widening the table, but without this
+   it would still SPILL out of its cell and take the document's scrollWidth with
+   it. Wrapping is the honest failure mode for a number nobody sized for. */
+.ci-table tbody td { color: var(--muted); overflow-wrap: anywhere; }
+
+.ci-table tbody td.up { color: var(--profit); }
+.ci-table tbody td.down { color: var(--loss); }
+
+.ci-table tbody tr:hover :is(th, td) { background: rgba(240, 169, 59, 0.05); }
+
+.ci-table tbody a:hover,
+.ci-table tbody a:focus-visible {
+  color: var(--gold-bright);
+  text-decoration: underline;
+}
+
+.exchange-group-note { margin-top: 0; }
+
+.exchange-group-note a {
+  color: var(--gold-bright);
+  font-weight: 750;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .currency-hero {
   display: grid;
   grid-template-columns: 84px minmax(0, 1fr);
@@ -954,6 +1068,17 @@ button:focus-visible > .currency-icon-tooltip::after {
   .working-price-card > small { justify-self: start; text-align: left; }
   .market-list { max-height: 420px; }
   .currency-hero { grid-template-columns: 1fr; }
+  /* At 19% (~62px on a 375px screen) anything past -72.9% spilled out of the
+     24h column and took the whole document's scrollWidth with it. Note the
+     `tbody` in the padding selector: without it the base rule below is more
+     specific and these overrides silently never applied. */
+  /* Price holds up to "0.004321" (six decimals below 0.01), 24h up to
+     "-72.99%" — both need their own line at this size. */
+  .ci-table :is(th, td):nth-child(2) { width: 27%; }
+  .ci-table :is(th, td):nth-child(3) { width: 26%; }
+  .ci-table thead th,
+  .ci-table tbody :is(th, td) { padding-inline: 4px; font-size: 0.86rem; }
+  .ci-table thead th { font-size: 0.62rem; }
 }
 
 /* Homepage hero redesign */

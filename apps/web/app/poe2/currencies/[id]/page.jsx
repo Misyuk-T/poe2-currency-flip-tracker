@@ -2,6 +2,7 @@ import { currencyName, iconUrl, popularCurrencies, siteUrl, formatNumber, format
 import { contentFor } from "../../../../lib/currency-content.js";
 import { currencyPagePath } from "../../../../lib/currency-indexability.js";
 import { currencyPageMetadata } from "../../../../lib/currency-page-metadata.js";
+import { exchangePlacement, slugifyGroupName } from "../../../../lib/currency-index-groups.js";
 
 // Incremental Static Regeneration: prerender popular currencies, refresh hourly
 // so each page is crawlable static HTML that still tracks the latest stored hour.
@@ -49,6 +50,23 @@ export default async function CurrencyPage({ params }) {
   }
   const price = priceLine(summary);
   const anchorName = summary?.anchor ? currencyName(summary.anchor) : null;
+
+  // Where this currency sits on the in-game Currency Exchange, from the
+  // committed layout snapshot — a static import, so this costs no extra data
+  // read. It gives every one of these ~600 pages a link into its own
+  // neighbourhood on the index rather than only to the same six popular pages.
+  // We deliberately do NOT link named siblings from here: this page has no way
+  // to know which of them have stored market data without a second read, and
+  // linking a market with no data would mint new crawlable dead ends — exactly
+  // what the sitemap already refuses to list.
+  //
+  // Committed snapshot only: unlike the index page this is a per-id render, and
+  // a stored-layout read here would be one database call per currency page.
+  // The cost of being a snapshot behind is bounded and safe — an item the
+  // snapshot cannot place is UNMAPPED, and an unmapped item renders NO anchor
+  // rather than one pointing at a `#group` fragment the index page may not have.
+  const placement = exchangePlacement(name, { id });
+  const exchangeGroup = placement.mapped && id !== summary?.anchor ? placement : null;
 
   // Hand-written, currency-specific entries, plus a methodology FAQ only when we
   // actually show a price. The wording is mode-aware (sample vs live) and never
@@ -254,6 +272,15 @@ export default async function CurrencyPage({ params }) {
             <p className="eyebrow">Related markets</p>
             <h2>Other PoE2 currencies</h2>
           </div>
+          {exchangeGroup ? (
+            <p className="hero-copy exchange-group-note">
+              On the in-game Currency Exchange the {name} sits under{" "}
+              <a href={`/poe2/currencies#${slugifyGroupName(exchangeGroup.category)}`}>
+                {exchangeGroup.category} → {exchangeGroup.section}
+              </a>
+              . The currency index lists every market in that group with its latest hourly price.
+            </p>
+          ) : null}
           <div className="currency-grid">
             {popularCurrencies
               .filter((c) => c.id !== id)

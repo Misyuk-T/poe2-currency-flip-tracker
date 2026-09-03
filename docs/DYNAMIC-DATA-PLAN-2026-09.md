@@ -102,6 +102,54 @@ to add it via GitHub UI or accept that Phase B/C replace it.
   fallback.
 
 ### Phase C — layouts and gold to DB (S/M)
+**STATUS (2026-09-03):** implemented on `feat/layout-gold-db`; migration 011 is
+written but **NOT applied**. Shape:
+- Migration `011_layout_gold.sql` — `exchange_layout(game, item_key, …)` keyed
+  by "Metadata id, else normalized name" (PoE1 ships two `Delirium Orb` rows that
+  differ only by Metadata id), and `gold_costs(game, item_key, gold_per_unit, …)`
+  keyed by trade short id. RLS + revokes as in 010; one
+  `cron.schedule('data-refresh-daily', '40 4 * * *')` posting to
+  `/api/cron/data-refresh` with the same vault secret and a 60s timeout.
+  The sidebar category tree is **derived** from the item rows (verified to
+  reproduce the committed `categories` byte-for-byte for both games), so there is
+  no third table.
+- Both parses were factored out of `scripts/` into
+  `src/domain/exchange-layout-parse.js` and `src/domain/gold-costs-parse.js`; the
+  build scripts and the job now share ONE implementation, round-trip-tested
+  against the committed files field-for-field (1795 layout items, 651 gold rows).
+- Guards: 10s fetch + one retry; layout ≥80% of the committed item AND section
+  counts; gold keeps `MIN_MATCHED=500` + required anchor ids, plus the volatility
+  rule, over the items present in both baseline and batch **whose value changed**:
+  fewer than 20 changed → allow (the ratio is noise at that size); otherwise
+  refuse if >5% moved by >50%; and refuse regardless if >50 items moved by >50%.
+  The baseline is the stored rows, falling back to the committed table on the
+  first run, so even the first DB write is guarded. A refused batch keeps the
+  previous rows.
+  - The 20-item sample floor is not a softening — it is what stops the guard
+    freezing gold permanently. Without it ONE legitimately-changed item that
+    doubles is 1/1 = 100% → refuse, and because a refused batch never advances
+    the baseline, every later run refuses identically and gold stays on the
+    committed July table forever with only a cron trace as the signal. A league
+    patch retuning a few fees is exactly that shape. The absolute cap covers the
+    opposite hole (a rescale hidden inside thousands of other changes).
+- Read paths merge DB > JSON per item/field via `apps/web/lib/layout-overrides.js`
+  and `gold-overrides.js` (2s, `attempts: 1`, `onTimeout: resetSql`,
+  single-flight, 10-minute TTL, 42P01 → traced empty). They are loaded **only by
+  the hourly cron** (`refreshRadarSnapshots`), not on the `/api/radar` rebuild
+  path: `db.js` is `max: 1` and each loader's repo carries `onTimeout: resetSql`,
+  which destroys the client the rebuild already captured — `CONNECTION_DESTROYED`
+  is retryable, so `withDbRetry` would retry on the dead object and return 502.
+  The stored rows reach users through the snapshots the cron bakes them into, so
+  the fast path still reads nothing and the request path takes no new risk. Thread
+  them back into `getRadar` once the `db.js`/`withDbRetry` hazard is fixed.
+- `/api/status` gains `layout: { rows, fetchedAt }` and `gold: { rows, fetchedAt }`
+  from those same cached reads.
+- `.github/workflows/exchange-layout-refresh.yml` stays as the labelled fallback.
+- Known limitation: the round-trip tests re-render the committed files from the
+  parsers' own regexes, so they prove the parse is stable but not that our model
+  of the live pages is right. The run-time coverage floors are what catch a page
+  that changed shape.
+
 - `exchange-layout-refresh.yml` writes to `exchange_layout` instead of opening a PR;
   `gold-costs` job writes to `gold_costs` behind `MIN_MATCHED` and a "≤5% of values
   changed by >50%" guard; failures keep the previous rows and surface in `/api/status`.

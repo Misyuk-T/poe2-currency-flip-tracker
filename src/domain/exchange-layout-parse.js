@@ -1,3 +1,19 @@
+/**
+ * ONE implementation of "poedb/poe2db Currency Exchange page -> in-game layout".
+ *
+ * This lived in scripts/lib/ while its only caller was the nightly build script
+ * (scripts/build-exchange-layouts.mjs, which writes src/data/exchange-layout-*.json
+ * and opens a PR). Phase C adds a SECOND caller — the runtime job that writes the
+ * same facts to the `exchange_layout` table (apps/web/lib/data-refresh.js) — so
+ * the parse moved here, next to identity-resolve.js, for exactly the reason that
+ * one did: two copies of a scrape parser drift within a league, and then the PR
+ * flow and the database disagree about what section an item is in.
+ *
+ * Pure and synchronous: no fetch, no filesystem, no clock. The script keeps its
+ * own I/O, retry policy and output envelope, so the committed JSON stays
+ * byte-identical (asserted by the round-trip in test/exchange-layout-parse.test.js).
+ */
+
 const TAGS = /<[^>]*>/g;
 
 export function decodeHtml(value = "") {
@@ -194,3 +210,34 @@ export function parseExchangeLayoutHtml(html, { game, sourceUrl } = {}) {
     items,
   };
 }
+
+/**
+ * Stable per-item key for one parsed layout item.
+ *
+ * The Metadata path when the page exposed one, else the normalized display name.
+ * The two key spaces cannot collide (a Metadata path contains "/" and capitals;
+ * a normalized name is lowercase alphanumerics and spaces), and the Metadata
+ * path is the only thing that separates PoE1's two "Delirium Orb" rows — same
+ * name, same section, different gold fee.
+ *
+ * Used as the primary key of `exchange_layout` (migration 011) and as the merge
+ * key when a stored row overrides a committed one, so it has to be derivable
+ * identically from a parsed item and from a committed snapshot item. Both carry
+ * `metadataId` and `normalizedName`, so it is.
+ */
+export function exchangeLayoutItemKey(item) {
+  const metadataId = typeof item?.metadataId === "string" ? item.metadataId.trim() : "";
+  if (metadataId) return metadataId;
+  const normalized = item?.normalizedName || normalizeExchangeName(item?.name);
+  return normalized || null;
+}
+
+/**
+ * The upstream pages, read from scripts/build-exchange-layouts.mjs rather than
+ * invented. The nightly script and the runtime job MUST agree on these: a job
+ * and a script that disagree about the source are two layouts, not one.
+ */
+export const LAYOUT_SOURCE_URLS = Object.freeze({
+  poe1: "https://poedb.tw/us/Currency_Exchange",
+  poe2: "https://poe2db.tw/us/Currency_Exchange",
+});

@@ -16,7 +16,7 @@ import {
   identityNames,
 } from "../../../src/domain/cx-identity.js";
 import { applyExchangeLayout, exchangeLayoutCategories } from "../../../src/domain/exchange-layout.js";
-import { createGoldRegistry, createFlatGoldRegistry } from "../../../src/domain/gold-costs.js";
+import { createGoldRegistry, createFlatGoldRegistry, mergeGoldRecords } from "../../../src/domain/gold-costs.js";
 import { canonicalPairId, isPublicLeague } from "../../../src/domain/cx-market.js";
 import { selectAutomaticAnchors } from "../../../src/domain/market-anchor.js";
 import { RADAR_PAYLOAD_VERSION, isCompatibleRadarSnapshot } from "../../../src/domain/radar-snapshot.js";
@@ -38,6 +38,8 @@ import {
   peekIdentityOverrides,
   readIdentityOverridesCached,
 } from "./identity-overrides.js";
+import { loadLayoutOverrides, readLayoutOverridesCached } from "./layout-overrides.js";
+import { loadGoldOverrides, readGoldOverridesCached } from "./gold-overrides.js";
 import { createMemoryRepository } from "./memory-repo.js";
 
 const NO_DB = {
@@ -225,6 +227,15 @@ function context() {
       };
       return {
         config,
+        // Kept so the manifest can be rebuilt when the `gold_costs` table has a
+        // better number than the committed table (see catalogWithGold). The
+        // parsed catalog is a few hundred KB and is already resident.
+        catalog,
+        // A DEMO placeholder registry must never be "improved" with real stored
+        // gold: mixing a uniform 600 with sourced per-item values would produce
+        // a table that is neither honest nor labelled. Fixture mode keeps the
+        // flat stand-in, live mode gets the merge.
+        goldPlaceholder: usePlaceholder,
         catalogManifest: manifest,
         catalogById: new Map(manifest.map((item) => [item.id, item])),
         identityByGame: { poe1: poe1Identity, poe2: poe2Identity },
@@ -409,12 +420,57 @@ export function identityWithOverrides(identity, overrides) {
   return merged;
 }
 
-function radarBuildInput(ctx, game, repo, now = Date.now(), anchors = game.anchors, overrides = null) {
+/**
+ * Fold the `gold_costs` rows on top of the process-cached catalog manifest.
+ *
+ * Gold reaches the radar through exactly one channel: `catalogManifest` /
+ * `catalogById` carry `goldPerUnit` and `status` per item, and radar-payload
+ * reads them from there. So this is THE single place DB-over-committed
+ * precedence is implemented for gold — there is no second path, and no per-row
+ * lookup.
+ *
+ * Memoized against the RECORDS ARRAY ITSELF (a WeakMap), like
+ * identityWithOverrides: the loader hands out the same array for its whole
+ * 10-minute TTL, so the merge and the manifest rebuild happen once per TTL
+ * rather than once per request over ~1600 catalog items.
+ *
+ * A stored row only ever replaces the number for an id it actually has. An item
+ * the table has never seen keeps its committed cost; an item neither source
+ * knows stays `unknown-gold-cost` and unrankable, never guessed.
+ *
+ * Records are filtered to the configured game BEFORE they reach the registry.
+ * `createGoldRegistry` THROWS on a record whose `game` disagrees with the
+ * registry's — a deliberate refusal to mix PoE1 and PoE2 gold tables — and this
+ * is on the payload-build path, so one stray `game='poe1'` row would turn every
+ * rebuild into a 502. Today only PoE2 is ever written (GOLD_GAMES in
+ * data-refresh.js), which makes the filter cheap insurance rather than dead
+ * code: the day a PoE1 table exists it must arrive as a second registry, not as
+ * extra rows in this one.
+ */
+const goldManifestCache = new WeakMap();
+export function catalogWithGold(ctx, goldRecords) {
+  const base = { catalogManifest: ctx.catalogManifest, catalogById: ctx.catalogById };
+  if (ctx.goldPlaceholder || !goldRecords?.length || !ctx.catalog) return base;
+  const cached = goldManifestCache.get(goldRecords);
+  if (cached?.base === ctx.catalogManifest) return cached.value;
+  const game = ctx.config.poeGame;
+  const scoped = goldRecords.filter((record) => (record?.game ?? game) === game);
+  if (!scoped.length) return base;
+  const registry = createGoldRegistry(mergeGoldRecords(POE2_GOLD_COSTS, scoped), { game });
+  const catalogManifest = buildManifest(ctx.catalog, registry);
+  const value = { catalogManifest, catalogById: new Map(catalogManifest.map((item) => [item.id, item])) };
+  goldManifestCache.set(goldRecords, { base: ctx.catalogManifest, value });
+  return value;
+}
+
+function radarBuildInput(ctx, game, repo, now = Date.now(), anchors = game.anchors, data = {}) {
   const isPoe2 = game.id === "poe2";
+  const { identity: overrides = null, gold = null } = data;
   const identity = identityWithOverrides(
     ctx.identityByGame[game.id] ?? { names: CORE_NAMES, icons: {}, categories: {} },
     overrides,
   );
+  const { catalogManifest, catalogById } = catalogWithGold(ctx, gold);
   return {
     repo,
     anchors,
@@ -423,23 +479,30 @@ function radarBuildInput(ctx, game, repo, now = Date.now(), anchors = game.ancho
     icons: identity.icons,
     categories: identity.categories,
     canonicalId: translatorForGame(game.id),
-    catalogManifest: isPoe2 ? ctx.catalogManifest : [],
-    catalogById: isPoe2 ? ctx.catalogById : new Map(),
+    catalogManifest: isPoe2 ? catalogManifest : [],
+    catalogById: isPoe2 ? catalogById : new Map(),
     source: { sourceMode: sourceMode(ctx.config), providerMode: ctx.config.providerMode },
     radarMaxHotTargets: ctx.config.radarMaxHotTargets,
     now,
   };
 }
 
-function finalizeRadarBody(body, game, league) {
-  body.rows = applyExchangeLayout(tradableRows(body.rows), game.id);
+/**
+ * `layout` is the stored `exchange_layout` array for this game, loaded once by
+ * the caller and threaded down. The rows and the sidebar categories MUST come
+ * from the same merged store — a payload whose rows are grouped by a section the
+ * category list does not contain renders as an empty group — which is why both
+ * calls take the same array.
+ */
+function finalizeRadarBody(body, game, league, layout = null) {
+  body.rows = applyExchangeLayout(tradableRows(body.rows), game.id, { overrides: layout });
   body.payloadVersion = RADAR_PAYLOAD_VERSION;
   body.league = league;
   body.game = game.id;
   body.realm = game.realm;
   body.exchangeLayout = {
     source: "game-client-layout",
-    categories: exchangeLayoutCategories(game.id),
+    categories: exchangeLayoutCategories(game.id, { overrides: layout }),
   };
   return body;
 }
@@ -502,27 +565,30 @@ export async function getRadar(searchParams) {
   //
   // This is the path a league launch lands on: a brand-new league has no stored
   // snapshot until the first hourly cron, so every cold request rebuilds, and it
-  // does so on the day's heaviest traffic. Paying a bounded-but-cold 2s read to
-  // decorate names here bought very little (the cron's own build loads identity,
-  // so the snapshot it writes minutes later carries the overrides anyway) and
-  // cost a great deal: the loader's onTimeout destroyed the max:1 client that
-  // `repo` — captured above, before the loader ran — was about to query, which
-  // surfaced as CONNECTION_DESTROYED and a 502.
+  // does so on the day's heaviest traffic. The bounded loaders now live on their
+  // own connection (getLoaderSql), so a loader timeout can no longer destroy the
+  // client `repo` captured above — but a cold 2s read still buys almost nothing
+  // here, because the cron's own build loads all three sets and the snapshot it
+  // writes minutes later carries them anyway.
   //
   // Peeking instead of skipping matters because this payload is PERSISTED as a
   // snapshot below, so a degraded rebuild would outlive the cron run that should
-  // have fixed it. What the overrides restore is `targetName`, `targetIcon` and
-  // `tradeCategory` — NOT the wire-level `category`/`subcategory`, which come
-  // from applyExchangeLayout and read "Needs classification" for an unmapped id
-  // either way. A warm
-  // instance therefore rebuilds with exactly what the cron would have used, and
-  // a cold one accepts the committed catalog for one snapshot rather than
-  // putting a database read back on the slowest request path there is.
+  // have fixed it. What the identity overrides restore is `targetName`,
+  // `targetIcon` and `tradeCategory` — NOT the wire-level `category` /
+  // `subcategory`, which come from applyExchangeLayout and read
+  // "Needs classification" for an unmapped id either way.
+  //
+  // Layout and gold stay null on this path by the same reasoning, and cost less:
+  // a payload rebuilt on demand between cron runs is grouped and priced from the
+  // committed files — exactly what it did before Phase C — and the next hourly
+  // build corrects it.
   const overrides = peekIdentityOverrides(game.id);
-  const built = await withDbRetry(() => buildRadarPayloads(radarBuildInput(ctx, game, repo, Date.now(), requestedAnchors, overrides)));
+  const built = await withDbRetry(() =>
+    buildRadarPayloads(radarBuildInput(ctx, game, repo, Date.now(), requestedAnchors, { identity: overrides, layout: null, gold: null })),
+  );
   const payloads = Object.fromEntries(Object.entries(built).map(([payloadAnchor, payload]) => [
     payloadAnchor,
-    finalizeRadarBody(payload, game, selected.league),
+    finalizeRadarBody(payload, game, selected.league, null),
   ]));
   const body = bestView
     ? mergeRadarPayloads(payloads, { preferredAnchor: requestedAnchor })
@@ -634,17 +700,22 @@ export async function refreshRadarSnapshots(ctx, {
         makeRepo(scopeFor(ctx, game, league), { trace, anchors: anchorPlan.anchors }),
         game.id,
       );
-      // One read per game per invocation, not per league: the loader's cache is
-      // keyed by game and outlives the whole cron run. Whatever the identity job
-      // resolved overnight is baked into the snapshots here, so /api/radar's
-      // fast path serves the better names without ever reading cx_identity.
-      const overrides = await loadIdentityOverrides(game.id, { config: ctx.config, trace });
+      // One read per game per invocation, not per league: each loader's cache is
+      // keyed by game and outlives the whole cron run. Whatever the identity and
+      // data-refresh jobs resolved overnight is baked into the snapshots here, so
+      // /api/radar's fast path serves the better names, sections and gold costs
+      // without ever reading cx_identity, exchange_layout or gold_costs.
+      const [overrides, layout, gold] = await Promise.all([
+        loadIdentityOverrides(game.id, { config: ctx.config, trace }),
+        loadLayoutOverrides(game.id, { config: ctx.config, trace }),
+        loadGoldOverrides(game.id, { config: ctx.config, trace }),
+      ]);
       const payloads = await withDbRetry(() =>
-        buildRadarPayloads(radarBuildInput(ctx, game, repo, now, anchorPlan.anchors, overrides)),
+        buildRadarPayloads(radarBuildInput(ctx, game, repo, now, anchorPlan.anchors, { identity: overrides, gold })),
       );
       const snapshots = Object.entries(payloads).map(([anchor, payload]) => ({
         anchor,
-        payload: finalizeRadarBody(payload, game, league),
+        payload: finalizeRadarBody(payload, game, league, layout),
       }));
       snapshots.push({
         anchor: "auto",
@@ -1051,7 +1122,18 @@ export async function getStatus() {
   // query, and no `cx_identity_runs` table to keep in sync. `iconlessRows` is
   // named for exactly what it counts: stored rows with no icon, which is the set
   // the job's retry window will pick up again.
-  const identityState = await readIdentityOverridesCached(config.poeGame, { config });
+  // Same for the Phase C tables: how many `exchange_layout` / `gold_costs` rows
+  // the readers are actually serving, and how old the parse behind them is.
+  // Both fall out of the SAME cached reads the radar rebuild does — no extra
+  // query, and no run-log table to keep in sync. `rows: 0` with a live database
+  // means the daily job has never written (or every run was refused by a floor,
+  // which the cron trace records); `fetchedAt` going stale is the signal that
+  // the job stopped succeeding while the committed fallback quietly carries on.
+  const [identityState, layoutState, goldState] = await Promise.all([
+    readIdentityOverridesCached(config.poeGame, { config }),
+    readLayoutOverridesCached(config.poeGame, { config }),
+    readGoldOverridesCached(config.poeGame, { config }),
+  ]);
   const base = {
     providerMode: config.providerMode,
     ingestProviderMode: config.ingestProviderMode,
@@ -1061,6 +1143,14 @@ export async function getStatus() {
     identity: {
       overrides: identityState.overrides.size,
       iconlessRows: identityState.iconless,
+    },
+    layout: {
+      rows: layoutState.rows,
+      fetchedAt: layoutState.fetchedAt ? new Date(layoutState.fetchedAt).toISOString() : null,
+    },
+    gold: {
+      rows: goldState.rows,
+      fetchedAt: goldState.fetchedAt ? new Date(goldState.fetchedAt).toISOString() : null,
     },
   };
   if (!repo) return { status: 200, body: { ...base, radar: { configured: false, reason: "no-database" } } };

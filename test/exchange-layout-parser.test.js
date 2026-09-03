@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseExchangeLayoutHtml, preserveKnownMetadataIds } from "../scripts/lib/exchange-layout-parser.mjs";
+import { parseExchangeLayoutHtml, preserveKnownMetadataIds } from "../src/domain/exchange-layout-parse.js";
 
 test("parses category, section, metadata, item order and fractional gold without page chrome", () => {
   const item = (name, metadata, gold) => {

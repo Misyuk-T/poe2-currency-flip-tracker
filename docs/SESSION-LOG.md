@@ -1355,3 +1355,10 @@ Analytics; форумний тред pathofexile.com + каталоги; 04.09 �
   перевірено: `Metadata%2FItems%2FCurrency%2FDelirium%2FDeliriumPinnacleKey`
   → **200**. Випадкові три посилання (blazing-flux, uncut-spirit-gem-20,
   perfect-exalted-orb) → усі 200. CI зелений.
+- **Провенанс gold підтверджено в проді після крону 11:05Z:**
+  `gold: { source: "database", rows: 656, storedRows: 656,
+  effectiveFrom: "2026-09-03", patchOrVersion: "db-observed-2026-09-03",
+  goldPerUnit: null }`, `goldAnchorEffectiveFrom: 2026-09-03`, і кожен рядок
+  несе **власну** `effectiveFrom`. Тобто весь ланцюг Phase C замкнувся:
+  скрейп → `gold_costs` → снапшот крону → payload → чесний підпис у тултіпі.
+  Заглушкою більше нічого не називається, бо заглушки й немає.

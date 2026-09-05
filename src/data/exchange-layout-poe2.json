@@ -2,7 +2,7 @@
   "version": 1,
   "game": "poe2",
   "source": "https://poe2db.tw/us/Currency_Exchange",
-  "itemCount": 669,
+  "itemCount": 687,
   "categories": [
     {
       "name": "Currency",
@@ -175,6 +175,10 @@
         {
           "name": "Pinnacle Fragments",
           "order": 2
+        },
+        {
+          "name": "Ritual",
+          "order": 3
         }
       ]
     },
@@ -5866,6 +5870,19 @@
       "itemOrder": 1
     },
     {
+      "name": "Sacred Bloom",
+      "normalizedName": "sacred bloom",
+      "metadataId": null,
+      "href": "Sacred_Bloom",
+      "goldFeeText": "1000",
+      "goldPerUnit": 1000,
+      "category": "Ritual",
+      "section": "Ritual",
+      "categoryOrder": 8,
+      "sectionOrder": 3,
+      "itemOrder": 0
+    },
+    {
       "name": "Soul Core of Topotante",
       "normalizedName": "soul core of topotante",
       "metadataId": "Metadata/Items/SoulCores/SoulCoreElemental",
@@ -6254,6 +6271,227 @@
       "categoryOrder": 9,
       "sectionOrder": 0,
       "itemOrder": 29
+    },
+    {
+      "name": "Jiquani's Soul Core of Automation",
+      "normalizedName": "jiquani s soul core of automation",
+      "metadataId": null,
+      "href": "Jiquanis_Soul_Core_of_Automation",
+      "goldFeeText": "1000",
+      "goldPerUnit": 1000,
+      "category": "Soul Cores",
+      "section": "Soul Cores",
+      "categoryOrder": 9,
+      "sectionOrder": 0,
+      "itemOrder": 30
+    },
+    {
+      "name": "Jiquani's Soul Core of Malediction",
+      "normalizedName": "jiquani s soul core of malediction",
+      "metadataId": "Metadata/Items/SoulCores/SoulCoreSpecial17",
+      "href": "Jiquanis_Soul_Core_of_Malediction",
+      "goldFeeText": "1000",
+      "goldPerUnit": 1000,
+      "category": "Soul Cores",
+      "section": "Soul Cores",
+      "categoryOrder": 9,
+      "sectionOrder": 0,
+      "itemOrder": 31
+    },
+    {
+      "name": "Jiquani's Soul Core of Targeting",
+      "normalizedName": "jiquani s soul core of targeting",
+      "metadataId": "Metadata/Items/SoulCores/SoulCoreSpecial18",
+      "href": "Jiquanis_Soul_Core_of_Targeting",
+      "goldFeeText": "1000",
+      "goldPerUnit": 1000,
+      "category": "Soul Cores",
+      "section": "Soul Cores",
+      "categoryOrder": 9,
+      "sectionOrder": 0,
+      "itemOrder": 32
+    },
+    {
+      "name": "Jiquani's Soul Core of Rallying",
+      "normalizedName": "jiquani s soul core of rallying",
+      "metadataId": "Metadata/Items/SoulCores/SoulCoreSpecial19",
+      "href": "Jiquanis_Soul_Core_of_Rallying",
+      "goldFeeText": "1000",
+      "goldPerUnit": 1000,
+      "category": "Soul Cores",
+      "section": "Soul Cores",
+      "categoryOrder": 9,
+      "sectionOrder": 0,
+      "itemOrder": 33
+    },
+    {
+      "name": "Jiquani's Soul Core of Radiance",
+      "normalizedName": "jiquani s soul core of radiance",
+      "metadataId": "Metadata/Items/SoulCores/SoulCoreSpecial20",
+      "href": "Jiquanis_Soul_Core_of_Radiance",
+      "goldFeeText": "1000",
+      "goldPerUnit": 1000,
+      "category": "Soul Cores",
+      "section": "Soul Cores",
+      "categoryOrder": 9,
+      "sectionOrder": 0,
+      "itemOrder": 34
+    },
+    {
+      "name": "Jiquani's Soul Core of Severing",
+      "normalizedName": "jiquani s soul core of severing",
+      "metadataId": "Metadata/Items/SoulCores/SoulCoreSpecial21",
+      "href": "Jiquanis_Soul_Core_of_Severing",
+      "goldFeeText": "1000",
+      "goldPerUnit": 1000,
+      "category": "Soul Cores",
+      "section": "Soul Cores",
+      "categoryOrder": 9,
+      "sectionOrder": 0,
+      "itemOrder": 35
+    },
+    {
+      "name": "Jiquani's Soul Core of Rippling",
+      "normalizedName": "jiquani s soul core of rippling",
+      "metadataId": "Metadata/Items/SoulCores/SoulCoreSpecial22",
+      "href": "Jiquanis_Soul_Core_of_Rippling",
+      "goldFeeText": "1000",
+      "goldPerUnit": 1000,
+      "category": "Soul Cores",
+      "section": "Soul Cores",
+      "categoryOrder": 9,
+      "sectionOrder": 0,
+      "itemOrder": 36
+    },
+    {
+      "name": "Jiquani's Soul Core of Quaking",
+      "normalizedName": "jiquani s soul core of quaking",
+      "metadataId": "Metadata/Items/SoulCores/SoulCoreSpecial23",
+      "href": "Jiquanis_Soul_Core_of_Quaking",
+      "goldFeeText": "1000",
+      "goldPerUnit": 1000,
+      "category": "Soul Cores",
+      "section": "Soul Cores",
+      "categoryOrder": 9,
+      "sectionOrder": 0,
+      "itemOrder": 37
+    },
+    {
+      "name": "Jiquani's Soul Core of Munitions",
+      "normalizedName": "jiquani s soul core of munitions",
+      "metadataId": "Metadata/Items/SoulCores/SoulCoreSpecial24",
+      "href": "Jiquanis_Soul_Core_of_Munitions",
+      "goldFeeText": "1000",
+      "goldPerUnit": 1000,
+      "category": "Soul Cores",
+      "section": "Soul Cores",
+      "categoryOrder": 9,
+      "sectionOrder": 0,
+      "itemOrder": 38
+    },
+    {
+      "name": "Jiquani's Soul Core of Snares",
+      "normalizedName": "jiquani s soul core of snares",
+      "metadataId": "Metadata/Items/SoulCores/SoulCoreSpecial25",
+      "href": "Jiquanis_Soul_Core_of_Snares",
+      "goldFeeText": "1000",
+      "goldPerUnit": 1000,
+      "category": "Soul Cores",
+      "section": "Soul Cores",
+      "categoryOrder": 9,
+      "sectionOrder": 0,
+      "itemOrder": 39
+    },
+    {
+      "name": "Jiquani's Soul Core of Abundance",
+      "normalizedName": "jiquani s soul core of abundance",
+      "metadataId": "Metadata/Items/SoulCores/SoulCoreSpecial26",
+      "href": "Jiquanis_Soul_Core_of_Abundance",
+      "goldFeeText": "1000",
+      "goldPerUnit": 1000,
+      "category": "Soul Cores",
+      "section": "Soul Cores",
+      "categoryOrder": 9,
+      "sectionOrder": 0,
+      "itemOrder": 40
+    },
+    {
+      "name": "Jiquani's Soul Core of Squalls",
+      "normalizedName": "jiquani s soul core of squalls",
+      "metadataId": "Metadata/Items/SoulCores/SoulCoreSpecial27",
+      "href": "Jiquanis_Soul_Core_of_Squalls",
+      "goldFeeText": "1000",
+      "goldPerUnit": 1000,
+      "category": "Soul Cores",
+      "section": "Soul Cores",
+      "categoryOrder": 9,
+      "sectionOrder": 0,
+      "itemOrder": 41
+    },
+    {
+      "name": "Jiquani's Soul Core of Thundering",
+      "normalizedName": "jiquani s soul core of thundering",
+      "metadataId": "Metadata/Items/SoulCores/SoulCoreSpecial28",
+      "href": "Jiquanis_Soul_Core_of_Thundering",
+      "goldFeeText": "1000",
+      "goldPerUnit": 1000,
+      "category": "Soul Cores",
+      "section": "Soul Cores",
+      "categoryOrder": 9,
+      "sectionOrder": 0,
+      "itemOrder": 42
+    },
+    {
+      "name": "Atziri's Soul Core of Devotion",
+      "normalizedName": "atziri s soul core of devotion",
+      "metadataId": "Metadata/Items/SoulCores/SoulCoreSpecial29",
+      "href": "Atziris_Soul_Core_of_Devotion",
+      "goldFeeText": "1000",
+      "goldPerUnit": 1000,
+      "category": "Soul Cores",
+      "section": "Soul Cores",
+      "categoryOrder": 9,
+      "sectionOrder": 0,
+      "itemOrder": 43
+    },
+    {
+      "name": "Atziri's Soul Core of Vitality",
+      "normalizedName": "atziri s soul core of vitality",
+      "metadataId": "Metadata/Items/SoulCores/SoulCoreSpecial30",
+      "href": "Atziris_Soul_Core_of_Vitality",
+      "goldFeeText": "1000",
+      "goldPerUnit": 1000,
+      "category": "Soul Cores",
+      "section": "Soul Cores",
+      "categoryOrder": 9,
+      "sectionOrder": 0,
+      "itemOrder": 44
+    },
+    {
+      "name": "Atziri's Soul Core of Alacrity",
+      "normalizedName": "atziri s soul core of alacrity",
+      "metadataId": "Metadata/Items/SoulCores/SoulCoreSpecial31",
+      "href": "Atziris_Soul_Core_of_Alacrity",
+      "goldFeeText": "1000",
+      "goldPerUnit": 1000,
+      "category": "Soul Cores",
+      "section": "Soul Cores",
+      "categoryOrder": 9,
+      "sectionOrder": 0,
+      "itemOrder": 45
+    },
+    {
+      "name": "Atziri's Soul Core of Inoculation",
+      "normalizedName": "atziri s soul core of inoculation",
+      "metadataId": "Metadata/Items/SoulCores/SoulCoreSpecial32",
+      "href": "Atziris_Soul_Core_of_Inoculation",
+      "goldFeeText": "1000",
+      "goldPerUnit": 1000,
+      "category": "Soul Cores",
+      "section": "Soul Cores",
+      "categoryOrder": 9,
+      "sectionOrder": 0,
+      "itemOrder": 46
     },
     {
       "name": "Bear Idol",
@@ -8960,5 +9198,5 @@
       "itemOrder": 76
     }
   ],
-  "fetchedAt": "2026-08-01T20:45:03.908Z"
+  "fetchedAt": "2026-09-05T09:16:55.831Z"
 }

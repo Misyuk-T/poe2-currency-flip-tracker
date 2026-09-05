@@ -910,10 +910,12 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     [anchorCurrency, mainDisplayUnit, tradable],
   );
   // A league a few hours old has hours of history, not a day. The panel names
-  // the window it actually covers rather than always claiming twenty-four.
+  // the window it actually covers rather than always claiming twenty-four — and
+  // when the payload cannot say (a snapshot older than sparklineFromHour), it
+  // claims no number at all rather than defaulting back to the overclaim.
   const keyCurrenciesWindowLabel = useMemo(() => {
     const hours = keyCurrencies.find((card) => Number.isFinite(card.spanHours))?.spanHours;
-    if (!Number.isFinite(hours)) return "Last 24 completed hours";
+    if (!Number.isFinite(hours)) return "Latest completed hours";
     return `Last ${hours} completed hour${hours === 1 ? "" : "s"}`;
   }, [keyCurrencies]);
   const sourceMode = radar?.source?.sourceMode;

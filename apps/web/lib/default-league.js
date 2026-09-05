@@ -9,7 +9,14 @@
  *      decides can change what readers see until the variable is removed.
  *      Production sets LEAGUES but deliberately NOT LEAGUE, so the rule is live
  *      there. The one thing a pin cannot do is point at a league we hold no
- *      prices for — see the unpriced guard on resolveDefaultLeague.
+ *      prices for — see the unpriced guard on resolveDefaultLeague. Since
+ *      refreshLeagueMeta started zeroing the depth of leagues that stop being
+ *      priced (2026-09-05), that guard also RELEASES a pin whose league has
+ *      ended: a pinned dead league is substituted like any other. Deliberate —
+ *      an operator pin is an escape hatch, not a promise to keep serving an
+ *      economy that no longer exists — but it means a pin is not forever, and
+ *      the substitution is only visible as a league-meta.default.unpriced
+ *      trace. Re-pin to something live if you still need one.
  *   2. database      — the `league_meta.is_default` row the hourly cron persists
  *      from chooseDefaultLeague. This is the normal path in production.
  *   3. code fallback — FALLBACK_LEAGUES. Cold start, no database, or the
@@ -177,7 +184,13 @@ export async function readLeagueMetaCached(game, {
  * When even that finds nothing (rows the rule rejects for reasons other than
  * depth — no firstSeenAt, a future firstSeenAt, permanent leagues), it falls
  * back to the most recently seen PUBLIC league: non-permanent first, permanent
- * only if no challenge league has data. A private `... (PLxxxxx)` league is
+ * only if no challenge league has data. That permanent last resort became
+ * REACHABLE when depth started being zeroed: in a true between-leagues gap
+ * (every challenge league ended, none started — Forbidden Rites and Runes of
+ * Aldur are due to end together at 1.0) Standard is the only economy still
+ * being priced, and scoping to it beats scoping to a dead league. It stays a
+ * last resort: a challenge league with any data at all outranks it, which
+ * the "prefers a challenge league over a permanent one" test pins. A private `... (PLxxxxx)` league is
  * never served — a throwaway ten-player economy must not become the SEO scope,
  * and no data at all is better than that. Null means "keep what was chosen".
  */

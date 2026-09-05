@@ -174,6 +174,53 @@ test("the cron step refreshes metadata, persists the default, and never throws",
   assert.equal(second[0].changed, false);
 });
 
+test("a finished league hands the default back on its own, with no env pin", async () => {
+  const repos = new Map();
+  // The in-memory twin defaults to a 30-day window; production's SQL aggregate
+  // uses 7 (WINDOW_DAYS in src/storage/radar-repository.js). Pin it here so the
+  // test exercises the window a real league actually ages out of.
+  const makeRepo = (scope) => {
+    const key = `${scope.game}|${scope.realm}|${scope.mode}`;
+    if (!repos.has(key)) repos.set(key, createMemoryRepository(scope, { windowDays: 7 }));
+    return repos.get(key);
+  };
+  const ctx = { config: CONFIG, scope: { ...SCOPE } };
+  const repo = makeRepo({ ...SCOPE });
+  await repo.recordCxDigest(digest("Runes of Aldur", { pairs: 200, hours: 60 }));
+  await repo.recordCxDigest(digest("Forbidden Rites", { pairs: 200, hours: 10 }));
+
+  resetLeagueMetaCache();
+  const first = await refreshLeagueDefaults(ctx, { now: NOW, makeRepo });
+  assert.equal(first[0].defaultLeague, "Forbidden Rites");
+
+  // Eight days on, the event league has ended: only the parallel league is
+  // still priced, and the aggregate window no longer contains Forbidden Rites.
+  const later = NOW + 8 * 24 * HOUR;
+  await repo.recordCxDigest(digest("Runes of Aldur", { pairs: 200, hours: 60, endsAt: later }));
+
+  const rows = await repo.refreshLeagueMeta({ now: later });
+  const retired = rows.find((row) => row.league === "Forbidden Rites");
+  assert.equal(retired.pairCount, 0, "an unobserved league keeps no depth");
+  assert.equal(retired.completedHours, 0);
+  assert.ok(retired.firstSeenAt, "first_seen_at still anchors the hysteresis");
+
+  resetLeagueMetaCache();
+  const second = await refreshLeagueDefaults(ctx, { now: later, makeRepo });
+  assert.equal(second[0].previousDefault, "Forbidden Rites");
+  assert.equal(second[0].defaultLeague, "Runes of Aldur");
+  assert.equal(second[0].changed, true);
+  assert.deepEqual(
+    (await repo.readLeagueMeta()).filter((row) => row.isDefault).map((row) => row.league),
+    ["Runes of Aldur"],
+  );
+  // And readers see it without the unpriced-fallback substitution firing.
+  resetLeagueMetaCache();
+  const resolved = await resolveDefaultLeague("poe2", { config: CONFIG, trace: () => {}, makeRepo });
+  assert.equal(resolved.league, "Runes of Aldur");
+  assert.equal(resolved.source, "db");
+  assert.equal(resolved.unpricedFallbackFrom, undefined);
+});
+
 test("a failing league-meta refresh is traced and never fails the cron", async () => {
   const ctx = { config: CONFIG, scope: { ...SCOPE } };
   const traced = [];
@@ -407,6 +454,8 @@ test("the SQL repository maps the league-meta aggregate and reads it back", asyn
     ],
     // the upsert
     [],
+    // the retire of leagues absent from the window
+    [{ league: "Dead Event League" }],
     // readLeagueMeta at the end of refreshLeagueMeta
     [
       {
@@ -454,6 +503,26 @@ test("the SQL repository maps the league-meta aggregate and reads it back", asyn
   // The blank league name never reaches the upsert.
   assert.equal(queries[1].values.includes(""), false);
   assert.match(queries[1].text, /least\(league_meta\.first_seen_at, excluded\.first_seen_at\)/);
+  // A league absent from the window has its depth zeroed in the same pass, and
+  // only its depth: first_seen_at anchors the hysteresis and is never touched,
+  // and is_default is moved only by setDefaultLeague.
+  assert.match(queries[2].text, /update league_meta/);
+  assert.match(queries[2].text, /set pair_count = 0, completed_hours = 0/);
+  assert.match(queries[2].text, /not \(league = any\(/);
+  assert.equal(/first_seen_at|is_default/.test(queries[2].text), false);
+  assert.deepEqual(queries[2].values.at(-1), ["Runes of Aldur"]);
+});
+
+test("an empty observation window retires nothing", async () => {
+  // A failed ingest that sees no league at all must never blank every row.
+  const queries = [];
+  const sql = (strings, ...values) => {
+    queries.push(strings.join("?"));
+    return Promise.resolve([]);
+  };
+  const repo = createRadarRepository({ sql, scope: SCOPE });
+  await repo.refreshLeagueMeta({ now: new Date(NOW) });
+  assert.equal(queries.some((text) => /set pair_count = 0/.test(text)), false);
 });
 
 /**

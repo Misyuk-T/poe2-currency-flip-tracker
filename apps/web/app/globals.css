@@ -2556,9 +2556,9 @@ body:has(.home-page) {
 /* ----- table (default view) ----- */
 .radar-table-wrap { border: 1px solid var(--rl-border); border-radius: 14px; overflow: auto; background: var(--rl-surface); }
 .market-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 12px 2px 0; color: var(--rl-muted); font-size: 0.8rem; font-weight: 700; }
-.market-pagination button { min-height: 34px; border: 1px solid var(--rl-border-strong); border-radius: 8px; padding: 0 13px; background: var(--rl-surface-2); color: var(--rl-text); font: inherit; cursor: pointer; }
+.market-pagination button { min-height: 34px; border: 1px solid var(--rl-border-strong); border-radius: 8px; padding: 0 13px; background: var(--rl-surface-2); color: var(--rl-ink); font: inherit; cursor: pointer; }
 .market-pagination button:disabled { opacity: 0.4; cursor: default; }
-.market-pagination button:not(:disabled):hover { border-color: var(--rl-accent); }
+.market-pagination button:not(:disabled):hover { border-color: var(--rl-gold); }
 /* Fixed layout so the Item column can no longer stretch the table past the
    viewport — numeric columns get explicit widths, Item takes the remainder and
    ellipsizes. min-width keeps it scrollable only on genuinely narrow screens. */

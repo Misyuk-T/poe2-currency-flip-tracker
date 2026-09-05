@@ -124,6 +124,18 @@ export function createMemoryRepository(scope, { windowDays = WINDOW_DAYS, maxHou
         isDefault: previous?.isDefault === true,
       });
     }
+    // Mirror of the SQL twin's retire step: a league absent from the window has
+    // no depth in it, and saying so is what lets a finished league release the
+    // default. Skipped when nothing was observed at all, so an empty window
+    // cannot blank every row.
+    if (byLeague.size) {
+      for (const [league, row] of leagueMeta) {
+        if (byLeague.has(league)) continue;
+        if (row.game !== scope.game || row.realm !== scope.realm || row.provider !== scope.mode) continue;
+        if (row.pairCount === 0 && row.completedHours === 0) continue;
+        leagueMeta.set(league, { ...row, pairCount: 0, completedHours: 0 });
+      }
+    }
     return readLeagueMeta();
   }
 

@@ -2,6 +2,57 @@
 
 Newest first. Each entry: **what** was decided, **why**, and the date.
 
+## 2026-09-05 — The default league now releases itself; one depth bar for the whole product
+Closing the risks the launch-day change opened, so none of them needs a human.
+
+**A finished league hands the default back on its own.** `refreshLeagueMeta`
+zeroes `pair_count`/`completed_hours` for any league absent from the 7-day
+aggregate window, and `chooseDefaultLeague` anchors its forward-only guard only
+on a default that still has priced pairs. Before this, a league that ended kept
+the depth it had on its last day forever, every surviving league was older than
+it, and the SEO scope stayed on a dead economy until someone set `LEAGUE` by
+hand. This is not hypothetical: Forbidden Rites is an event league due to end
+alongside Runes of Aldur at 1.0. The zeroing is guarded by the existing
+"observed nothing, change nothing" early return, so an ingest outage can never
+blank every row, and `first_seen_at` is never touched — the hysteresis anchor
+survives. Two knock-on effects, both now documented at
+`apps/web/lib/default-league.js`: an operator `LEAGUE` pin on a league that ends
+is also released (an escape hatch, not a promise to keep serving a dead
+economy), and the last-resort fallback to a PERMANENT league becomes reachable
+in a true between-leagues gap — where Standard genuinely is the only economy
+being priced, and a challenge league with any data still outranks it.
+
+**One depth bar.** `MIN_COMPLETED_HOURS` (8) and `MIN_PAIRS` (200) are exported
+from `src/domain/league-default.js` and imported by the league-start guide,
+which had its own `MIN_OBSERVED_HOURS = 24`. Two numbers drift: at 8 and 24 the
+guide spent a league's first day refusing to name the league every other page
+was already scoped to. The guide's bar also gains the pair floor it never had,
+so it can no longer name a league with one traded market. A test pins both
+constants, because changing them is a product decision.
+
+**A page with no data says so.** A currency page whose market has not traded in
+the scoped league rendered a headline promising an hourly price and then simply
+omitted it. It now says which league it looked in and that the market has not
+traded there. Review caught the trap in the first cut: `getCurrencySummary`
+returns null for FOUR reasons, two of which are facts about us — the id is the
+anchor currency (whose own page is always in the sitemap) and there is no
+database. Either would have published a flat falsehood, the anchor one on
+`/poe2/currencies/exalted`. `getCurrencyPageData` now returns a discriminated
+result and reports the league it actually queried.
+
+**Measured, then accepted: the coverage cost of an early flip.** Ten hours into
+Forbidden Rites, it carried 549 markets against Runes of Aldur's 666 — 82%, with
+122 missing. Not the "up to two thirds" a review estimated from the 200-pair
+floor alone. Those pages stay `index, follow` while empty rather than switching
+to `noindex`: the empty state lasts hours, whereas a `noindex` Google has seen
+can take days or weeks to reconsider, so the cure is slower than the disease.
+Revisit if a flip ever leaves a large share of pages empty for longer than a day.
+
+Also fixed: `--rl-text` and `--rl-accent` were read by `.market-pagination` and
+declared nowhere — invalid at computed-value time, so the colour worked by
+inheritance and the hover did nothing. `test/css-tokens.test.js` now fails on the
+next such typo.
+
 ## 2026-09-05 — Movement windows must be spanned; default-league hour gate 48h → 8h
 Two changes, in that order — the second is only safe because of the first.
 

@@ -8,6 +8,7 @@ import {
   plural,
   resolveGuideLeague,
 } from "../apps/web/lib/league-start-guide.js";
+import { MIN_COMPLETED_HOURS, MIN_PAIRS } from "../src/domain/league-default.js";
 
 // The /guides/league-start-currency page is evergreen. Its league facts come
 // from two places that must never be confused: the curated `announcedLeague`
@@ -38,9 +39,11 @@ function metaRow(league, extra = {}) {
 
 const OLD_LEAGUE = metaRow("Runes of Aldur", { firstSeenAt: ANNOUNCED_START - 900 * HOUR });
 const ANNOUNCED_ROW = metaRow(announcedLeague.name, { firstSeenAt: ANNOUNCED_START + HOUR });
+// Depth that clears the shared bar (MIN_COMPLETED_HOURS / MIN_PAIRS): the guide
+// names exactly the leagues chooseDefaultLeague would scope the site to.
 const NEXT_LEAGUE = metaRow("Wraeclast Reborn", {
   firstSeenAt: NOW - 30 * HOUR,
-  pairCount: 137,
+  pairCount: 337,
   completedHours: 29,
 });
 
@@ -82,7 +85,7 @@ test("a newer, different league is reported as observed, with depth and no mecha
     "pairCount",
   ]);
   assert.equal(resolved.league.name, "Wraeclast Reborn");
-  assert.equal(resolved.league.pairCount, 137);
+  assert.equal(resolved.league.pairCount, 337);
   assert.equal(resolved.league.completedHours, 29);
   assert.equal(resolved.league.firstSeenAt, new Date(NOW - 30 * HOUR).toISOString());
   // We know nothing about this league beyond what we priced: no mechanics, no
@@ -231,24 +234,40 @@ test("every source link is an official pathofexile.com post", () => {
 test("counts are pluralised, so a day-one league never reads \"1 markets\"", () => {
   assert.equal(plural(1, "market"), "1 market");
   assert.equal(plural(0, "market"), "0 markets");
-  assert.equal(plural(137, "market"), "137 markets");
+  assert.equal(plural(337, "market"), "337 markets");
   assert.equal(plural(1, "completed hour"), "1 completed hour");
   assert.equal(plural(24, "completed hour"), "24 completed hours");
 
-  // The thinnest league we are willing to name: one market, one hour of it.
-  const thinnest = coverage(
-    kindOf([metaRow("Wraeclast Reborn", { firstSeenAt: NOW - 30 * HOUR, pairCount: 1, completedHours: 24 })]),
-  );
-  assert.match(thinnest, /with 1 market across 24 completed hours/);
-  assert.doesNotMatch(thinnest, /\b1 markets\b|\b1 completed hours\b/);
+  // The prose itself must survive singular counts. They cannot arrive through
+  // pickGuideLeague any more — the shared depth bar rejects a one-market league
+  // outright — so the singular branch is exercised on the answer builder, which
+  // is the thing under test here.
+  const singular = coverage({
+    kind: "observed",
+    league: {
+      name: "Wraeclast Reborn",
+      firstSeenAt: new Date(NOW - 30 * HOUR).toISOString(),
+      firstSeenAtUtc: "1 January 2026, 00:00 UTC",
+      pairCount: 1,
+      completedHours: 1,
+    },
+  });
+  assert.match(singular, /with 1 market across 1 completed hour/);
+  assert.doesNotMatch(singular, /\b1 markets\b|\b1 completed hours\b/);
 });
 
-test("a league too thin to trust is not named as the current one", () => {
-  // 23 completed hours is a league we have barely seen; the honest thing to
-  // publish is still the announcement, not a name we half-observed.
-  const thin = metaRow("Wraeclast Reborn", { firstSeenAt: NOW - 30 * HOUR, completedHours: 23 });
-  assert.equal(kindOf([ANNOUNCED_ROW, thin]).kind, "announced");
-  assert.equal(kindOf([ANNOUNCED_ROW, { ...thin, completedHours: 24 }]).kind, "observed");
+test("the guide names exactly what the default-league rule would scope the site to", () => {
+  // One bar, imported, not re-declared: the guide must never spend a league's
+  // first day refusing to name the league every other page is already on.
+  const thin = metaRow("Wraeclast Reborn", { firstSeenAt: NOW - 30 * HOUR });
+  const at = (extra) => kindOf([ANNOUNCED_ROW, { ...thin, ...extra }]).kind;
+
+  assert.equal(at({ completedHours: MIN_COMPLETED_HOURS - 1, pairCount: MIN_PAIRS }), "announced");
+  assert.equal(at({ completedHours: MIN_COMPLETED_HOURS, pairCount: MIN_PAIRS }), "observed");
+  // Hours alone were the old bar; a league nobody trades must not be named
+  // either, exactly as chooseDefaultLeague refuses to scope the site to it.
+  assert.equal(at({ completedHours: 168, pairCount: MIN_PAIRS - 1 }), "announced");
+  assert.equal(at({ completedHours: 168, pairCount: MIN_PAIRS }), "observed");
 });
 
 test("a first-seen hour clamped to the aggregate window is not published", () => {

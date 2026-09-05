@@ -20,11 +20,26 @@ import { resolveDefaultLeague } from "./default-league.js";
 
 const BACKTEST_HORIZON_HOURS = 6;
 
-export async function getCurrencySummary(id) {
+/**
+ * The currency page's read, with its FAILURE MODES kept apart.
+ *
+ * `getCurrencySummary` collapses four very different situations into one null:
+ * the id is the anchor everything is quoted in, there is no database, the market
+ * has no candles, or the radar pass produced no row. Only the last two are facts
+ * about the MARKET; the first two are facts about us. The page publishes "not
+ * traded in <league> yet" from this, so it must never be told that about the
+ * anchor currency (its own page is one of six always in the sitemap) or during
+ * an outage. `empty` is non-null only when the read really happened and really
+ * found nothing, and it carries the league it looked in — the same resolve the
+ * summary used, so the page can never name a league it did not query.
+ *
+ * @returns {Promise<{ summary: object|null, empty: { league: string }|null }>}
+ */
+export async function getCurrencyPageData(id) {
   const config = loadConfig();
-  if (!id || id === config.anchorCurrency) return null;
+  if (!id || id === config.anchorCurrency) return { summary: null, empty: null };
   const sql = getSql();
-  if (!sql) return null;
+  if (!sql) return { summary: null, empty: null };
 
   // The SEO pages are scoped to the RESOLVED default league (env override >
   // league_meta.is_default > code fallback), so a league flip re-points them
@@ -34,11 +49,11 @@ export async function getCurrencySummary(id) {
   const repo = createRadarRepository({ sql, scope });
   const pairId = canonicalPairId(id, config.anchorCurrency);
   const candles = await repo.readPairCandles(pairId);
-  if (!candles.length) return null;
+  if (!candles.length) return { summary: null, empty: { league } };
 
   const rows = buildMarketRadar({ [pairId]: candles }, { anchor: config.anchorCurrency, now: Date.now() });
   const row = rows.find((r) => r.target === id);
-  if (!row) return null;
+  if (!row) return { summary: null, empty: { league } };
 
   const anchorCandles = candles
     .map((c) => candleForAnchor(c, id, config.anchorCurrency))
@@ -67,7 +82,7 @@ export async function getCurrencySummary(id) {
     horizonHours: BACKTEST_HORIZON_HOURS,
   }).summary;
 
-  return {
+  return { empty: null, summary: {
     target: id,
     anchor: config.anchorCurrency,
     sourceMode: config.providerMode === "live" ? "official" : "fixture",
@@ -83,7 +98,12 @@ export async function getCurrencySummary(id) {
     backtest,
     backtestHorizonHours: BACKTEST_HORIZON_HOURS,
     latestCompletedHour: row.latestCompletedHour ? new Date(row.latestCompletedHour).toISOString() : null,
-  };
+  } };
+}
+
+/** The summary alone, for callers that have nothing to say about an empty read. */
+export async function getCurrencySummary(id) {
+  return (await getCurrencyPageData(id)).summary;
 }
 
 /**

@@ -17,7 +17,12 @@
 //   press release — https://www.pathofexile.com/forum/view-thread/3999865
 //   event FAQ     — https://www.pathofexile.com/forum/view-thread/4000430
 import { isPublicLeague } from "../../../src/domain/cx-market.js";
-import { isPermanentLeague, toEpochMs } from "../../../src/domain/league-default.js";
+import {
+  MIN_COMPLETED_HOURS,
+  MIN_PAIRS,
+  isPermanentLeague,
+  toEpochMs,
+} from "../../../src/domain/league-default.js";
 
 export const announcedLeague = {
   name: "Forbidden Rites",
@@ -81,9 +86,12 @@ const CLAMP_TOLERANCE_MS = 2 * 3_600_000;
 const looksClampedToWindow = (firstSeenMs, now) =>
   Math.abs(firstSeenMs - (now - AGGREGATE_WINDOW_MS)) <= CLAMP_TOLERANCE_MS;
 
-// A real new league prices this many hours inside its first day. Anything
-// thinner is not something we are willing to name as the current league.
-const MIN_OBSERVED_HOURS = 24;
+// Naming a league as the current one is a judgement the product already makes
+// ONCE, in chooseDefaultLeague — it is what scopes the landing page, the
+// currency index and the sitemap. This page reuses that same bar rather than
+// keeping its own, because two numbers drift: with a local 24 and a rule at 8,
+// the guide spent a league's first day refusing to name the league every other
+// page was already scoped to.
 
 /**
  * The newest public, non-permanent league in a set of league_meta rows, by the
@@ -144,8 +152,9 @@ export function pickGuideLeague(rows, { now = Date.now(), announced = announcedL
   const announcedStartMs = toEpochMs(announced.startsAtIso);
   if (announcedStartMs != null && firstSeenMs <= announcedStartMs) return fallback;
   // Naming a league GGG never announced is the strongest claim this page makes,
-  // so it waits until a day of real hours sits behind it.
-  if ((Number(row.completedHours) || 0) < MIN_OBSERVED_HOURS) return fallback;
+  // so it waits for the same depth that would make it the site's default league.
+  if ((Number(row.completedHours) || 0) < MIN_COMPLETED_HOURS) return fallback;
+  if ((Number(row.pairCount) || 0) < MIN_PAIRS) return fallback;
 
   return {
     kind: "observed",

@@ -45,6 +45,16 @@ export const PERMANENT_LEAGUE_SUFFIXES = [" Ruthless", " HC", " Hardcore", " SSF
 
 const ALL_PERMANENT = [...new Set(Object.values(PERMANENT_LEAGUES).flat())];
 
+/**
+ * The depth a league must reach before the product will treat it as the current
+ * one. Exported because more than one surface has to make that judgement — the
+ * default-league rule here and the league-start guide, which names a league in
+ * prose — and two independent numbers WILL drift into saying different things
+ * about the same league on the same day. One constant, one answer.
+ */
+export const MIN_COMPLETED_HOURS = 8;
+export const MIN_PAIRS = 200;
+
 /** True for permanent leagues and their hardcore/SSF variants. */
 export function isPermanentLeague(league, game = null) {
   if (typeof league !== "string") return false;
@@ -89,7 +99,12 @@ export function isEligibleDefaultLeague(row, game = null) {
  *     wearing a day's label.
  *  3. Hysteresis: never move to a league that was first seen EARLIER than the
  *     current default. The default only ever walks forward in league time, so a
- *     late-observed old league cannot drag it backwards.
+ *     late-observed old league cannot drag it backwards. This anchors on a
+ *     LIVING default only: a default with no priced pairs left in the window has
+ *     ended, and every remaining league is older than it, so holding the line
+ *     forward would pin the SEO scope to a dead economy for good. Depth is
+ *     zeroed by refreshLeagueMeta the first hour a league stops being priced, so
+ *     this releases itself with no human involved.
  *  4. Nothing qualifies -> keep `currentDefault` unchanged.
  *
  * Deterministic: ties on firstSeenAt break on league name ascending.
@@ -110,8 +125,8 @@ export function chooseDefaultLeague(rows, {
   // being only what it claims to be — proof that a league is being played, not a
   // proxy for how much history the page can render. minPairs carries the "is
   // this a real economy" judgement (see above).
-  minCompletedHours = 8,
-  minPairs = 200,
+  minCompletedHours = MIN_COMPLETED_HOURS,
+  minPairs = MIN_PAIRS,
 } = {}) {
   const list = Array.isArray(rows) ? rows : [];
   // A firstSeenAt in the future is bad data (clock skew, a bogus candle hour);
@@ -120,8 +135,12 @@ export function chooseDefaultLeague(rows, {
     .map((row) => ({ row, firstSeenMs: toEpochMs(row?.firstSeenAt) }))
     .filter(({ firstSeenMs }) => firstSeenMs == null || firstSeenMs <= now);
 
-  const currentFirstSeenMs =
-    withFirstSeen.find(({ row }) => row?.league === currentDefault)?.firstSeenMs ?? null;
+  const current = withFirstSeen.find(({ row }) => row?.league === currentDefault);
+  // A default that is still priced anchors the forward-only guard; one that has
+  // gone quiet anchors nothing (see 3 above). An unknown row is treated the same
+  // way it always was — nothing to walk forward from.
+  const currentIsLive = (Number(current?.row?.pairCount) || 0) > 0;
+  const currentFirstSeenMs = currentIsLive ? (current?.firstSeenMs ?? null) : null;
 
   const qualifying = withFirstSeen.filter(({ row, firstSeenMs }) => {
     if (!isEligibleDefaultLeague(row, game)) return false;

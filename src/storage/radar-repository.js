@@ -258,8 +258,11 @@ export function createRadarRepository({
    * league look newly born — which would corrupt the forward-only hysteresis in
    * chooseDefaultLeague. `pair_count`/`completed_hours` are replaced, not
    * accumulated: they describe depth in the CURRENT window, which is what the
-   * threshold asks about. `is_default` is deliberately untouched here; only
-   * setDefaultLeague moves it.
+   * threshold asks about — and for the same reason a league that has STOPPED
+   * being priced is zeroed rather than left holding its last good numbers. That
+   * zeroing is what lets a finished event league release the default; see the
+   * note on the statement itself. `is_default` is deliberately untouched here;
+   * only setDefaultLeague moves it.
    */
   async function refreshLeagueMeta({ now = new Date() } = {}) {
     const rows = await withTimeout(
@@ -318,7 +321,32 @@ export function createRadarRepository({
         onTimeout,
       );
     }
-    onPhase("db.leagueMeta.upsert.end", { leagues: observed.length });
+    // Leagues absent from the window must say so. Rows are never deleted —
+    // first_seen_at anchors the forward-only hysteresis — so without this a
+    // finished event league keeps the pair_count it had on its last day
+    // forever: the read-time unpriced guard never fires, chooseDefaultLeague
+    // only ever walks forward, and the SEO scope stays pinned to a dead economy
+    // until a human sets the LEAGUE env. Zeroing depth is the whole self-heal.
+    //
+    // Safe by construction against an outage: the early return above means this
+    // is only ever reached when we DID observe at least one league, so a failed
+    // ingest that sees nothing cannot blank every row.
+    const retired = await withTimeout(
+      sql`
+        update league_meta
+           set pair_count = 0, completed_hours = 0, updated_at = ${updatedAt}
+         where game = ${scope.game} and realm = ${scope.realm} and provider = ${scope.mode}
+           and not (league = any(${observed.map((row) => row.league)}::text[]))
+           and (pair_count <> 0 or completed_hours <> 0)
+        returning league`,
+      opTimeoutMs,
+      "league meta retire",
+      onTimeout,
+    );
+    onPhase("db.leagueMeta.upsert.end", {
+      leagues: observed.length,
+      retired: retired.map((row) => row.league),
+    });
     return readLeagueMeta();
   }
 

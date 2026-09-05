@@ -31,14 +31,23 @@ export default async function CurrencyPage({ params }) {
   // Imported dynamically so the DB/driver module stays out of Next's page-config
   // collection pass (which evaluates the module graph in a VM context).
   let summary = null;
+  // The league this page is scoped to, set ONLY when the read really ran and
+  // really found nothing for this market. That is the difference between "this
+  // market has not traded here yet" (true, worth saying) and "we could not read
+  // the database" / "this IS the anchor currency" (also no summary, but saying
+  // the former would be a lie). getCurrencyPageData keeps the cases apart and
+  // reports the league it actually queried, so the page cannot name another.
+  let emptyInLeague = null;
   try {
-    const { getCurrencySummary } = await import("../../../../lib/currency-summary.js");
-    summary = await getCurrencySummary(id);
+    const { getCurrencyPageData } = await import("../../../../lib/currency-summary.js");
+    const page = await getCurrencyPageData(id);
+    summary = page.summary;
+    emptyInLeague = page.empty?.league ?? null;
     // Every one of these pages renders without market data in production while
     // /api/radar serves the same markets fine. The bare catch is why nobody
     // noticed: it turned a failure and a legitimate no-data read into the same
     // silent fallback. Say which one happened.
-    if (!summary) console.warn("[currency-page] no summary for", id);
+    if (!summary) console.warn("[currency-page] no summary for", id, { emptyInLeague });
   } catch (error) {
     console.error("[currency-page] summary read failed", {
       id,
@@ -47,6 +56,7 @@ export default async function CurrencyPage({ params }) {
       errorMessage: error?.message ?? String(error),
     });
     summary = null;
+    emptyInLeague = null;
   }
   const price = priceLine(summary);
   const anchorName = summary?.anchor ? currencyName(summary.anchor) : null;
@@ -181,6 +191,19 @@ export default async function CurrencyPage({ params }) {
             {summary.latestCompletedHour ? `As of completed hour ${summary.latestCompletedHour}. ` : ""}
             The midpoint is a labelled proxy of the official low/high range, not an executable quote
             {summary.sourceMode === "fixture" ? "; values shown here are clearly-labelled sample data until the live feed is enabled." : "."}
+          </p>
+        </section>
+      ) : emptyInLeague ? (
+        <section className="content-section" aria-label="Latest hourly market">
+          <div className="section-heading">
+            <p className="eyebrow">No completed hours yet</p>
+            <h2>Not traded in {emptyInLeague} yet</h2>
+          </div>
+          <p className="hero-copy">
+            The official exchange feed has not shown a completed hourly trade for {name} in {emptyInLeague}, so there
+            is no price to quote here. A league&apos;s economy fills in over its first days — the market&apos;s own
+            history starts on this page with its first completed hour. Prices from other leagues are not shown here,
+            because a rate from a different economy is not this one&apos;s price.
           </p>
         </section>
       ) : null}

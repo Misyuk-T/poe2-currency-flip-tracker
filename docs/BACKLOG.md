@@ -6,22 +6,29 @@ Newest first.
 
 ## Follow-ups from the 2026-09-05 default-league threshold change
 
-- **(M) A dead league keeps the default forever.** `chooseDefaultLeague` is
-  forward-only (`src/domain/league-default.js`), and `refreshLeagueMeta`
-  (`src/storage/radar-repository.js`) only upserts leagues seen in the 7-day
-  window — it never zeroes a row that stopped appearing. So an event league that
-  wins the default and then ends keeps its last `pair_count` forever, the
-  unpriced-fallback guard in `resolveDefaultLeague` never fires, and the sitemap
-  plus ~628 ISR pages stay scoped to a dead economy until a human sets the
-  `LEAGUE` env pin. Fix shape: age out `pair_count`/`completed_hours` for leagues
-  absent from the window, so a stale default fails the guard on its own. Live
-  relevance: Forbidden Rites is an event league running alongside Runes of Aldur
-  until 1.0.
+All three original entries are closed; see DECISIONS for each.
+
+- ~~**(M) A dead league keeps the default forever.**~~ **Fixed 2026-09-05** —
+  `refreshLeagueMeta` zeroes the depth of leagues absent from the window and
+  `chooseDefaultLeague` only anchors on a default that still has pairs.
 - ~~**(S) `movement(24)` can report a sub-day change as "24h".**~~ **Fixed
-  2026-09-05** — `MIN_SPAN_RATIO` in `src/domain/market-radar.js`; see DECISIONS.
-- **(S) `--rl-text` is referenced but never defined** (`apps/web/app/globals.css`,
-  `.market-pagination button`). Invalid at computed-value time, so the colour
-  works only by inheritance. Spotted during the scrollbar review.
+  2026-09-05** — `MIN_SPAN_RATIO` in `src/domain/market-radar.js`.
+- ~~**(S) `--rl-text` is referenced but never defined.**~~ **Fixed 2026-09-05** —
+  along with `--rl-accent`; `test/css-tokens.test.js` guards the next one.
+
+Still open, from the same review round:
+
+- **(S) Empty currency pages stay indexable during a league flip.** ~120 pages
+  render "not traded in this league yet" for a few hours after the default moves.
+  Measured and accepted (DECISIONS) because `noindex` is slower to undo than the
+  empty state lasts. Worth revisiting only if a flip ever leaves a large share of
+  pages empty for more than a day — the trigger to watch is the gap between a
+  new league's market count and the outgoing league's.
+- **(S) The in-memory repository's window is 30 days, the SQL one's is 7.**
+  `apps/web/lib/memory-repo.js` claims to mirror the SQL semantics exactly and
+  does not on `WINDOW_DAYS`. Test-only today, and the league-meta tests that care
+  now pass `{ windowDays: 7 }` explicitly, but the next test to rely on the
+  default will quietly exercise a window production does not have.
 
 
 ## Follow-ups from the 2026-09-03 db-layer hot-fix

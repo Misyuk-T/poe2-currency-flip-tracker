@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  MIN_COMPLETED_HOURS,
+  MIN_PAIRS,
   chooseDefaultLeague,
   isEligibleDefaultLeague,
   isPermanentLeague,
@@ -32,6 +34,14 @@ function row(league, { hoursAgo = 0, completedHours = 0, pairCount = 0, ...rest 
 const RUNES = row("Runes of Aldur", { hoursAgo: 40 * 24, completedHours: 168, pairCount: 640 });
 const STANDARD = row("Standard", { hoursAgo: 400 * 24, completedHours: 168, pairCount: 900 });
 const HARDCORE = row("HC Runes of Aldur", { hoursAgo: 40 * 24, completedHours: 168, pairCount: 300 });
+
+test("the shared depth bar is pinned, not merely bracketed", () => {
+  // These two numbers now drive the league-start guide as well as this rule
+  // (they are imported there), and the surrounding cases only bracket them.
+  // Changing either is a product decision, so it has to break a test.
+  assert.equal(MIN_COMPLETED_HOURS, 8);
+  assert.equal(MIN_PAIRS, 200);
+});
 
 test("permanent leagues and their HC/SSF variants are never eligible", () => {
   for (const name of ["Standard", "Hardcore", "Ruthless", "Hardcore Ruthless"]) {
@@ -106,6 +116,30 @@ test("a league with real depth flips the default forward", () => {
     chooseDefaultLeague([forbidden, RUNES, STANDARD, HARDCORE], {
       game: "poe2",
       currentDefault: "Runes of Aldur",
+      now: NOW,
+    }),
+    "Forbidden Rites",
+  );
+});
+
+test("a default with no priced pairs left releases the forward-only anchor", () => {
+  // The event-league trap: Forbidden Rites ends, refreshLeagueMeta zeroes its
+  // depth, and every remaining league is OLDER than it. Without releasing the
+  // anchor the SEO scope would stay on the dead economy for good.
+  const dead = row("Forbidden Rites", { hoursAgo: 10 * 24, completedHours: 0, pairCount: 0 });
+  assert.equal(
+    chooseDefaultLeague([dead, RUNES, STANDARD, HARDCORE], {
+      game: "poe2",
+      currentDefault: "Forbidden Rites",
+      now: NOW,
+    }),
+    "Runes of Aldur",
+  );
+  // Nothing living to hand it to: the dead default is still better than nothing.
+  assert.equal(
+    chooseDefaultLeague([dead, STANDARD, HARDCORE], {
+      game: "poe2",
+      currentDefault: "Forbidden Rites",
       now: NOW,
     }),
     "Forbidden Rites",

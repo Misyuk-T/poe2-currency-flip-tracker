@@ -62,10 +62,10 @@ test("permanent leagues and their HC/SSF variants are never eligible", () => {
   );
 });
 
-test("a day-one league does not take the default: too few completed hours", () => {
-  // The exact production scenario: Forbidden Rites launched ~20h ago, priced
-  // widely already, but nowhere near 48 completed hours.
-  const forbidden = row("Forbidden Rites", { hoursAgo: 20, completedHours: 20, pairCount: 480 });
+test("a launch-hour league does not take the default one hour short of the gate", () => {
+  // Priced widely within the hour, and still not eligible: seven candles are a
+  // launch spike, not evidence that a league is being played.
+  const forbidden = row("Forbidden Rites", { hoursAgo: 7, completedHours: 7, pairCount: 480 });
   assert.equal(
     chooseDefaultLeague([forbidden, RUNES, STANDARD, HARDCORE], {
       game: "poe2",
@@ -76,7 +76,23 @@ test("a day-one league does not take the default: too few completed hours", () =
   );
 });
 
-test("a thin league does not take the default even after 48 hours: too few pairs", () => {
+test("eight hours of history is enough: the new league takes the default on launch day", () => {
+  // The point of lowering the gate from 48h: the landing page follows the league
+  // people are actually playing on the day it opens, not two days later. The
+  // "24h" numbers stay honest because market-radar blanks unspanned windows, not
+  // because this gate waits for them.
+  const forbidden = row("Forbidden Rites", { hoursAgo: 9, completedHours: 8, pairCount: 480 });
+  assert.equal(
+    chooseDefaultLeague([forbidden, RUNES, STANDARD, HARDCORE], {
+      game: "poe2",
+      currentDefault: "Runes of Aldur",
+      now: NOW,
+    }),
+    "Forbidden Rites",
+  );
+});
+
+test("a thin league does not take the default however long it runs: too few pairs", () => {
   const thin = row("Forbidden Rites", { hoursAgo: 72, completedHours: 72, pairCount: 199 });
   assert.equal(
     chooseDefaultLeague([thin, RUNES], { game: "poe2", currentDefault: "Runes of Aldur", now: NOW }),
@@ -170,11 +186,11 @@ test("PoE 1's first run moves off permanent Standard onto the live challenge lea
 });
 
 test("thresholds are configurable and applied as inclusive minimums", () => {
-  const rows = [row("Forbidden Rites", { hoursAgo: 24, completedHours: 24, pairCount: 200 })];
+  const rows = [row("Forbidden Rites", { hoursAgo: 4, completedHours: 4, pairCount: 200 })];
   const base = { game: "poe2", currentDefault: "Runes of Aldur", now: NOW };
   assert.equal(chooseDefaultLeague(rows, base), "Runes of Aldur");
-  assert.equal(chooseDefaultLeague(rows, { ...base, minCompletedHours: 24, minPairs: 200 }), "Forbidden Rites");
-  assert.equal(chooseDefaultLeague(rows, { ...base, minCompletedHours: 24, minPairs: 201 }), "Runes of Aldur");
+  assert.equal(chooseDefaultLeague(rows, { ...base, minCompletedHours: 4, minPairs: 200 }), "Forbidden Rites");
+  assert.equal(chooseDefaultLeague(rows, { ...base, minCompletedHours: 4, minPairs: 201 }), "Runes of Aldur");
 });
 
 test("a suffix-spelled hardcore variant never becomes the default, however deep", () => {

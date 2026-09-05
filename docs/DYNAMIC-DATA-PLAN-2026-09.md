@@ -64,7 +64,7 @@ which could in principle pick a day-one league. Part 2 (sourcing the guide's
   completed_hours, is_permanent, is_public, is_default, source)`; refreshed inside the
   hourly cron after snapshots (one aggregate over candles per game — bounded).
 - **Default league rule:** newest public, non-permanent (not Standard/Hardcore/SSF/HC-*)
-  PoE2 league with `completed_hours ≥ 48` and `pair_count ≥ 200`; otherwise keep the
+  PoE2 league with `completed_hours ≥ 8` and `pair_count ≥ 200`; otherwise keep the
   current default. Persisted as `is_default`; `LEAGUE` env, when set, overrides. All
   readers (`loadConfig().league` consumers: currency pages, index, sitemap, snapshot
   priority, `/api/status`) read the DB default via one helper with a short in-memory TTL.
@@ -162,7 +162,8 @@ written but **NOT applied**. Shape:
   "ends in N days".
 
 ## Decisions (Taras, 2026-09-02: "все так, го")
-1. Default-league thresholds: 48 completed hours and ≥200 priced pairs — **decided**.
+1. Default-league thresholds: 8 completed hours and ≥200 priced pairs — **decided**
+   (lowered from 48 on 2026-09-05, see DECISIONS).
 2. Honesty gate: identity/layout auto-apply; gold auto-applies behind floors — **decided**.
 3. Order: Phase A first (shipped), then B and C, D when GGG answers — **decided**.
 

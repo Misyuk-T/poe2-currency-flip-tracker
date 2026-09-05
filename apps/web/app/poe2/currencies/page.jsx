@@ -210,7 +210,8 @@ export default async function CurrenciesPage() {
           <p>
             Each price is the midpoint of that market&apos;s latest completed-hour low/high range against{" "}
             {anchor ?? "the anchor currency"} — a labelled proxy from official hourly data, not an executable quote.
-            The 24h column compares that midpoint with the one a day earlier. Markets are grouped and ordered the way
+            The 24h column compares that midpoint with the one a day earlier; a market without roughly a day of
+            priced history shows — there rather than a shorter comparison. Markets are grouped and ordered the way
             the in-game Currency Exchange groups them
             {categories.some((category) => category.name === UNMAPPED_CATEGORY)
               ? `; a market neither the stored exchange layout nor the committed snapshot places yet is listed under ${UNMAPPED_CATEGORY}`

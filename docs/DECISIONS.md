@@ -2,6 +2,53 @@
 
 Newest first. Each entry: **what** was decided, **why**, and the date.
 
+## 2026-09-05 — Movement windows must be spanned; default-league hour gate 48h → 8h
+Two changes, in that order — the second is only safe because of the first.
+
+**`radarMetrics` will no longer publish a movement over a window it has not
+actually spanned** (`MIN_SPAN_RATIO = 0.75`, `src/domain/market-radar.js`). The
+count check alone accepted three candles an hour apart as a "24h" change, so any
+young or sparse market published a two-hour move under a day's label — on the
+currency pages, the index, the dashboard's 24h gainers/losers and the homepage
+movers, while `/poe2/currencies` asserts in prose that the column "compares that
+midpoint with the one a day earlier". Now h24 needs an 18-hour span or it is
+null, and every one of those surfaces already renders null as "—". The ratio is
+measured, not guessed: against live candles (Runes of Aldur, 1342 markets) 87%
+clear 18 hours; a 23-hour bar would blank 27% of a mature league. The index prose
+now also says a market without roughly a day of history shows "—". The SCORES
+keep the old, count-only input (`scoreMovement`) on purpose — `cappedAbs` reads
+null as zero movement, so feeding them the strict value would have re-ranked the
+hotlist by making every sparse market look calm and therefore arbitrage-friendly.
+
+**`chooseDefaultLeague`'s `minCompletedHours` is now 8**, not 48; `minPairs`
+stays 200. Forbidden Rites opened 2026-09-04 20:00Z (first candle 22:00Z) and the
+old gate would have left the landing page, the currency index and the sitemap
+scoped to Runes of Aldur until ~2026-09-06 22:00Z, spending the one traffic spike
+a league gets. **Why 8 and not 24:** the hour gate was doing two jobs — proving a
+league is played, and standing in for "can this page render a truthful 24h
+number". The second job now lives in `radarMetrics` where it belongs, so the gate
+is back to only the first, and `minPairs` carries the "is this a real economy"
+judgement. Taras's call, twice: 48 → 24 (2026-09-05 morning, after review showed
+6h would publish false 24h numbers), then 24 → 8 once the underlying defect was
+fixed rather than waited out. Independent review by an Opus subagent with fresh
+context; Codex was in limit.
+
+Coverage is the remaining honest cost: 200 priced pairs says nothing about the
+other currency pages, so on flip evening a share of the ~628 render priceless and
+drop out of the sitemap until their market trades. Accepted — those pages stay
+`index, follow` per the 2026-09-03 decision, and they fill in within hours.
+
+The forward-only hysteresis and the permanent/HC/SSF/private exclusions are
+untouched. Rollback is unchanged: pin `LEAGUE` in the Vercel Production env.
+
+**Known gap this does not close** (review finding, filed in BACKLOG): the
+forward-only rule plus rows that are never zeroed means a short-lived event
+league that wins the default keeps it after it dies — `refreshLeagueMeta` only
+upserts leagues observed in the 7-day window, so the dead league's `pair_count`
+never falls and the unpriced-fallback guard never fires. Today that needs a human
+`LEAGUE` pin. Relevant now, not hypothetical: Forbidden Rites is itself an event
+league running alongside Runes of Aldur until 1.0.
+
 ## 2026-09-03 — No thin-page threshold; only unroutable URLs are hidden
 The thin-page audit set out to deindex the shallow tail and **disproved its own
 premise**: 84% of currency pages have 3+ days of hourly history, and only 26 of
@@ -147,7 +194,8 @@ so an overrun costs telemetry, not data.
 Shipped 6985783 + migration 009. The hourly cron aggregates candles into
 `league_meta` (first/last seen, pair count, completed hours) and
 `chooseDefaultLeague` picks the newest public, non-permanent league with
-≥48 completed hours and ≥200 priced pairs, forward-only, else keeps the current
+≥48 completed hours and ≥200 priced pairs (8 since 2026-09-05, see the
+amendment below), forward-only, else keeps the current
 default. Readers resolve env pin > DB `is_default` > code fallback with a 2s
 timeout, single-flight and 60s TTL; a missing table degrades to the fallback.
 **Why:** "динаміка на все" (Taras): leagues should never need an env edit or a
@@ -156,6 +204,8 @@ onto a day-1 economy) instead of a human remembering to flip a switch later.
 Consequence for Forbidden Rites: earliest flip ≈ 2026-09-06 20:00Z. Supersedes
 the "keep `LEAGUE` on Runes of Aldur" decision below (still true in effect, now
 enforced by data, not by env). PoE1 also loses its hardcoded league list.
+**Amended 2026-09-05:** the hour threshold is now 8, not 48 — see the entry at
+the top of this file; everything else here still holds.
 
 ## 2026-09-02 — Keep `LEAGUE` (default) on Runes of Aldur through the 0.5.5 launch — SUPERSEDED same day, see above
 Ingest and league discovery are automatic (see `docs/LEAGUE-LAUNCH-RUNBOOK.md`);

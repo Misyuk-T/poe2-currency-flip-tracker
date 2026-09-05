@@ -39,6 +39,36 @@ test("one-hour movement needs two completed hourly observations", () => {
   assert.equal(row.movement.h1, null);
 });
 
+test("a young market publishes no 24h movement, and does not fake one from three candles", () => {
+  // The launch-league case: eight consecutive hourly candles. Enough to count,
+  // nowhere near a day of span, so h24/h12 are null while h6 and h1 are real.
+  const all = fixtureCandles();
+  const pair = Object.keys(all).find((id) => all[id].length >= 8);
+  const young = { [pair]: all[pair].slice(-8) };
+  const row = buildMarketRadar(young, { anchor: "exalted" })[0];
+  assert.equal(row.movement.h24, null, "h24 over an 8h span must not be published");
+  assert.equal(row.movement.h12, null, "h12 over an 8h span must not be published");
+  assert.ok(Number.isFinite(row.movement.h6), "h6 is fully spanned and must survive");
+  assert.ok(Number.isFinite(row.movement.h1));
+  // The scores keep their pre-existing input, so blanking the published number
+  // does not silently re-rank a sparse market as motionless-and-therefore-calm.
+  assert.ok(row.activityScore > 0);
+  assert.ok(row.arbitrageScore > 0);
+});
+
+test("a sparse 24h window is not published as a 24h change", () => {
+  // Three candles inside the window but only two hours apart — the exact shape
+  // the count check alone used to accept.
+  const all = fixtureCandles();
+  const pair = Object.keys(all).find((id) => all[id].length >= 25);
+  const series = all[pair].slice(-25);
+  const sparse = { [pair]: [series[0], ...series.slice(-3)] };
+  const row = buildMarketRadar(sparse, { anchor: "exalted" })[0];
+  assert.ok(Number.isFinite(row.movement.h24), "a 24h-old first sample still qualifies");
+  const tooRecent = { [pair]: series.slice(-3) };
+  assert.equal(buildMarketRadar(tooRecent, { anchor: "exalted" })[0].movement.h24, null);
+});
+
 test("radar rows carry game-scoped identity art and category", () => {
   const all = fixtureCandles();
   const row = buildMarketRadar(all, {

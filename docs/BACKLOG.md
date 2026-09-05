@@ -4,6 +4,26 @@ Ideas parked for later. Not committed work — candidates to pull into a phase.
 Newest first.
 
 
+## Follow-ups from the 2026-09-05 default-league threshold change
+
+- **(M) A dead league keeps the default forever.** `chooseDefaultLeague` is
+  forward-only (`src/domain/league-default.js`), and `refreshLeagueMeta`
+  (`src/storage/radar-repository.js`) only upserts leagues seen in the 7-day
+  window — it never zeroes a row that stopped appearing. So an event league that
+  wins the default and then ends keeps its last `pair_count` forever, the
+  unpriced-fallback guard in `resolveDefaultLeague` never fires, and the sitemap
+  plus ~628 ISR pages stay scoped to a dead economy until a human sets the
+  `LEAGUE` env pin. Fix shape: age out `pair_count`/`completed_hours` for leagues
+  absent from the window, so a stale default fails the guard on its own. Live
+  relevance: Forbidden Rites is an event league running alongside Runes of Aldur
+  until 1.0.
+- ~~**(S) `movement(24)` can report a sub-day change as "24h".**~~ **Fixed
+  2026-09-05** — `MIN_SPAN_RATIO` in `src/domain/market-radar.js`; see DECISIONS.
+- **(S) `--rl-text` is referenced but never defined** (`apps/web/app/globals.css`,
+  `.market-pagination button`). Invalid at computed-value time, so the colour
+  works only by inheritance. Spotted during the scrollbar review.
+
+
 ## Follow-ups from the 2026-09-03 db-layer hot-fix
 - **Test gap:** `test/loader-connection-cascade.test.js` drives `tx(batch)`
   rather than `${sql(batch)}` through the `getSql()` handle, so a broken
@@ -52,7 +72,7 @@ review job instead of staying silently stale:
   scopes the SEO pages + sitemap) is **now data-driven too, shipped
   2026-09-02** (`6985783`): the hourly cron aggregates observed depth into
   `league_meta` and `chooseDefaultLeague` flips the default forward once a
-  new league clears 48 completed hours and 200 priced pairs; `LEAGUE` env is
+  new league clears 8 completed hours and 200 priced pairs; `LEAGUE` env is
   now only an emergency pin — see `docs/LEAGUE-LAUNCH-RUNBOOK.md`. T3
   (`service:leagues`) now only adds official metadata (names before the
   first candle, start/end dates); blocked on T1.

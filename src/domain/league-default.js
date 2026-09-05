@@ -79,8 +79,14 @@ export function isEligibleDefaultLeague(row, game = null) {
  *
  *  1. Eligible = public AND not permanent.
  *  2. Deep enough = completedHours >= minCompletedHours AND pairCount >= minPairs.
- *     A day-old league fails this, which is the entire point: a new league does
- *     not take over the SEO surface on launch day.
+ *     The pair count, not the clock, is what proves an economy is real: a league
+ *     nobody trades in never reaches 200 priced pairs however long it runs, and
+ *     it is what carries this judgement. The hour threshold only has to rule out
+ *     a launch-minute blip, because the surface no longer depends on it for
+ *     honesty: radarMetrics now refuses to publish a movement over a window it
+ *     has not actually spanned (MIN_SPAN_RATIO in market-radar.js), so a league
+ *     eight hours in shows "—" in the 24h column instead of an eight-hour change
+ *     wearing a day's label.
  *  3. Hysteresis: never move to a league that was first seen EARLIER than the
  *     current default. The default only ever walks forward in league time, so a
  *     late-observed old league cannot drag it backwards.
@@ -97,7 +103,14 @@ export function chooseDefaultLeague(rows, {
   game = null,
   currentDefault = null,
   now = Date.now(),
-  minCompletedHours = 48,
+  // Eight hours, down from the 48 this shipped with. Two days of pointing the
+  // landing page at the previous league wastes the one traffic spike a league
+  // gets. The number was 24 for a day, to keep the published "24h" numbers true;
+  // that constraint moved into radarMetrics where it belongs, so this is back to
+  // being only what it claims to be — proof that a league is being played, not a
+  // proxy for how much history the page can render. minPairs carries the "is
+  // this a real economy" judgement (see above).
+  minCompletedHours = 8,
   minPairs = 200,
 } = {}) {
   const list = Array.isArray(rows) ? rows : [];

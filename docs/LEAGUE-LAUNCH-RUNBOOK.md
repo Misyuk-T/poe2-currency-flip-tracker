@@ -59,7 +59,7 @@ Checklist for launch day:
   `hourly_market_candles` into `league_meta` (first/last seen, pair count,
   completed hours) and `chooseDefaultLeague`
   (`src/domain/league-default.js`) picks the newest public, non-permanent
-  league once it has `completed_hours >= 48` and `pair_count >= 200` —
+  league once it has `completed_hours >= 8` and `pair_count >= 200` —
   forward-only, otherwise the current default is kept. Readers resolve the
   default through `resolveDefaultLeague(game)`
   (`apps/web/lib/default-league.js`): env `LEAGUE`/`POE1_LEAGUE`, when
@@ -67,8 +67,10 @@ Checklist for launch day:
   `league_meta.is_default` row wins; the code constant is only the cold-start
   fallback. Nothing to do on launch day — the flip happens on its own once
   Forbidden Rites clears the threshold, which for a 2026-09-04 20:00Z launch
-  is **not before roughly 2026-09-06 20:00Z** (48 completed hours after its
-  first candle), and only once it also has 200 priced pairs.
+  is **launch day itself** (8 completed hours after its first candle), and only
+  once it also has 200 priced pairs. The hour gate was 48 until 2026-09-05; see
+  DECISIONS for why it was lowered, and why the "24h" columns stay truthful
+  anyway (`MIN_SPAN_RATIO` in `src/domain/market-radar.js`, not this gate).
 
 **Manual — decisions/edits still needed:**
 

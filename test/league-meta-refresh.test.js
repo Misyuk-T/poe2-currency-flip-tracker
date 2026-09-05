@@ -105,24 +105,27 @@ test("setDefaultLeague persists exactly one default and survives a refresh", asy
   assert.equal(rows.length, 3);
 });
 
-test("day one of a new league: the aggregate keeps Runes of Aldur as the default", async () => {
+test("the aggregate keeps the incumbent at 7 completed hours and flips at 8", async () => {
   const repo = createMemoryRepository(SCOPE);
   // The real shape on 2026-09-04: a deep incumbent, a deep permanent league, and
-  // Forbidden Rites twenty hours old.
+  // Forbidden Rites one hour short of the gate.
   await repo.recordCxDigest(digest("Runes of Aldur", { pairs: 200, hours: 60 }));
   await repo.recordCxDigest(digest("Standard", { pairs: 200, hours: 60 }));
-  await repo.recordCxDigest(digest("Forbidden Rites", { pairs: 200, hours: 20 }));
+  await repo.recordCxDigest(digest("Forbidden Rites", { pairs: 200, hours: 7 }));
 
   const rows = await repo.refreshLeagueMeta({ now: NOW });
+  assert.equal(rows.find((r) => r.league === "Forbidden Rites").completedHours, 7);
   assert.equal(
     chooseDefaultLeague(rows, { game: "poe2", currentDefault: "Runes of Aldur", now: NOW }),
     "Runes of Aldur",
   );
 
-  // Three days later Forbidden Rites has real depth, and only then does it win.
-  const later = NOW + 72 * HOUR;
-  await repo.recordCxDigest(digest("Forbidden Rites", { pairs: 200, hours: 72, endsAt: later }));
+  // One more candle hour — 8 distinct hours — and it wins. Pinned exactly, so a
+  // future change to the threshold cannot pass this test silently.
+  const later = NOW + HOUR;
+  await repo.recordCxDigest(digest("Forbidden Rites", { pairs: 200, hours: 1, endsAt: later }));
   const deeper = await repo.refreshLeagueMeta({ now: later });
+  assert.equal(deeper.find((r) => r.league === "Forbidden Rites").completedHours, 8);
   assert.equal(
     chooseDefaultLeague(deeper, { game: "poe2", currentDefault: "Runes of Aldur", now: later }),
     "Forbidden Rites",
@@ -139,7 +142,9 @@ test("the cron step refreshes metadata, persists the default, and never throws",
   const ctx = { config: CONFIG, scope: { ...SCOPE } };
   const seed = makeRepo({ ...SCOPE });
   await seed.recordCxDigest(digest("Runes of Aldur", { pairs: 200, hours: 60 }));
-  await seed.recordCxDigest(digest("Forbidden Rites", { pairs: 200, hours: 20 }));
+  // Below the depth threshold, so this test is about the cron's mechanics
+  // (aggregate, decide, persist once) and not about the rule flipping.
+  await seed.recordCxDigest(digest("Forbidden Rites", { pairs: 200, hours: 2 }));
 
   const traced = [];
   resetLeagueMetaCache();

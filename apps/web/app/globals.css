@@ -19,9 +19,30 @@
   --shadow-panel: inset 0 1px rgba(255, 255, 255, 0.065), 0 34px 110px rgba(0, 0, 0, 0.62), 0 0 86px rgba(240, 169, 59, 0.055);
   --shadow-card: inset 0 1px rgba(255, 255, 255, 0.055), 0 20px 62px rgba(0, 0, 0, 0.42);
   --cyan: #39c2c9;
+
+  /* The app is dark-only. Without an explicit color-scheme the UA paints its
+     LIGHT default scrollbars (and light form controls) on every scroll
+     container — the .radar-sidebar, the table wrap, the modals — which on this
+     palette reads as a white slab down the middle of the page. */
+  color-scheme: dark;
+  --scrollbar-thumb: rgba(240, 169, 59, 0.26);
+  --scrollbar-track: rgba(255, 255, 255, 0.04);
 }
 
 * { box-sizing: border-box; }
+
+/* Thin, themed scrollbars. The standard properties rather than
+   ::-webkit-scrollbar: same effect, one syntax, and Firefox understands it.
+   Known tradeoff — in Chromium, styling a scrollbar AT ALL (either syntax) opts
+   that scroller out of overlay scrollbars, so on a Mac set to "show scrollbars
+   when scrolling" these become permanent bars. Accepted deliberately: the
+   sidebar and the market table are always-scrolling regions, a visible bar is
+   the honest affordance there, and it is NARROWER than what the UA drew before
+   (measured in-page: 15px auto -> 11px thin). Safari supports neither property
+   and falls back to color-scheme alone, which is fine — dark, just untinted.
+   scrollbar-color is inherited, scrollbar-width is not, hence the two selectors. */
+* { scrollbar-width: thin; }
+html { scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track); }
 
 html {
   min-height: 100%;

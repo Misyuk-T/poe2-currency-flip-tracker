@@ -40,6 +40,19 @@ Ratio 0.75 не вигаданий, а зміряний по живих `hourly_
 `league-meta-refresh` — поріг запінено рівно на 7/8), рунбук,
 DYNAMIC-DATA-PLAN, BACKLOG, DECISIONS. `npm test` — 500/500.
 
+**Перевірка після деплою знайшла ще один такий самий дефект.** Крон о 07:05Z
+перемкнув дефолт (`/api/status`: `league: Forbidden Rites`,
+`defaultLeagueSource: db`; 9 годин, 786 пар), у `/api/radar` h12/h24 стали null
+для всіх 352 рядків — як і задумано. Але картки Key currency rates на головній
+показували -42%/+56%/+73% під заголовком «Last 24 completed hours»: вони не
+читають `movement.h24`, а рахують свій рух із `sparkline24h`, бо їхній ряд
+конвертований через граф chaos/divine/exalted. Додано `sparklineFromHour` у
+рядок радара, те саме правило 0.75 доби застосовано до конвертованого ряду, а
+заголовок панелі тепер називає реальне вікно («Last 9 completed hours»). Fail
+closed, якщо в пейлоаді поля нема. Заодно виправлено текст порожнього стану
+рейки «Movers · 24h» на головній: «No completed-hour data yet» було неправдою
+(погодинні дані є), тепер «No 24-hour moves yet».
+
 Два висновки ревю лишились у BACKLOG: мертва ліга назавжди тримає дефолт
 (forward-only + рядки `league_meta` ніколи не обнуляються — актуально, бо
 Forbidden Rites сама подієва й іде паралельно з Runes of Aldur до 1.0), і

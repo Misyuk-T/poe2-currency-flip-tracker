@@ -53,7 +53,7 @@ export default function HomeMiniRadar() {
 
       {state.status === "loading" ? <p className="home-mini-radar-note">Loading…</p> : null}
       {state.status === "error" ? <p className="home-mini-radar-note">Movers unavailable right now.</p> : null}
-      {state.status === "empty" ? <p className="home-mini-radar-note">No completed-hour data yet.</p> : null}
+      {state.status === "empty" ? <p className="home-mini-radar-note">No 24-hour moves yet.</p> : null}
 
       {state.status === "ready" ? (
         <ul className="home-mini-radar-list">

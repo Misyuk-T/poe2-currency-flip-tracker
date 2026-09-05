@@ -2,10 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { keyCurrencyCards, sparklinePoints } from "../apps/web/lib/key-currencies.js";
 
+const HOUR = 3600_000;
+/** A row whose sparkline reaches `hours` back — the span the cards judge on. */
+const spanned = (row, hours = 24) => ({
+  ...row,
+  latestCompletedHour: hours * HOUR,
+  sparklineFromHour: 0,
+});
+
 test("key currency cards quote chaos/divine in exalted and exalted in chaos", () => {
   const cards = keyCurrencyCards([
-    { target: "chaos", anchor: "exalted", reference: 0.02, sparkline24h: [0.025, 0.02], movement: { h24: -0.2 } },
-    { target: "divine", anchor: "exalted", reference: 100, sparkline24h: [90, 100], movement: { h24: 1 / 9 } },
+    spanned({ target: "chaos", anchor: "exalted", reference: 0.02, sparkline24h: [0.025, 0.02], movement: { h24: -0.2 } }),
+    spanned({ target: "divine", anchor: "exalted", reference: 100, sparkline24h: [90, 100], movement: { h24: 1 / 9 } }),
   ]);
   assert.deepEqual(cards.map((card) => card.id), ["chaos", "divine", "exalted"]);
   assert.equal(cards[0].value, 0.02);
@@ -78,4 +86,37 @@ test("display selection requotes native Alchemy cards instead of leaving Alchemy
   assert.equal(cards.find((card) => card.id === "divine").value, 50);
   assert.equal(cards.find((card) => card.id === "exalted").unit, "chaos");
   assert.equal(cards.find((card) => card.id === "exalted").value, 9);
+});
+
+test("a card publishes no percentage until its series covers most of a day", () => {
+  // The launch-league shape: eight hours of history behind a heading that used
+  // to say "Last 24 completed hours" regardless.
+  const young = [
+    { target: "chaos", anchor: "exalted", reference: 0.02, sparkline24h: [0.04, 0.02], latestCompletedHour: 8 * HOUR, sparklineFromHour: 0 },
+    { target: "divine", anchor: "exalted", reference: 100, sparkline24h: [50, 100], latestCompletedHour: 8 * HOUR, sparklineFromHour: 0 },
+  ];
+  for (const card of keyCurrencyCards(young)) {
+    assert.equal(card.movement, null, card.id);
+    assert.equal(card.spansDay, false, card.id);
+    assert.equal(card.spanHours, 8, card.id);
+  }
+  // The sparkline itself still draws — only the labelled number waits.
+  assert.ok(keyCurrencyCards(young).find((card) => card.id === "chaos").values.length >= 2);
+
+  // Eighteen hours is the bar (0.75 of a day); seventeen is not.
+  const at = (hours) => keyCurrencyCards(young.map((row) => spanned(row, hours)));
+  assert.equal(at(17).every((card) => card.movement === null), true);
+  assert.ok(Number.isFinite(at(18).find((card) => card.id === "chaos").movement));
+  assert.equal(at(18)[0].spanHours, 18);
+});
+
+test("a payload without span information publishes no percentage either", () => {
+  // Fail closed: a snapshot built before sparklineFromHour existed cannot prove
+  // its window, and an unprovable "24h" is the thing this guard exists to stop.
+  const cards = keyCurrencyCards([
+    { target: "chaos", anchor: "exalted", reference: 0.02, sparkline24h: [0.025, 0.02] },
+    { target: "divine", anchor: "exalted", reference: 100, sparkline24h: [90, 100] },
+  ]);
+  assert.equal(cards.every((card) => card.movement === null), true);
+  assert.equal(cards.every((card) => card.spanHours === null), true);
 });

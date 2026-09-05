@@ -8,9 +8,31 @@ const CORE = [
 
 const positive = (value) => Number.isFinite(value) && value > 0;
 
+/**
+ * How much of a day the card's series must actually cover before the change
+ * across it may be shown under the panel's "Last 24 completed hours" heading.
+ * Mirrors MIN_SPAN_RATIO in src/domain/market-radar.js — the cards cannot reuse
+ * a row's own movement.h24 because their series is CONVERTED through the core
+ * currency graph, so the same rule has to be applied again here. Without it a
+ * league nine hours old published a nine-hour swing as a daily one.
+ */
+const MIN_SPAN_MS = 0.75 * 24 * 3600_000;
+
 function movement(values) {
   if (values.length < 2 || !positive(values[0])) return null;
   return values[values.length - 1] / values[0] - 1;
+}
+
+/**
+ * How far back the shortest core series reaches. The converted timeline is only
+ * as long as its shortest input, so the minimum is what the cards may claim.
+ * Null when no row carries the span (an older payload, or no data at all).
+ */
+function timelineSpanMs(coreRows) {
+  const spans = coreRows
+    .filter((row) => Number.isFinite(row?.latestCompletedHour) && Number.isFinite(row?.sparklineFromHour))
+    .map((row) => row.latestCompletedHour - row.sparklineFromHour);
+  return spans.length ? Math.min(...spans) : null;
 }
 
 function rateBetween(rates, currency, unit) {
@@ -32,7 +54,7 @@ function rateTimeline(rows, fallbackAnchor) {
   });
 }
 
-function normalizedCard(currency, unit, rates, timeline) {
+function normalizedCard(currency, unit, rates, timeline, spansDay) {
   const value = rateBetween(rates, currency.id, unit);
   const values = timeline.map((snapshot) => rateBetween(snapshot, currency.id, unit)).filter(positive);
   return {
@@ -40,7 +62,10 @@ function normalizedCard(currency, unit, rates, timeline) {
     value,
     unit,
     values,
-    movement: movement(values),
+    // The sparkline still draws whatever history exists; only the labelled
+    // percentage waits for a real day. formatPercent renders null as "—".
+    movement: spansDay ? movement(values) : null,
+    spansDay,
     available: positive(value),
   };
 }
@@ -56,6 +81,12 @@ export function keyCurrencyCards(rows = [], fallbackAnchor = "exalted", preferre
   const anchor = fallbackAnchor;
   const rates = unitRates(rows, anchor);
   const timeline = rateTimeline(rows, anchor);
+  const span = timelineSpanMs(rows.filter((row) => CORE.some((currency) => currency.id === row?.target)));
+  const spansDay = span != null && span >= MIN_SPAN_MS;
+  // What the panel may honestly call its window. Capped at a day because the
+  // sparkline is 25 points: in a sparse market those can reach back further,
+  // but the core currencies trade hourly, so the cap is the truthful label.
+  const spanHours = span == null ? null : Math.min(24, Math.round(span / 3600_000));
   const inverseOrder = anchor === "chaos" ? ["exalted", "divine"] : ["chaos", "divine"];
   const inverseUnit = inverseOrder.find((id) => positive(rates[id])) ?? inverseOrder[0];
   const selectedUnit = positive(rates[preferredUnit]) ? preferredUnit : null;
@@ -68,7 +99,7 @@ export function keyCurrencyCards(rows = [], fallbackAnchor = "exalted", preferre
       : currency.id === anchor
         ? inverseUnit
         : anchor;
-    return normalizedCard(currency, unit, rates, timeline);
+    return { ...normalizedCard(currency, unit, rates, timeline, spansDay), spanHours };
   });
 }
 

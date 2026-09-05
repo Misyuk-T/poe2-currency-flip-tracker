@@ -29,6 +29,7 @@ function noTradeRow(item, anchor) {
     low: null,
     high: null,
     sparkline24h: [],
+    sparklineFromHour: null,
     movement: { h1: null, h3: null, h6: null, h12: null, h24: null },
     rangePct: null,
     volatility24h: null,

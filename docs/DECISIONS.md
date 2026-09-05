@@ -41,6 +41,21 @@ drop out of the sitemap until their market trades. Accepted — those pages stay
 The forward-only hysteresis and the permanent/HC/SSF/private exclusions are
 untouched. Rollback is unchanged: pin `LEAGUE` in the Vercel Production env.
 
+**Second pass, same day, found by watching the flip land.** The core-market
+cards on the dashboard do NOT read `movement.h24` — they recompute their own
+change from `sparkline24h` (the last 25 candles, whatever their age), because
+their series is converted through the chaos/divine/exalted graph and a row's own
+movement is in the wrong unit. So a nine-hour-old Forbidden Rites published
+-42%/+56%/+73% under a heading reading "Last 24 completed hours", live, minutes
+after the default flipped. Radar rows now carry `sparklineFromHour`, the cards
+apply the same 0.75-of-a-day span rule to the converted series, and the panel
+heading states the window it actually covers ("Last 9 completed hours"). It fails
+CLOSED on a payload without the new field — an unprovable "24h" is exactly what
+the guard exists to stop, and hourly snapshots re-supply it within the hour. The
+homepage movers rail, which does read the strict `h24`, had its empty copy
+corrected from "No completed-hour data yet" (untrue — there is hourly data) to
+"No 24-hour moves yet".
+
 **Known gap this does not close** (review finding, filed in BACKLOG): the
 forward-only rule plus rows that are never zeroed means a short-lived event
 league that wins the default keeps it after it dies — `refreshLeagueMeta` only

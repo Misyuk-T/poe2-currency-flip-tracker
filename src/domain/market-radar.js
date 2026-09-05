@@ -50,6 +50,12 @@ export function buildMarketRadar(
       // Keep the compact chart with the radar row so the list can render all
       // visible trends without an N+1 history request per market.
       sparkline24h: series.slice(-25).map((c) => c.reference),
+      // The hour the sparkline STARTS at. "Last 25 candles" is not "the last 24
+      // hours" — in a young or sparse market it can be a fraction of that — and
+      // consumers that compute their own change from these points (the key
+      // currency cards) need the real span to know whether they may call it a
+      // 24h move. Same judgement as MIN_SPAN_RATIO, one level up.
+      sparklineFromHour: series.slice(-25)[0].completedHour,
       ...metrics,
     });
   }

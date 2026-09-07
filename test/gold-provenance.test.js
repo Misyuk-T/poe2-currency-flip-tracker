@@ -229,9 +229,9 @@ test("provenance is additive: a snapshot without it is still compatible", () => 
   // change what any existing key means, so a stored snapshot from before this
   // deploy stays semantically correct — and the tooltip's no-provenance wording
   // makes no claim about where its numbers came from.
-  assert.equal(RADAR_PAYLOAD_VERSION, 6);
+  assert.equal(RADAR_PAYLOAD_VERSION, 7);
   assert.equal(
-    isCompatibleRadarSnapshot({ payload: { payloadVersion: 6 }, refreshedAt: Date.now() }),
+    isCompatibleRadarSnapshot({ payload: { payloadVersion: 7 }, refreshedAt: Date.now() }),
     true,
   );
 });

@@ -90,6 +90,23 @@ test("listPricedLeagues discovers recent priced scopes in freshness order", asyn
   ]);
 });
 
+test("priced-league probes use a type-guarded positive-volume CASE without casts or division", async () => {
+  const calls = [];
+  const sql = (strings, ...values) => {
+    calls.push({ text: strings.join("?"), values });
+    return Promise.resolve([{ available: true }]);
+  };
+  const repo = createRadarRepository({ sql, scope });
+  await repo.hasPricedCandles();
+  await repo.listPricedLeagues();
+  for (const { text } of calls) {
+    assert.match(text, /case\s+when\s+jsonb_typeof\(volume -> base_currency\) = 'number'/i);
+    assert.match(text, /else false\s+end/i);
+    assert.match(text, /> '0'::jsonb/i);
+    assert.doesNotMatch(text, /::numeric|\/ \(volume/i, "malformed or zero JSON volumes cannot reach casts or division");
+  }
+});
+
 test("listAnchorCandidates ranks currencies by distinct priced pair coverage", async () => {
   const repo = createRadarRepository({
     sql: fakeSql([[
@@ -166,7 +183,7 @@ test("the radar read looks back seven days and caps each pair at 25 hours", () =
     );
     assert.match(text, /cross join lateral/i);
     assert.doesNotMatch(text, /\bstock\b/i, "unused stock JSON must not leave Supabase");
-    assert.doesNotMatch(text, /reference_ratio/i, "the geometric centre is recomputed from low/high");
+    assert.doesNotMatch(text, /reference_ratio/i, "the traded-volume ratio is recomputed from raw volume");
   });
 });
 

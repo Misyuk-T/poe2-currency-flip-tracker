@@ -179,7 +179,7 @@ export default async function CurrenciesPage() {
               <thead>
                 <tr>
                   <th scope="col">Market</th>
-                  <th scope="col">Price{anchor ? ` (${anchor})` : ""}</th>
+                  <th scope="col">Hourly reference{anchor ? ` (${anchor})` : ""}</th>
                   <th scope="col">24h</th>
                 </tr>
               </thead>
@@ -191,7 +191,9 @@ export default async function CurrenciesPage() {
                       <th scope="row">
                         <a href={currencyPagePath(row.id)}>{row.name}</a>
                       </th>
-                      <td>{priceCell(row.stat)}</td>
+                      <td title={Number.isFinite(row.stat?.reference) ? undefined : "No usable traded-volume ratio for the latest observed hour"}>
+                        {priceCell(row.stat)}
+                      </td>
                       <td className={Number.isFinite(move) ? (move >= 0 ? "up" : "down") : undefined}>
                         {moveCell(move)}
                       </td>
@@ -208,9 +210,9 @@ export default async function CurrenciesPage() {
         <section className="content-section prose">
           <h2>How to read this index</h2>
           <p>
-            Each price is the midpoint of that market&apos;s latest completed-hour low/high range against{" "}
-            {anchor ?? "the anchor currency"} — a labelled proxy from official hourly data, not an executable quote.
-            The 24h column compares that midpoint with the one a day earlier; a market without roughly a day of
+            Each price is that market&apos;s latest completed-hour traded-volume ratio against{" "}
+            {anchor ?? "the anchor currency"} — derived from official hourly amounts, not an executable quote.
+            The 24h column compares that ratio with the one a day earlier; a market without roughly a day of
             priced history shows — there rather than a shorter comparison. Markets are grouped and ordered the way
             the in-game Currency Exchange groups them
             {categories.some((category) => category.name === UNMAPPED_CATEGORY)

@@ -82,12 +82,12 @@ export default async function CurrencyPage({ params }) {
   // actually show a price. The wording is mode-aware (sample vs live) and never
   // claims data we lack — so a no-data or anchor-currency page omits it entirely.
   const faqs = [...(content?.faq ?? [])];
-  if (summary) {
+  if (price) {
     faqs.push({
       q: `How is the ${name} price on this page worked out?`,
-      a: `It is the midpoint of the latest completed-hour low/high range${
+      a: `It is the latest completed-hour traded-volume ratio${
         anchorName ? `, measured against ${anchorName}` : ""
-      }, refreshed roughly hourly — a labelled proxy, not a live executable quote${
+      }, calculated by dividing the traded anchor amount by the traded item amount for that hour. It is refreshed roughly hourly and is not a live executable quote${
         summary.sourceMode === "fixture"
           ? ". The values shown are clearly-labelled sample data until the live feed is enabled"
           : ""
@@ -100,7 +100,7 @@ export default async function CurrencyPage({ params }) {
     "@type": "WebPage",
     name: `${name} Price — PoE2 Hourly Market Data`,
     description: price
-      ? `${name} latest completed-hour midpoint ≈ ${price} in Path of Exile 2 (${summary.anchor} market)${
+      ? `${name} latest completed-hour traded-volume ratio ≈ ${price} in Path of Exile 2 (${summary.anchor} market)${
           summary.sourceMode === "fixture" ? " — sample data" : ""
         }.`
       : `Hourly market context and trade planning page for ${name} in Path of Exile 2.`,
@@ -167,8 +167,9 @@ export default async function CurrencyPage({ params }) {
           </div>
           <div className="currency-grid">
             <div className="currency-card">
-              <strong>Midpoint (range-midpoint proxy)</strong>
-              <span>≈ {price}</span>
+              <strong>Hourly traded-volume ratio</strong>
+              <span>{price ? `≈ ${price}` : "—"}</span>
+              {!price && <small>Hourly reference unavailable</small>}
             </div>
             <div className="currency-card">
               <strong>Hourly range</strong>
@@ -189,7 +190,9 @@ export default async function CurrencyPage({ params }) {
           </div>
           <p className="hero-copy">
             {summary.latestCompletedHour ? `As of completed hour ${summary.latestCompletedHour}. ` : ""}
-            The midpoint is a labelled proxy of the official low/high range, not an executable quote
+            {price
+              ? "The hourly traded-volume ratio is derived from official completed-hour amounts, not an executable quote"
+              : "This hour does not have a usable traded-volume ratio. The reported range remains available as context; no earlier price is substituted"}
             {summary.sourceMode === "fixture" ? "; values shown here are clearly-labelled sample data until the live feed is enabled." : "."}
           </p>
         </section>

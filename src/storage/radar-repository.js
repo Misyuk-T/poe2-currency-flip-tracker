@@ -183,7 +183,7 @@ export function createRadarRepository({
       sql`
         select extract(epoch from completed_hour) * 1000 as completed_hour,
                pair_id, base_currency, quote_currency, low_ratio,
-               high_ratio, reference_ratio, reference_kind, volume
+               high_ratio, volume
         from hourly_market_candles
         where game = ${scope.game} and realm = ${scope.realm} and league = ${scope.league}
           and provider = ${scope.mode} and pair_id = ${pairId}
@@ -209,7 +209,15 @@ export function createRadarRepository({
           where game = ${scope.game} and realm = ${scope.realm} and league = ${scope.league}
             and provider = ${scope.mode}
             and completed_hour >= now() - make_interval(days => ${windowDays})
-            and reference_ratio is not null and reference_ratio > 0
+            and low_ratio is not null and low_ratio > 0
+            and high_ratio is not null and high_ratio > 0
+            and case
+              when jsonb_typeof(volume -> base_currency) = 'number'
+                and jsonb_typeof(volume -> quote_currency) = 'number'
+              then (volume -> base_currency) > '0'::jsonb
+                and (volume -> quote_currency) > '0'::jsonb
+              else false
+            end
           limit 1
         ) as available`,
       opTimeoutMs,
@@ -227,7 +235,15 @@ export function createRadarRepository({
         from hourly_market_candles
         where game = ${scope.game} and realm = ${scope.realm} and provider = ${scope.mode}
           and completed_hour >= now() - make_interval(days => ${windowDays})
-          and reference_ratio is not null and reference_ratio > 0
+          and low_ratio is not null and low_ratio > 0
+          and high_ratio is not null and high_ratio > 0
+          and case
+            when jsonb_typeof(volume -> base_currency) = 'number'
+              and jsonb_typeof(volume -> quote_currency) = 'number'
+            then (volume -> base_currency) > '0'::jsonb
+              and (volume -> quote_currency) > '0'::jsonb
+            else false
+          end
         group by league
         order by max(completed_hour) desc, league asc
         limit 64`,

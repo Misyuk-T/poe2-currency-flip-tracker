@@ -2,6 +2,32 @@
 
 Newest first. Each entry: **what** was decided, **why**, and the date.
 
+## 2026-09-07 — Hourly reference from traded volumes; extrema remain context
+
+The approved price-recovery story replaces geometric range centres as the
+reference with `volume[quote] / volume[base]`, labelled
+`hourly-traded-volume-ratio`. Observed Divine extrema of 1–130 produced 11.4;
+the same official digest's traded amounts give 125.464. Across 6,397 usable
+records in three PoE1/PoE2 digests every volume ratio lay within its bounds,
+while 189 differed from the geometric centre by at least 2x. This is evidence
+for the bounded correction, not a claim that the ratio is a live price or that
+it caused the site's traffic decline.
+
+Both traded amounts and the range must be valid; inconsistent/missing values
+yield no price, with no midpoint fallback or clamping. Recompute from volume
+on reads to repair retained history without migration. Preserve reciprocal
+orientation and manual observations. A newest hour without a valid ratio
+retains its timestamp and range, with no current price or movement; do not
+silently substitute the previous hour. Such pages remain discoverable.
+
+Payload version 7 invalidates derived snapshots. Table headings describe hourly
+low/high/range, not executable buy/sell prices; page, chart, guide and structured
+copy name the same historical statistic. Existing prediction/range-based
+guidance remains historical. No new upstream provider or request schedule.
+
+The plan was independently reviewed by GPT-5.6 Sol; implementation and release
+evidence are tracked in [PRICE-REFERENCE-RECOVERY-PLAN.md](PRICE-REFERENCE-RECOVERY-PLAN.md).
+
 ## 2026-09-05 — The default league now releases itself; one depth bar for the whole product
 Closing the risks the launch-day change opened, so none of them needs a human.
 

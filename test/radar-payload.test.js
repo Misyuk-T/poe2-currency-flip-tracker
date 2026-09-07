@@ -12,8 +12,8 @@ const catalogById = new Map(manifest.map((item) => [item.id, item]));
 
 test("buildRadarResponse merges radar rows with catalog metadata and display units", () => {
   const radarRows = [
-    { target: "divine", reference: 1, referenceKind: "range-midpoint-proxy", status: "ok", activityScore: 50, arbitrageScore: 10 },
-    { target: "chaos", reference: 0.01, referenceKind: "range-midpoint-proxy", status: "ok", activityScore: 20, arbitrageScore: 30 },
+    { target: "divine", reference: 1, referenceKind: "hourly-traded-volume-ratio", status: "ok", activityScore: 50, arbitrageScore: 10 },
+    { target: "chaos", reference: 0.01, referenceKind: "hourly-traded-volume-ratio", status: "ok", activityScore: 20, arbitrageScore: 30 },
   ];
   const out = buildRadarResponse({
     radarRows,

@@ -45,22 +45,22 @@ export const FLAT_COLOR = "#8b93a1";
  *
  * GGG publishes a low/high range per hour and NO open or close, so a true OHLC
  * candle is impossible. A bucket spanning several hours, however, does contain
- * a first and a last hourly midpoint — both observed values — and that is
+ * a first and a last hourly traded-volume ratio — both observed aggregates — and that is
  * enough for a candle whose parts all mean something:
  *
  * - wick (`low`..`high`): the band the bucket's hours typically spanned — the
  *   25th percentile of their lows to the 75th of their highs.
- * - body (`open`..`close`): the first and last hourly midpoints inside it, i.e.
+ * - body (`open`..`close`): the first and last hourly traded-volume ratios inside it, i.e.
  *   the net move across the bucket. NOT GGG's opening and closing trades, which
  *   do not exist in the feed — the naming is lightweight-charts', the meaning is
  *   ours, and the label under the chart says so.
- * - `line`: the median of the hourly midpoints, so one extreme hour cannot yank
+ * - `line`: the median of the hourly traded-volume ratios, so one extreme hour cannot yank
  *   the trend the way first/last can.
  *
  * Previously the body spanned the whole low..high band with the wick hidden
  * inside it, which made a wide market render as one enormous block and threw
  * away the shape the bucket actually had. Colour follows the body — a real
- * comparison of two observed midpoints — not the previous bucket.
+ * comparison of two observed ratios — not the previous bucket.
  *
  * The wick was the minimum of the lows and the maximum of the highs, and on a
  * market where roughly one hour in seven reports a low near zero, every bucket
@@ -74,7 +74,7 @@ export const FLAT_COLOR = "#8b93a1";
  * shows the band the plan is drawn out of.
  *
  * At a 1-hour bucket there is no sub-structure to summarise: first and last are
- * the same midpoint, so the body collapses to a line across the wick. That is
+ * the same ratio, so the body collapses to a line across the wick. That is
  * the honest rendering of "one observation, no measurable move within it".
  */
 export function buildTrendRows(points, explicitBucketHours) {
@@ -90,8 +90,7 @@ export function buildTrendRows(points, explicitBucketHours) {
   for (const point of usable) {
     const completedHour = Number(point.completedHour) || Date.now();
     const bucketEnd = Math.ceil(completedHour / spanMs) * spanMs;
-    // Fall back to the midpoint when an hour carries no usable band, so a
-    // partial record still contributes its observed price instead of nothing.
+    // References have a valid reported range by construction.
     const low = Number.isFinite(point.low) && point.low > 0 ? point.low : point.reference;
     const high = Number.isFinite(point.high) && point.high > 0 ? point.high : point.reference;
     const bucket = buckets.at(-1);
@@ -131,7 +130,7 @@ export function buildTrendRows(points, explicitBucketHours) {
     return {
       range: {
         time,
-        // Body: first and last observed midpoint in the bucket. Wick: the full
+        // Body: first and last observed ratio in the bucket. Wick: the full
         // touched range. Clamped so a body edge can never sit outside the range
         // it is drawn inside.
         open: Math.min(Math.max(bucket.first, wickLow), wickHigh),
@@ -163,14 +162,9 @@ export function buildTrendRows(points, explicitBucketHours) {
  * The band the axis should frame: the candle BODIES, plus whatever plan levels
  * are drawn, plus a little air.
  *
- * Trimming a tail off the wicks was the obvious idea and it does not work here.
- * Chaos Orb reports hourly ranges like low 1 / high 65 around a midpoint of 33,
- * and 15% of its hours look like that — a percentile deep enough to exclude
- * them would be hiding a sixth of the data, not a stray print.
- *
- * So frame the price rather than the range. Bodies move between roughly 30 and
- * 50 on that market, which is legible; the wide wicks still render, they simply
- * run past the edge. The plan's own lines are folded in so a buy or sell target
+ * Wide hourly extrema can dwarf the changes in traded-volume references.
+ * Frame those references rather than the full range: the wide wicks still
+ * render, but can run past the edge. Plan levels are included so a target
  * can never end up outside the view.
  *
  * Returns null when the wicks already fit, so ordinary markets autoscale plainly.

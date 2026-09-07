@@ -28,13 +28,15 @@ export function buildMarketRadar(
     if (!first) continue;
     const target = first.base === anchor ? first.quote : first.quote === anchor ? first.base : null;
     if (!target) continue;
-    const series = candles
+    const oriented = candles
       .map((c) => candleForAnchor(c, target, anchor))
-      .filter((c) => c && Number.isFinite(c.reference))
+      .filter(Boolean)
       .sort((a, b) => a.completedHour - b.completedHour);
-    if (!series.length) continue;
-    const latest = series[series.length - 1];
-    const metrics = radarMetrics(series, { now, minSamples });
+    if (!oriented.length) continue;
+    const latest = oriented[oriented.length - 1];
+    const series = oriented.filter((c) => Number.isFinite(c.reference) && c.reference > 0);
+    const unavailable = !Number.isFinite(latest.reference) || latest.reference <= 0;
+    const metrics = unavailable ? null : radarMetrics(series, { now, minSamples });
     rows.push({
       pairId: latest.pairId,
       target,
@@ -43,8 +45,8 @@ export function buildMarketRadar(
       category: categories[target] ?? null,
       anchor,
       latestCompletedHour: latest.completedHour,
-      reference: latest.reference,
-      referenceKind: latest.referenceKind,
+      reference: unavailable ? null : latest.reference,
+      referenceKind: unavailable ? null : latest.referenceKind,
       low: latest.low,
       high: latest.high,
       // Keep the compact chart with the radar row so the list can render all
@@ -55,11 +57,29 @@ export function buildMarketRadar(
       // consumers that compute their own change from these points (the key
       // currency cards) need the real span to know whether they may call it a
       // 24h move. Same judgement as MIN_SPAN_RATIO, one level up.
-      sparklineFromHour: series.slice(-25)[0].completedHour,
-      ...metrics,
+      sparklineFromHour: series.length ? series.slice(-25)[0].completedHour : null,
+      ...(unavailable ? unavailableMetrics(latest, series, now) : metrics),
     });
   }
   return rows.sort((a, b) => (b.activityScore ?? -1) - (a.activityScore ?? -1));
+}
+
+function unavailableMetrics(latest, series, now) {
+  const samples24 = series.filter((candle) => candle.completedHour >= latest.completedHour - 24 * HOUR).length;
+  return {
+    status: "missing-hourly-traded-volume-ratio",
+    samples: samples24,
+    coverage24h: null,
+    stale: Number.isFinite(latest.completedHour) ? now - latest.completedHour > 2 * HOUR : null,
+    movement: { h1: null, h3: null, h6: null, h12: null, h24: null },
+    rangePct: null,
+    volatility24h: null,
+    volume: null,
+    volumeAcceleration: null,
+    trendPersistence: null,
+    activityScore: null,
+    arbitrageScore: null,
+  };
 }
 
 /**

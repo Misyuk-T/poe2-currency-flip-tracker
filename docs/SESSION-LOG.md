@@ -2,6 +2,21 @@
 
 Newest first. One block per working session: what changed + commit refs.
 
+## 2026-09-07 — BMAD price-reference recovery
+
+Replaced the geometric centre of hourly extrema with the validated ratio of
+quote/base traded volumes. Recompute old candles on read and invalidate v6
+snapshots with v7; an unusable newest hour preserves its timestamp/range and
+shows no current reference or metrics. Historical charts, conversions, manual
+entry, core cards and currency pages use consistent semantics. Updated UI copy
+to distinguish the hourly range/reference from live executable prices.
+
+Independent Sol plan and final diff reviews accepted after fixing SQL guard
+ordering and missing-state canary assertions. 518 tests and production build
+pass; 28-hour Forbidden Rites canary covers 50,584 candles and 593 independent
+oracle comparisons; real PostgreSQL 17 checks and desktop/375px browser flows
+pass. See [the BMAD story](PRICE-REFERENCE-RECOVERY-PLAN.md) for release evidence.
+
 ## 2026-09-05 — Світлий скролбар, чесні вікна movement, дефолтна ліга 48г → 8г
 
 **Скрол.** `globals.css` не оголошував `color-scheme`, тож UA малював свої
@@ -1445,3 +1460,15 @@ Analytics; форумний тред pathofexile.com + каталоги; 04.09 �
   несе **власну** `effectiveFrom`. Тобто весь ланцюг Phase C замкнувся:
   скрейп → `gold_costs` → снапшот крону → payload → чесний підпис у тултіпі.
   Заглушкою більше нічого не називається, бо заглушки й немає.
+## 2026-09-07 — Revival research: price reliability before more acquisition
+
+Read-only production and public-source audit saved in
+[REVIVAL-AUDIT-2026-09-07.md](REVIVAL-AUDIT-2026-09-07.md). Found the Divine
+range-centre distortion across three completed hours (roughly 11–12 Exalted
+versus aggregate-volume ratios 121–125); candidate estimator semantics still
+need validation. Verified public poe.ninja economy API access as an alternative
+research path. Proposed price correction, then saved markets and a bounded
+retention experiment. Separately diagnosed all three layout-workflow failures:
+repository Actions PR-creation prohibition after successful refresh/tests;
+production runtime metadata refresh is healthy. No code, settings, deployment,
+external posting or recurring polling changes were made.

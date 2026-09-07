@@ -12,6 +12,11 @@ These are historical estimates. Not predictions, not guaranteed arbitrage.
 
 The distinction is enforced in the data, not just in a disclaimer. Fill probabilities return `null` because no probabilistic model exists — they are not filled with a plausible-looking number. `expectedProfit` is `null` for the same reason, and the mark-to-market figure is exposed under its own name so "what it clears at current books" can never be read as "what you can expect to make". Recommended position size is capped at a quantity that is fully executable on both legs; when the exit book cannot absorb it, the row is marked non-actionable instead of quietly shrinking.
 
+Reference prices use each completed hour's traded-volume ratio, not the centre
+of its lowest and highest reported prices. A missing or inconsistent volume
+ratio stays unavailable; the hourly range remains visible as context. Retained
+history is recalculated with the same rule, including currency conversions.
+
 The feed is delayed and is not an executable quote. Verify in game before trading.
 
 ## Running it

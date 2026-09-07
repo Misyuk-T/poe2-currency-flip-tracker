@@ -33,8 +33,8 @@ const candles = Array.from({ length: 6 }, (_, k) => {
     low: 200 + (5 - i),
     high: 220 + (5 - i),
     reference: 210 + (5 - i),
-    referenceKind: "range-midpoint-proxy",
-    volume: { divine: 5, exalted: 1000 },
+    referenceKind: "hourly-traded-volume-ratio",
+    volume: { divine: 5, exalted: 5 * (210 + (5 - i)) },
     stock: {},
     source: "ggg-cxapi",
   };
@@ -104,15 +104,50 @@ test("buildRadarPayload distinguishes upstream rows with no executed prices from
     low: null,
     high: null,
     reference: null,
+    volume: { divine: 0, exalted: 0 },
   }));
   const out = await buildRadarPayload({
     ...base,
     repo: { ...repo, readCandleWindow: async () => noTrades },
     anchor: "exalted",
   });
-  assert.equal(out.trackedCount, 0);
+  assert.equal(out.trackedCount, 1, "the newest unusable market remains discoverable");
+  assert.equal(out.rows.find((row) => row.target === "divine").status, "missing-hourly-traded-volume-ratio");
   assert.equal(out.marketData.status, "no-executed-trades");
   assert.equal(out.marketData.candleCount, noTrades.length);
+  assert.equal(out.marketData.pricedCandleCount, 0);
+});
+
+test("latest invalid hourly ratio remains current and clears headline metrics", async () => {
+  const latestInvalid = [...candles, {
+    ...candles.at(-1),
+    completedHour: LAST_HOUR + HOUR,
+    digestId: 1001,
+    volume: { divine: 0, exalted: 1000 },
+    reference: 210,
+  }];
+  const out = await buildRadarPayload({
+    ...base,
+    repo: { ...repo, readCandleWindow: async () => latestInvalid },
+    anchor: "exalted",
+  });
+  const divine = out.rows.find((row) => row.target === "divine");
+  assert.equal(divine.latestCompletedHour, LAST_HOUR + HOUR);
+  assert.equal(divine.status, "missing-hourly-traded-volume-ratio");
+  assert.equal(divine.reference, null);
+  assert.equal(divine.activityScore, null);
+  assert.equal(divine.movement.h24, null);
+  assert.equal(divine.sparkline24h.length, candles.length);
+});
+
+test("inconsistent positive volumes are not reported as no executed trades", async () => {
+  const invalid = candles.map((candle) => ({ ...candle, volume: { divine: 1, exalted: 1 } }));
+  const out = await buildRadarPayload({
+    ...base,
+    repo: { ...repo, readCandleWindow: async () => invalid },
+    anchor: "exalted",
+  });
+  assert.equal(out.marketData.status, "no-valid-hourly-reference");
   assert.equal(out.marketData.pricedCandleCount, 0);
 });
 
@@ -123,6 +158,15 @@ test("buildHistoryPayload returns a pair's series in anchor units", async () => 
   assert.ok(out.series.every((c) => c.target === "divine"));
   const unknownPair = await buildHistoryPayload({ repo, pair: "nope|nope", anchor: "exalted" });
   assert.deepEqual(unknownPair.series, []);
+
+  const raw = await buildHistoryPayload({
+    repo: { ...repo, readPairCandles: async () => [{
+      ...candles[0], reference: 999, referenceKind: "range-center-geometric",
+    }] },
+    pair: "divine|exalted",
+  });
+  assert.equal(raw.series[0].reference, candles[0].volume.exalted / candles[0].volume.divine);
+  assert.equal(raw.series[0].referenceKind, "hourly-traded-volume-ratio");
 });
 
 test("buildHotlistPayload pins the shortlist and reports no scheduler", async () => {
@@ -147,4 +191,21 @@ test("mergeRadarPayloads picks the strongest native anchor row per target", () =
   assert.equal(merged.rows.some((row) => row.target === "exalted"), false, "inverse preferred-anchor duplicate is omitted");
   assert.equal(merged.trackedCount, 2);
   assert.deepEqual(merged.availableAnchors, ["exalted", "divine"]);
+});
+
+test("mergeRadarPayloads keeps an all-missing market set unavailable", () => {
+  const merged = mergeRadarPayloads({
+    exalted: {
+      anchor: "exalted",
+      rows: [{ target: "divine", pairId: "divine|exalted", anchor: "exalted", status: "missing-hourly-traded-volume-ratio", reference: null }],
+      marketData: { status: "no-valid-hourly-reference" },
+    },
+    divine: {
+      anchor: "divine",
+      rows: [{ target: "exalted", pairId: "divine|exalted", anchor: "divine", status: "missing-hourly-traded-volume-ratio", reference: null }],
+      marketData: { status: "no-valid-hourly-reference" },
+    },
+  }, { preferredAnchor: "exalted" });
+  assert.equal(merged.rows.length, 1);
+  assert.equal(merged.marketData.status, "no-valid-hourly-reference");
 });

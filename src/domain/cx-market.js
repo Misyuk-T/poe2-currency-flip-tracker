@@ -51,7 +51,7 @@ export function normalizeCxDigest(payload, { digestId, league = null, leagues = 
     const base = translate(rawBase);
     const quote = translate(rawQuote);
     if (!base || !quote || base === quote) continue; // guard against a collapsing translation
-    candles.push({
+    const candle = {
       source: "ggg-cxapi",
       league: marketLeague,
       completedHour,
@@ -61,10 +61,6 @@ export function normalizeCxDigest(payload, { digestId, league = null, leagues = 
       quote,
       low,
       high,
-      // Centre of the reported range, NOT a close. See rangeCenter: geometric so
-      // that a pair's storage orientation cannot change the price it implies.
-      reference: valid ? rangeCenter(low, high) : null,
-      referenceKind: "range-center-geometric",
       volume: {
         [base]: finiteNonNegative(market.volume_traded?.[rawBase]),
         [quote]: finiteNonNegative(market.volume_traded?.[rawQuote]),
@@ -79,7 +75,13 @@ export function normalizeCxDigest(payload, { digestId, league = null, leagues = 
           [quote]: finiteNonNegative(market.highest_stock?.[rawQuote]),
         },
       },
-    });
+    };
+    // GGG provides the amount traded on each side of the completed-hour market.
+    // Their quotient is an observed aggregate ratio, unlike a made-up centre of
+    // the hour's extrema. Keep it only when it agrees with the reported range.
+    candle.reference = hourlyTradedVolumeReference(candle, { low, high });
+    candle.referenceKind = candle.reference == null ? null : "hourly-traded-volume-ratio";
+    candles.push(candle);
   }
   return {
     digestId: hour,
@@ -130,54 +132,37 @@ export function candleForAnchor(candle, target, anchor) {
   if (!direct && !inverse) return null;
   const low = direct ? candle.low : invert(candle.high);
   const high = direct ? candle.high : invert(candle.low);
-  // Recomputed from the ORIENTED endpoints, never carried over or inverted from
-  // the stored one. Inverting an arithmetic midpoint does not give the midpoint
-  // of the inverted range — it gives the harmonic mean of it, which sits near
-  // the bottom of the band. On production that put 83 of 627 markets at a price
-  // far below the middle of their own range: Ancient Potent Liquid Melancholy
-  // showed 3.64 against a reported 2–20, purely because GGG stored that pair the
-  // other way round.
-  //
-  // Recomputing here also repairs history: every stored candle is re-centred on
-  // read, so nothing needs migrating.
-  // referenceKind travels with the value: a stored candle written before this
-  // change still says "range-midpoint-proxy", and leaving that label on a
-  // recomputed number would be a smaller version of the same lie.
+  // Recompute on read from the stored side volumes. That repairs all historical
+  // rows and deliberately ignores a legacy derived reference value.
+  const reference = hourlyTradedVolumeReference(candle, { base: target, quote: anchor, low, high });
   return {
     ...candle,
     target,
     anchor,
     low,
     high,
-    reference: rangeCenter(low, high),
-    referenceKind: "range-center-geometric",
+    reference,
+    referenceKind: reference == null ? null : "hourly-traded-volume-ratio",
   };
 }
 
 /**
- * The one scalar we print for a range, and the only one that survives inverting
- * the quote: the geometric centre is multiplicatively centred, so
- * `center(1/high, 1/low) === 1 / center(low, high)` exactly. An arithmetic
- * midpoint does not have that property, which is how a pair's orientation ended
- * up changing its price.
- *
- * Narrow ranges barely move: 46–50 gives 47.96 against an arithmetic 48, and a
- * reported 31–68 reads 45.9 rather than 49.5.
- *
- * Be clear about what it does NOT fix. Being multiplicative, it is pulled
- * HARDER than an arithmetic mean by a low outlier: an hour reporting 1–20 reads
- * 4.47 where the arithmetic midpoint says 10.5. Neither is robust when a single
- * print sits an order of magnitude under the rest, because a low and a high are
- * all the feed gives us — there is no median of the hour to fall back on. The
- * invariance is the reason to prefer this one; robustness is a separate problem
- * and not solvable at this layer.
- *
- * It is a CENTRE OF A RANGE, not a traded price. Nothing here observed a trade
- * at this number.
+ * Completed-hour traded-volume reference in `quote per base` orientation.
+ * Volumes must be actual JSON numbers: coercing a string, boolean or infinity
+ * would turn malformed history into a plausible market price. The tiny relative
+ * tolerance only absorbs floating-point division at a reported range boundary.
  */
-export function rangeCenter(low, high) {
-  if (!(Number.isFinite(low) && low > 0) || !(Number.isFinite(high) && high > 0)) return null;
-  return Math.sqrt(low * high);
+export function hourlyTradedVolumeReference(candle, { base = candle?.base, quote = candle?.quote, low = candle?.low, high = candle?.high } = {}) {
+  const baseVolume = candle?.volume?.[base];
+  const quoteVolume = candle?.volume?.[quote];
+  if (!positiveNumber(baseVolume) || !positiveNumber(quoteVolume)) return null;
+  if (!positiveNumber(low) || !positiveNumber(high) || low > high) return null;
+  const reference = quoteVolume / baseVolume;
+  if (!Number.isFinite(reference) || reference <= 0) return null;
+  const relativeTolerance = Number.EPSILON * 32;
+  return reference >= low * (1 - relativeTolerance) && reference <= high * (1 + relativeTolerance)
+    ? reference
+    : null;
 }
 
 function ratioPrice(ratio, base, quote) {
@@ -196,6 +181,9 @@ function finiteInt(value) {
 }
 
 function finiteNonNegative(value) {
-  const n = Number(value);
-  return Number.isFinite(n) && n >= 0 ? n : null;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function positiveNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }

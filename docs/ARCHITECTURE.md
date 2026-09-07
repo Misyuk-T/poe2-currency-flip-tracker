@@ -130,11 +130,20 @@ written permission.
 ### Market Radar + manual current price (MVP)
 
 The default screen is a completed-hour **Market Radar**. It consumes GGG's
-OAuth-gated `service:cxapi` feed on the backend, persists its cursor, and shows
+public Currency Exchange CDN on the backend, persists its cursor, and shows
 descriptive 1/3/6/12/24h movement, hourly low/high range, volume acceleration,
 volatility, coverage, and transparent 0–100 activity/stability scores. The
-midpoint of the published low/high range is explicitly labelled a
-`range-midpoint-proxy`; it is never presented as an OHLC close or a forecast.
+reference price is the quote-currency traded amount divided by the base-currency
+traded amount, labelled `hourly-traded-volume-ratio`. Both amounts must be
+positive finite numbers and their ratio must lie within the reported hourly
+bounds (allowing only floating-point tolerance). Otherwise the reference is
+unavailable; there is no fallback to a range centre. The range is retained as
+context, not presented as live buy/sell quotes. The ratio is an aggregate
+historical statistic, not a documented median, OHLC close or execution quote.
+Stored history is recomputed from its existing volume fields on read. Derived
+radar snapshots are versioned so a deployment cannot reuse old price semantics.
+An unusable newest hour retains its timestamp/range and null current metrics;
+an older usable hour must never masquerade as the latest price.
 Fixture mode seeds clearly-labelled synthetic hourly data for local testing.
 
 `GET /api/radar`, `GET /api/radar/history`, and `GET /api/hotlist` only read the
@@ -150,7 +159,8 @@ The hourly feed discovers what deserves attention; it is not an executable
 quote. The detail view uses a single **Working price**:
 
 1. user-entered current price (`You entered · now`);
-2. otherwise the latest hourly midpoint (`Hourly midpoint · age`).
+2. otherwise the latest valid completed-hour traded-volume ratio, with age;
+3. if the latest hour has no valid reference, no automatic working price.
 
 Recommendations are based on completed-hour history rebased onto that Working
 price. For overnight-style plans (5–10h), the UI reports historical hit rate,

@@ -23,12 +23,11 @@ const CHART_WIDTH = 720;
 const CHART_HEIGHT = 330;
 
 function finite(value) {
-  return Number.isFinite(Number(value));
+  return Number.isFinite(value);
 }
 
-function midpoint(summary) {
+function currentReference(summary) {
   if (finite(summary?.reference)) return Number(summary.reference);
-  if (finite(summary?.low) && finite(summary?.high)) return (Number(summary.low) + Number(summary.high)) / 2;
   return null;
 }
 
@@ -58,7 +57,7 @@ function latestHourText(value) {
 }
 
 function planFromRange(summary) {
-  const mid = midpoint(summary);
+  const mid = currentReference(summary);
   const low = Number(summary?.low);
   const high = Number(summary?.high);
   if (!finite(mid) || !finite(low) || !finite(high) || high <= low) return null;
@@ -179,7 +178,7 @@ function HeroChart({ model, unit }) {
 
 function DivinePanel({ summary }) {
   const unit = unitLabel(summary.anchor);
-  const mid = midpoint(summary);
+  const mid = currentReference(summary);
   const plan = planFromRange(summary);
   const model = chartModel(summary);
   const movement = summary.movement?.h24;
@@ -201,15 +200,15 @@ function DivinePanel({ summary }) {
 
       <div className="home-chart-legend home-chart-legend-row">
         <span><i className="legend-range" /> Range band</span>
-        <span><i className="legend-midpoint" /> Midpoint</span>
+        <span><i className="legend-midpoint" /> Traded-volume ratio</span>
       </div>
 
       <div className="home-stat-row">
         <article className="home-side-panel observed">
-          <span>Current · observed now</span>
+          <span>Latest completed hour</span>
           <strong>{priceText(mid, unit)}</strong>
           <em>{unit}</em>
-          <small>{latestHourText(summary.latestCompletedHour)} · range-midpoint proxy</small>
+          <small>{latestHourText(summary.latestCompletedHour)} · hourly traded-volume ratio</small>
         </article>
         <article className="home-side-panel">
           <span>Conservative plan · 1–24h</span>

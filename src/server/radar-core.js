@@ -11,7 +11,7 @@
  * fine for a read endpoint.
  */
 
-import { candleForAnchor } from "../domain/cx-market.js";
+import { candleForAnchor, hourlyTradedVolumeReference } from "../domain/cx-market.js";
 import { buildMarketRadar, dedupeRadarRows } from "../domain/market-radar.js";
 import { buildHotlist } from "../domain/hotlist.js";
 import { buildRadarResponse } from "../domain/radar-payload.js";
@@ -46,19 +46,24 @@ async function computeRadar({
     now,
     minTenureMs: 0, // no prior state to retain in a stateless read
   });
-  // Radar reads deliberately omit the stored reference scalar: candleForAnchor
-  // recomputes the orientation-invariant geometric centre from the low/high
-  // range. Count the same valid input here instead of transferring a redundant
-  // column from Supabase for every pair/hour.
-  const pricedCandleCount = candles.filter(
-    (candle) => Number.isFinite(candle.low) && candle.low > 0
-      && Number.isFinite(candle.high) && candle.high > 0,
-  ).length;
+  const pricedCandleCount = candles.filter((candle) => hourlyTradedVolumeReference(candle) != null).length;
+  const hasObservedTradeVolumes = candles.some((candle) => {
+    const baseVolume = candle?.volume?.[candle?.base];
+    const quoteVolume = candle?.volume?.[candle?.quote];
+    return typeof baseVolume === "number" && Number.isFinite(baseVolume) && baseVolume > 0
+      && typeof quoteVolume === "number" && Number.isFinite(quoteVolume) && quoteVolume > 0;
+  });
   return {
     rowsByAnchor,
     hotlist,
     marketData: {
-      status: candles.length === 0 ? "no-data" : pricedCandleCount === 0 ? "no-executed-trades" : "available",
+      status: candles.length === 0
+        ? "no-data"
+        : pricedCandleCount > 0
+          ? "available"
+          : hasObservedTradeVolumes
+            ? "no-valid-hourly-reference"
+            : "no-executed-trades",
       candleCount: candles.length,
       pricedCandleCount,
     },
@@ -183,6 +188,7 @@ export function mergeRadarPayloads(payloads, { preferredAnchor } = {}) {
     .map(([, payload]) => Date.parse(payload.generatedAt))
     .filter(Number.isFinite)
     .reduce((latest, value) => Math.max(latest, value), 0);
+  const hasCurrentReference = rows.some((row) => Number.isFinite(row.reference) && row.reference > 0);
   return {
     ...primary,
     anchor: preferred,
@@ -194,7 +200,11 @@ export function mergeRadarPayloads(payloads, { preferredAnchor } = {}) {
     marketData: {
       ...(primary.marketData ?? {}),
       trackedMarketCount: rows.length,
-      status: rows.length ? "available" : primary.marketData?.status ?? "no-data",
+      status: hasCurrentReference
+        ? "available"
+        : rows.length
+          ? "no-valid-hourly-reference"
+          : primary.marketData?.status ?? "no-data",
     },
   };
 }
@@ -231,7 +241,7 @@ export async function buildHotlistPayload({
 /** /api/radar/history payload: one pair's series in the requested anchor units. */
 export async function buildHistoryPayload({ repo, pair, anchor }) {
   const candles = await repo.readPairCandles(pair);
-  if (!anchor) return { pair, anchor, series: candles };
+  if (!anchor) return { pair, anchor, series: candles.map((candle) => candleForAnchor(candle, candle.base, candle.quote)).filter(Boolean) };
   const first = candles[0];
   if (!first) return { pair, anchor, series: [] };
   const target = first.base === anchor ? first.quote : first.quote === anchor ? first.base : null;

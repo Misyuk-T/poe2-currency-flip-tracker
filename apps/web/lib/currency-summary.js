@@ -176,15 +176,16 @@ export function currencySitemapUrls(index, { popularIds = [] } = {}) {
  * recomputing it from raw candles. The snapshot already carries a finished row
  * per market, so this is a projection, not a computation.
  *
- * Rows without a priced hour are dropped: a market with no trades has nothing
- * unique to say, and listing it would put a thin page in the sitemap.
+ * Rows without a priced hour are dropped unless they are the newest explicit
+ * missing-ratio row. That row has a real pair, range and completed hour, so it
+ * must remain discoverable rather than disappearing behind an older price.
  */
 export function currencyIndexFromSnapshot(payload, { sourceMode = "fixture" } = {}) {
   if (!payload?.anchor || !Array.isArray(payload.rows)) return null;
   const byId = {};
   let latestMs = 0;
   for (const row of payload.rows) {
-    if (!row?.target || !Number.isFinite(row.reference)) continue;
+    if (!row?.target || (!Number.isFinite(row.reference) && row.status !== "missing-hourly-traded-volume-ratio")) continue;
     const hourMs = Number.isFinite(row.latestCompletedHour) ? row.latestCompletedHour : null;
     if (hourMs && hourMs > latestMs) latestMs = hourMs;
     byId[row.target] = {

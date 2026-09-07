@@ -120,3 +120,17 @@ test("a payload without span information publishes no percentage either", () => 
   assert.equal(cards.every((card) => card.movement === null), true);
   assert.equal(cards.every((card) => card.spanHours === null), true);
 });
+
+test("a missing newest ratio cannot publish a change from its older sparkline", () => {
+  const cards = keyCurrencyCards([
+    spanned({ target: "chaos", anchor: "exalted", reference: 0.02, sparkline24h: [0.025, 0.02] }),
+    spanned({
+      target: "divine", anchor: "exalted", reference: null,
+      status: "missing-hourly-traded-volume-ratio", sparkline24h: [90, 100],
+    }),
+  ]);
+  const divine = cards.find((card) => card.id === "divine");
+  assert.equal(divine.available, false);
+  assert.equal(divine.movement, null);
+  assert.deepEqual(divine.values, [90, 100], "the dated history remains drawable");
+});

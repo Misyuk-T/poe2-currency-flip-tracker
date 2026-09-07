@@ -27,7 +27,7 @@ import { fallbackIconUrl, iconUrl } from "../apps/web/lib/market.js";
 import { unitRates } from "../apps/web/lib/market-units.js";
 
 const REALM = "poe2";
-const LEAGUE = "Runes of Aldur";
+const LEAGUE = process.env.CANARY_LEAGUE || "Runes of Aldur";
 const HOURS = 28;
 const UA = "poe2-currency-flip-tracker/0.1 (go-live canary; misyuktaras@gmail.com)";
 const EXALTED = "Metadata/Items/Currency/CurrencyAddModToRare";
@@ -130,7 +130,7 @@ async function main() {
       check(!seenPairHour.has(key), `duplicate pair/hour after translation: ${key}`);
       seenPairHour.add(key);
       check(c.base !== c.quote, `collapsed pair ${c.pairId}`);
-      if (c.low == null || c.high == null) rejectedNullRatio++;
+      if (c.reference == null) rejectedNullRatio++;
       else check(c.low > 0 && c.high > 0 && c.low <= c.reference && c.reference <= c.high, `bad price band ${c.pairId}: ${c.low}/${c.reference}/${c.high}`);
       check(c.completedHour === digestId * 1000, `completedHour mismatch ${c.pairId}`);
     }
@@ -141,7 +141,7 @@ async function main() {
   // === Independent raw price oracle (the key defense vs a reciprocal error) ===
   // Find, in the latest fully-populated hour, a market where the anchor is the
   // RAW LEFT side and one where it is the RAW RIGHT side, and verify the radar
-  // reference matches quote/base (from the ORIGINAL ids), inverted as needed.
+  // reference matches the raw quote/base traded-volume ratio, inverted as needed.
   const latest = raws[raws.length - 1].payload;
   const rowsExalted = (await buildPayload(repo, "exalted")).rows;
   const byTarget = new Map(rowsExalted.filter((r) => r.pairId).map((r) => [r.target, r]));
@@ -154,14 +154,19 @@ async function main() {
     if (!isExA && !isExB) continue;
     const lr = m.lowest_ratio, hr = m.highest_ratio;
     // Original orientation (market_id base|quote = rawA|rawB): price = quote per
-    // base = ratio[rawB]/ratio[rawA]. Build the candle low/high/reference exactly
-    // as normalizeCxDigest, then anchor exactly as candleForAnchor (INVERTING the
-    // reference for the inverse orientation. The independent oracle reproduces
-    // the documented geometric range centre, which is invariant under inversion.
+    // base. Build bounds from ratios and derive the reference independently from
+    // the completed-hour traded amounts, then invert it when anchor projection
+    // reverses the quote orientation.
     const p = (r) => (r?.[rawA] > 0 && r?.[rawB] > 0 ? r[rawB] / r[rawA] : null);
     const pl = p(lr), ph = p(hr);
     if (pl == null || ph == null) continue;
-    const candLow = Math.min(pl, ph), candHigh = Math.max(pl, ph), candRef = Math.sqrt(candLow * candHigh);
+    const candLow = Math.min(pl, ph), candHigh = Math.max(pl, ph);
+    const baseVolume = m.volume_traded?.[rawA], quoteVolume = m.volume_traded?.[rawB];
+    const candRef = typeof baseVolume === "number" && Number.isFinite(baseVolume) && baseVolume > 0
+      && typeof quoteVolume === "number" && Number.isFinite(quoteVolume) && quoteVolume > 0
+      ? quoteVolume / baseVolume
+      : null;
+    if (candRef == null || candRef < candLow || candRef > candHigh) continue;
     const target = isExA ? rawB : rawA;
     const short = resolveCurrency(target).shortId ?? target;
     const row = byTarget.get(short);
@@ -196,7 +201,13 @@ async function main() {
       const pl = p(rm.lowest_ratio), ph = p(rm.highest_ratio);
       if (pl == null || ph == null) continue;
       const cLow = Math.min(pl, ph), cHigh = Math.max(pl, ph);
-      if (near(pt.low, 1 / cHigh, 1e-4) && near(pt.reference, 1 / Math.sqrt(cLow * cHigh), 1e-4)) inverseHours++;
+      const baseVolume = rm.volume_traded?.[EXALTED], quoteVolume = rm.volume_traded?.[m.market_pair[1]];
+      const rawReference = typeof baseVolume === "number" && Number.isFinite(baseVolume) && baseVolume > 0
+        && typeof quoteVolume === "number" && Number.isFinite(quoteVolume) && quoteVolume > 0
+        ? quoteVolume / baseVolume
+        : null;
+      if (rawReference == null || rawReference < cLow || rawReference > cHigh) continue;
+      if (near(pt.low, 1 / cHigh, 1e-4) && near(pt.reference, 1 / rawReference, 1e-4)) inverseHours++;
       else check(false, `inverse history mismatch ${pairId}@${pt.completedHour}`);
     }
   }
@@ -278,6 +289,14 @@ async function main() {
     if (r.gold?.status && r.target && !/^Metadata\//.test(r.target)) coreIcons++; // short-id (catalog) target
     // structural invariants
     check(r.target !== r.anchor, `target==anchor ${r.target}`);
+    if (r.status === "missing-hourly-traded-volume-ratio") {
+      check(r.reference == null && r.referenceKind == null, `missing row has a reference ${r.target}`);
+      check(Number.isFinite(r.latestCompletedHour), `missing row has no latest hour ${r.target}`);
+      const rangeAbsent = r.low == null && r.high == null;
+      const rangeValid = Number.isFinite(r.low) && r.low > 0 && Number.isFinite(r.high) && r.high >= r.low;
+      check(rangeAbsent || rangeValid, `missing row has malformed range ${r.target}`);
+      continue;
+    }
     check(Number.isFinite(r.reference) && r.reference > 0, `bad reference ${r.target}`);
     check(Array.isArray(r.sparkline24h) && r.sparkline24h.every(Number.isFinite), `bad sparkline ${r.target}`);
   }

@@ -27,8 +27,8 @@ export function quoteFromAnchor(value, { anchor = "exalted", displayCurrency = n
 }
 
 /**
- * Manual observations override the delayed hourly midpoint. Otherwise the
- * latest official completed-hour reference is used, with source/age attached.
+ * Manual observations override the delayed hourly traded-volume ratio. Otherwise
+ * the latest official completed-hour reference is used, with source/age attached.
  */
 export function workingPrice(
   row,
@@ -74,7 +74,7 @@ export function workingPrice(
   return {
     status: displayValue == null ? "unconvertible-hourly-price" : "ok",
     source: "hourly",
-    sourceLabel: "Hourly midpoint",
+    sourceLabel: "Hourly traded-volume ratio",
     ageMs: Number.isFinite(row.latestCompletedHour) ? Math.max(0, now - row.latestCompletedHour) : null,
     value: displayValue,
     unit,

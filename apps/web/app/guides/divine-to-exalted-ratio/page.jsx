@@ -80,7 +80,7 @@ export default function DivineToExaltedRatioGuide() {
         <h2>How to read it here</h2>
         <p>
           The <a href="/poe2/currencies/divine">Divine Orb page</a> shows the latest completed-hour Divine price measured
-          in Exalted — a labelled midpoint of the official low/high range, not a live quote — plus the 24h move. The{" "}
+          in Exalted — the latest completed hour&apos;s traded-volume ratio, not a live quote — plus the 24h move. The{" "}
           <a href="/poe2">market radar</a> shows whether the market is actually moving and labels the active data
           source directly in its header.
         </p>

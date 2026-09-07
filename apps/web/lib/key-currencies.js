@@ -64,7 +64,9 @@ function normalizedCard(currency, unit, rates, timeline, spansDay) {
     values,
     // The sparkline still draws whatever history exists; only the labelled
     // percentage waits for a real day. formatPercent renders null as "—".
-    movement: spansDay ? movement(values) : null,
+    // History can still draw a useful sparkline, but it must not become a
+    // current change when this currency's newest traded-volume ratio is absent.
+    movement: spansDay && positive(value) ? movement(values) : null,
     spansDay,
     available: positive(value),
   };

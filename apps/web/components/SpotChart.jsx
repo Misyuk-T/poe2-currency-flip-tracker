@@ -62,8 +62,8 @@ export default function SpotChart({ points, height = 420, bucketHours: bucketHou
       },
     });
 
-    // Body = first/last hourly midpoint in the bucket, wick = the full touched
-    // range (see buildTrendRows). Added before the midpoint line so the line
+    // Body = first/last hourly reference in the bucket; wick = the typical
+    // hourly range (see buildTrendRows). Added before the reference line so it
     // reads on top of its own candles.
     const framed = readablePriceRange(rows, levels);
     const range = chart.addSeries(CandlestickSeries, {

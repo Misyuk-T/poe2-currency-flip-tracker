@@ -94,7 +94,7 @@ test("currencyIndexFromSnapshot projects a precomputed snapshot into the index",
         {
           target: "chaos",
           reference: 47.75,
-          referenceKind: "range-midpoint",
+          referenceKind: "hourly-traded-volume-ratio",
           low: 40,
           high: 55,
           rangePct: 0.3,
@@ -136,6 +136,24 @@ test("markets with no priced hour stay out of the index, and so out of the sitem
     ],
   });
   assert.deepEqual(Object.keys(index.byId), ["chaos"]);
+});
+
+test("a newest missing volume ratio remains indexable and appears in the sitemap", () => {
+  const index = currencyIndexFromSnapshot({
+    anchor: "exalted",
+    rows: [{
+      target: "divine",
+      reference: null,
+      referenceKind: null,
+      status: "missing-hourly-traded-volume-ratio",
+      low: 1,
+      high: 130,
+      latestCompletedHour: 1785200400000,
+    }],
+  });
+  assert.equal(index.byId.divine.reference, null);
+  assert.equal(index.byId.divine.latestCompletedHourMs, 1785200400000);
+  assert.deepEqual(currencySitemapUrls(index).map((entry) => entry.id), ["divine"]);
 });
 
 test("an empty or malformed snapshot yields null so the caller can fall back", () => {

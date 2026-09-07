@@ -48,10 +48,10 @@ const SORT_OPTIONS = [
   { value: "family:desc", label: "Item family" },
   { value: "spread:desc", label: "Widest spread" },
   { value: "activity:desc", label: "Activity" },
-  { value: "buy:asc", label: "Buy: cheapest first" },
-  { value: "sell:desc", label: "Sell: highest first" },
-  { value: "price:desc", label: "Price: high to low" },
-  { value: "price:asc", label: "Price: low to high" },
+  { value: "buy:asc", label: "Hourly low: lowest first" },
+  { value: "sell:desc", label: "Hourly high: highest first" },
+  { value: "price:desc", label: "Reference: high to low" },
+  { value: "price:asc", label: "Reference: low to high" },
   { value: "movement:desc", label: "24h gainers" },
   { value: "movement:asc", label: "24h losers" },
   { value: "liquidity:desc", label: "Liquidity" },
@@ -1167,8 +1167,8 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     </th>
                     <th className="right" scope="col">
                       <SortHeader
-                        label="Buy price"
-                        sublabel={quantity === 1 ? "(low)" : `(low · ×${quantity})`}
+                        label="Hourly low"
+                        sublabel={`(×${quantity})`}
                         column="buy"
                         activeKey={sortKey}
                         direction={sortDirection}
@@ -1179,8 +1179,8 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     </th>
                     <th className="right" scope="col">
                       <SortHeader
-                        label="Sell price"
-                        sublabel={quantity === 1 ? "(high)" : `(high · ×${quantity})`}
+                        label="Hourly high"
+                        sublabel={`(×${quantity})`}
                         column="sell"
                         activeKey={sortKey}
                         direction={sortDirection}
@@ -1190,7 +1190,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     </th>
                     <th className="right" scope="col">
                       <SortHeader
-                        label="Spread"
+                        label="Hourly range"
                         sublabel="(low → high)"
                         title="How far the latest completed hour's reported range ran, low to high. GGG publishes no ordering inside an hour, so this is the size of the gap — not a profit anyone booked. Open a market to see how often the two ends were actually reachable in sequence. Hover a row for the gold-efficiency detail."
                         column="spread"
@@ -1238,6 +1238,9 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                           <span>
                             <strong>{row.targetName}</strong>
                             <small>{row.subcategory || row.category || "Other"}</small>
+                            {row.status === "missing-hourly-traded-volume-ratio" && (
+                              <small>Hourly reference unavailable</small>
+                            )}
                           </span>
                         </td>
                         <td className="right">
@@ -1428,13 +1431,13 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                     "75th of its highs: the band those hours typically covered. Drawing the outright minimum and " +
                     "maximum instead made every wick on a wide market run the full height of the chart, identical to " +
                     "every other. Individual hours did range further, and those hours still drive the plan's numbers. " +
-                    "The body is the first and last hourly midpoint in the window, so it shows the net move, not an " +
+                    "The body is the first and last hourly traded-volume ratios in the window, so it shows the net move, not an " +
                     "opening and closing trade."
                   }
                 >
                   {chartView === "reach"
                     ? "Share of past windows in which the market reached each price — reached, not filled."
-                    : "Wick = typical hourly range (25–75%) · body = first→last midpoint · not OHLC"}
+                    : "Wick = typical hourly range (25–75%) · body = first→last traded-volume ratio · not OHLC"}
                 </p>
               </div>
 
@@ -1480,12 +1483,8 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                             </article>
                           </div>
 
-                          {/* This line said "official hourly midpoint", which stopped
-                              being true when the centre became geometric — and read
-                              as an apology for the number above it. Naming the range
-                              it came from is both accurate and more use: on a market
-                              reporting 31 to 68, the width is the single most
-                              important thing to know before trusting any centre. */}
+                          {/* Keep the historical estimate, observed range and user
+                              override distinct: none of them is a live order book. */}
                           <div className="working-price-line">
                             <span>Plan basis</span>
                             <strong><QuotePill quote={workingQuote} game={game} compact /></strong>
@@ -1493,8 +1492,8 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                               {currentWorkingPrice.source === "manual"
                                 ? "your in-game price"
                                 : basisRangeLabel
-                                  ? `centre of ${basisRangeLabel} · GGG's last completed hour`
-                                  : "GGG's last completed hour"}
+                                  ? `hourly traded-volume ratio within ${basisRangeLabel} · GGG's last completed hour`
+                                  : "hourly traded-volume ratio · GGG's last completed hour"}
                               {currentWorkingPrice.ageMs == null ? null : (
                                 <>
                                   {" · "}

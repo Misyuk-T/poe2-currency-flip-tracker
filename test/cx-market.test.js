@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeCxDigest, candleForAnchor, canonicalPairId, rangeCenter } from "../src/domain/cx-market.js";
+import { readFileSync } from "node:fs";
+import { normalizeCxDigest, candleForAnchor, canonicalPairId, hourlyTradedVolumeReference } from "../src/domain/cx-market.js";
 
 const payload = {
   next_change_id: 7200,
@@ -18,7 +19,8 @@ test("cxapi digest filters league and normalizes a range without fake close", ()
   assert.equal(d.candles[0].pairId, canonicalPairId("chaos", "divine"));
   assert.equal(d.candles[0].low, 0.01);
   assert.equal(d.candles[0].high, 0.0125);
-  assert.equal(d.candles[0].referenceKind, "range-center-geometric");
+  assert.equal(d.candles[0].reference, 0.01);
+  assert.equal(d.candles[0].referenceKind, "hourly-traded-volume-ratio");
   assert.equal("close" in d.candles[0], false);
 });
 
@@ -31,34 +33,54 @@ test("anchor projection handles direct and inverse pair orientation", () => {
   assert.equal(inverse.high, 100);
 });
 
-test("a pair's storage orientation cannot change the price it implies", () => {
-  // The production bug: the stored midpoint was inverted directly, which yields
-  // the harmonic mean of the flipped range, not its centre. 83 of 627 live
-  // markets were quoting a price near the bottom of their own reported band —
-  // Ancient Potent Liquid Melancholy showed 3.64 against a reported 2 to 20.
+test("a pair's storage orientation recomputes the traded-volume ratio", () => {
   const c = normalizeCxDigest(payload, { digestId: 3600, league: "L" }).candles[0];
   const direct = candleForAnchor(c, "chaos", "divine");
   const inverse = candleForAnchor(c, "divine", "chaos");
 
   assert.ok(Math.abs(inverse.reference - 1 / direct.reference) < 1e-12, "quoting the pair the other way must invert the price exactly");
   for (const candle of [direct, inverse]) {
-    assert.ok(candle.reference > candle.low && candle.reference < candle.high, "the centre must sit inside its own range");
-    const width = (candle.high - candle.low) / candle.reference;
-    assert.ok(width < 2, `width ${width} exceeds what a centred range can produce`);
+    assert.ok(candle.reference >= candle.low && candle.reference <= candle.high, "the ratio must sit inside its reported range");
+    assert.equal(candle.referenceKind, "hourly-traded-volume-ratio");
   }
 });
 
-test("the range centre resists one extreme end without leaving the range", () => {
-  assert.ok(Math.abs(rangeCenter(31, 68) - 45.91) < 0.01);
-  // A narrow range is barely touched: 46-50 centres at 47.96, not 48.
-  assert.ok(Math.abs(rangeCenter(46, 50) - 47.96) < 0.01);
-  assert.equal(rangeCenter(0, 10), null);
-  assert.equal(rangeCenter(10, Number.NaN), null);
+test("captured public Divine / Exalted volume ratios are preserved exactly", () => {
+  const [captured] = JSON.parse(readFileSync(new URL("./fixtures/public-divine-exalted-volume.json", import.meta.url), "utf8"));
+  const base = "Metadata/Items/Currency/CurrencyModValues";
+  const quote = "Metadata/Items/Currency/CurrencyAddModToRare";
+  const candle = {
+    base, quote, low: 1, high: 130,
+    volume: captured.volume_traded,
+  };
+  const direct = hourlyTradedVolumeReference(candle);
+  assert.equal(direct, 4631244 / 36913);
+  assert.ok(Math.abs(direct - 125.463766) < 1e-6);
+  assert.equal(candleForAnchor(candle, quote, base).reference, 1 / direct);
 });
 
-test("invalid ratios remain null instead of fabricated", () => {
+test("missing, invalid and out-of-band volumes never fabricate a reference", () => {
   const bad = { ...payload, markets: [{ ...payload.markets[0], lowest_ratio: { chaos: 0, divine: 1 } }] };
   const c = normalizeCxDigest(bad, { digestId: 3600, league: "L" }).candles[0];
   assert.equal(c.low, null);
   assert.equal(c.reference, null);
+  for (const volume of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, "100"]) {
+    assert.equal(hourlyTradedVolumeReference({ base: "a", quote: "b", low: 1, high: 3, volume: { a: 1, b: volume } }), null);
+  }
+  assert.equal(hourlyTradedVolumeReference({ base: "a", quote: "b", low: 1, high: 3, volume: { a: 1, b: 4 } }), null);
+  // Tolerance is relative to each bound. A global absolute epsilon would accept
+  // this tiny-range value and this large-range lower-bound violation.
+  assert.equal(hourlyTradedVolumeReference({ base: "a", quote: "b", low: 1e-300, high: 1e-200, volume: { a: 1, b: 1e-100 } }), null);
+  assert.equal(hourlyTradedVolumeReference({ base: "a", quote: "b", low: 1e100, high: 1e300, volume: { a: 1, b: 1e99 } }), null);
+});
+
+test("anchor projection ignores a stored legacy reference", () => {
+  const candle = {
+    base: "a", quote: "b", low: 1, high: 3,
+    reference: Math.sqrt(3), referenceKind: "range-center-geometric",
+    volume: { a: 10, b: 20 },
+  };
+  const projected = candleForAnchor(candle, "a", "b");
+  assert.equal(projected.reference, 2);
+  assert.equal(projected.referenceKind, "hourly-traded-volume-ratio");
 });

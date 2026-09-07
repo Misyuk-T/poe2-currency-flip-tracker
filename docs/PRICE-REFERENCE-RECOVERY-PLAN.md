@@ -1,6 +1,6 @@
 # BMAD story: representative hourly currency prices
 
-Status: implementation accepted after independent Sol review; deployment verification pending.
+Status: complete; implementation delivered and production verified.
 Date: 2026-09-07. Scope: the first revival slice, price reliability only.
 
 ## Problem and user outcome
@@ -72,7 +72,7 @@ Sources:
 - [x] Full tests and production build pass.
 - [x] Independent focused diff review has no unresolved blocking findings.
 - [x] Browser verification covers core rates, detail/history and manual entry.
-- [ ] Task-only change is committed to main and deployed; live API and page
+- [x] Task-only change is committed to main and deployed; live API and page
   checks confirm new semantics. Preserve the user's staged outbound work.
 
 ## Delivery and rollback
@@ -97,3 +97,23 @@ Record exact commit and deployment evidence when the story is complete.
   375px history renders with document width 364px and no console errors.
 - Independent Sol review found SQL evaluation-order and missing-state canary
   issues; both fixed and re-reviewed. Final acceptance has no blockers/majors.
+
+## Production delivery
+
+Implementation commit: `e657807add36beaf434de7c3f2cbee8a91626b24` on `main`.
+[GitHub CI](https://github.com/Misyuk-T/poe2-currency-flip-tracker/actions/runs/34162532042)
+and [Vercel deployment](https://vercel.com/misyuktaras-2055s-projects/poe2-currency-flip-tracker/64VEFiod8ktQ9zJ8Reo1y7bEFJu8)
+succeeded. Verified 2026-09-07 around 21:20 UTC:
+
+- Production radar is payload v7, Forbidden Rites, Divine hourly reference
+  `129.11696890003364` at completed hour `1788811200000` (20:00 UTC).
+- Independent same-hour GGG volumes: `4,222,254 / 32,701`, exact agreement.
+  Previous production reference for that same hour was `48.218253804964775`.
+- History endpoint returns 70 candles with the repaired latest ratio/kind.
+- Radar, history, Divine currency page, config, status and sitemap return 200;
+  the currency page contains the new hourly traded-volume explanation.
+- Production browser shows Divine `129`, 24h `+24.44%`, no console errors.
+- Original staged and unstaged Reddit drafts were preserved byte-for-byte.
+
+This completes only the price-reliability story. Retention/SEO experiments and
+GitHub Actions PR-creation permissions remain outside this release.

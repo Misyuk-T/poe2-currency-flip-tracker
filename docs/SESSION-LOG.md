@@ -15,7 +15,10 @@ Independent Sol plan and final diff reviews accepted after fixing SQL guard
 ordering and missing-state canary assertions. 518 tests and production build
 pass; 28-hour Forbidden Rites canary covers 50,584 candles and 593 independent
 oracle comparisons; real PostgreSQL 17 checks and desktop/375px browser flows
-pass. See [the BMAD story](PRICE-REFERENCE-RECOVERY-PLAN.md) for release evidence.
+pass. Delivered as `e657807`; CI/Vercel passed. Production v7 Divine reference
+129.11696890003364 exactly matches same-hour GGG volumes (4,222,254 / 32,701).
+History, page, config, status, sitemap and live browser checks passed. See
+[the BMAD story](PRICE-REFERENCE-RECOVERY-PLAN.md) for release evidence.
 
 ## 2026-09-05 — Світлий скролбар, чесні вікна movement, дефолтна ліга 48г → 8г
 

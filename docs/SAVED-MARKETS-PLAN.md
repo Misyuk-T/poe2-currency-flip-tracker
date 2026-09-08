@@ -1,6 +1,6 @@
 # BMAD story: saved markets and a bounded retention experiment
 
-Date: 2026-09-08. Baseline: main 108e614. Status: implementation accepted; production delivery verification pending.
+Date: 2026-09-08. Baseline: main 108e614. Status: complete; deployed and production flows verified.
 
 ## Problem → choice
 
@@ -35,7 +35,7 @@ existing Postgres, not a paid analytics subscription.
 - [x] Full tests and production build.
 - [x] Desktop/mobile save, return, remove and scope switch; blocked-storage regressions.
 - [x] Independent focused review has no blockers or majors.
-- [ ] Commit main, CI/deploy pass, production UI and durable counter read-back.
+- [x] Commit main, CI/deploy pass, production UI and durable counter read-back.
 
 ## Next
 
@@ -114,3 +114,17 @@ returned HTTP 200. Replays 922/923 completed the remaining catch-up: both games
 reach 2026-09-08 07:00 UTC. Raw GGG volume-ratio verification passes. Replay
 snapshot results exposed legacy JSONB-string volume compatibility in the prior
 price change; scheduled snapshot repair remains an acceptance gate.
+
+
+Final recovery release `afb5faf` passed CI 34205964666 and Vercel. Root independently
+reran PostgreSQL 17 + postgres.js: actual repository writes yield JSONB objects;
+legacy/new values qualify; malformed/zero/null strings do not; discovery returns
+exactly the two valid test leagues. No production history rewrite was needed.
+
+Existing cron replay 924 returned HTTP 200, no timeout/error, and built default
+snapshots: Forbidden Rites 3 anchors / 2,011 combined rows; Allflame 5 anchors /
+3,016 combined rows. Normal production API now returns the 07:00 UTC Divine
+reference 132.78654518638342, `stale:false`, equal to raw GGG 5,581,948 / 42,037.
+Browser card shows current 132.79 with no previous baseline; a new tab correctly
+shows previous/current 132.79 at the same hour and waits for a newer hour. The
+controlled save was removed and manual input reset after QA. Final tests: 534/534.

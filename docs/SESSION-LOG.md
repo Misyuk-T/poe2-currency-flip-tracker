@@ -34,7 +34,14 @@ object volumes, and rejects malformed/non-object roots. Both availability probes
 use the same guarded expression. Forward writes pass the object to postgres.js.
 Actual PostgreSQL 17 + postgres.js proved old double encoding, new object writes,
 and legacy/new/malformed availability. All 534 tests and focused review pass;
-scheduled snapshot read-back remains the final release check.
+release `afb5faf` passed CI 34205964666 and Vercel. Root independently reran the
+actual postgres.js repository write/read proof, including malformed/zero/null
+strings and exact league discovery. Production cron replay 924 returned HTTP 200
+and built Forbidden Rites (3 anchors, 2,011 combined rows) and Allflame (5 anchors,
+3,016 combined rows) snapshots. Normal API and browser now serve fresh 07:00 UTC
+references. Saved new-tab visit shows previous/current 132.79 and correctly waits
+for a newer hour. Test save removed and manual input reset. All four anonymous
+PoE2 counters are exactly one controlled QA marker each; no real-demand claim.
 
 ## 2026-09-08 — BMAD saved markets and usage experiment
 

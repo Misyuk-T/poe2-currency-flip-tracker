@@ -1,7 +1,7 @@
 # BMAD story: representative hourly currency prices
 
-Status: price semantics delivered; ingest compatibility incident found during
-2026-09-08 production acceptance. Fix validated locally; live catch-up pending.
+Status: complete; price semantics and 2026-09-08 ingest/storage compatibility
+repairs deployed and production verified.
 Date: 2026-09-07. Scope: the first revival slice, price reliability only.
 
 ## Problem and user outcome
@@ -118,3 +118,14 @@ succeeded. Verified 2026-09-07 around 21:20 UTC:
 
 This completes only the price-reliability story. Retention/SEO experiments and
 GitHub Actions PR-creation permissions remain outside this release.
+
+
+## 2026-09-08 storage-boundary recovery
+
+Production acceptance of saved markets exposed two missed SQL boundaries in the
+price repair: unavailable kinds violated NOT NULL, and legacy JSONB-string volumes
+failed the new availability predicates. Fixed by `e46e5b6` and `afb5faf`; actual
+PostgreSQL + postgres.js checks supplement the in-memory canary. Cron replays
+921–923 restored 11 hours for both games through 07:00 UTC; replay 924 built both
+default game snapshots successfully. Normal live API Divine matches raw GGG
+5,581,948 / 42,037 = 132.78654518638342 and is fresh. See SESSION-LOG for evidence.

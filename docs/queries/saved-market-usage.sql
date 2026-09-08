@@ -7,6 +7,6 @@ select day, game,
   sum(count) filter (where event = 'saved_markets_returned') as saved_markets_returned,
   sum(count) filter (where event = 'manual_price_applied') as manual_price_applied
 from public.daily_product_usage
-where day >= (now() at time zone 'UTC')::date - 28
+where day >= (now() at time zone 'UTC')::date - 27
 group by day, game
 order by day desc, game;

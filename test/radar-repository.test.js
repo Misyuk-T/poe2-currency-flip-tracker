@@ -91,7 +91,7 @@ test("listPricedLeagues discovers recent priced scopes in freshness order", asyn
   ]);
 });
 
-test("priced-league probes use a type-guarded positive-volume CASE without casts or division", async () => {
+test("priced-league probes safely normalize legacy JSONB strings and type-guard positive volumes", async () => {
   const calls = [];
   const sql = (strings, ...values) => {
     calls.push({ text: strings.join("?"), values });
@@ -101,10 +101,12 @@ test("priced-league probes use a type-guarded positive-volume CASE without casts
   await repo.hasPricedCandles();
   await repo.listPricedLeagues();
   for (const { text } of calls) {
-    assert.match(text, /case\s+when\s+jsonb_typeof\(volume -> base_currency\) = 'number'/i);
+    assert.match(text, /cross join lateral/i);
+    assert.match(text, /pg_input_is_valid\(volume #>> '\{\}', 'jsonb'\)/i);
+    assert.match(text, /jsonb_typeof\(normalized_volume\.object_volume -> base_currency\) = 'number'/i);
     assert.match(text, /else false\s+end/i);
     assert.match(text, /> '0'::jsonb/i);
-    assert.doesNotMatch(text, /::numeric|\/ \(volume/i, "malformed or zero JSON volumes cannot reach casts or division");
+    assert.doesNotMatch(text, /::numeric|\/ \(volume/i, "malformed or zero JSON volumes cannot reach numeric casts or division");
   }
 });
 

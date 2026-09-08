@@ -211,16 +211,29 @@ export function createRadarRepository({
         select exists (
           select 1
           from hourly_market_candles
+          cross join lateral (
+            select case
+              when jsonb_typeof(volume) = 'object' then volume
+              when jsonb_typeof(volume) = 'string' then case
+                when pg_input_is_valid(volume #>> '{}', 'jsonb') then case
+                  when jsonb_typeof((volume #>> '{}')::jsonb) = 'object' then (volume #>> '{}')::jsonb
+                  else '{}'::jsonb
+                end
+                else '{}'::jsonb
+              end
+              else '{}'::jsonb
+            end as object_volume
+          ) normalized_volume
           where game = ${scope.game} and realm = ${scope.realm} and league = ${scope.league}
             and provider = ${scope.mode}
             and completed_hour >= now() - make_interval(days => ${windowDays})
             and low_ratio is not null and low_ratio > 0
             and high_ratio is not null and high_ratio > 0
             and case
-              when jsonb_typeof(volume -> base_currency) = 'number'
-                and jsonb_typeof(volume -> quote_currency) = 'number'
-              then (volume -> base_currency) > '0'::jsonb
-                and (volume -> quote_currency) > '0'::jsonb
+              when jsonb_typeof(normalized_volume.object_volume -> base_currency) = 'number'
+                and jsonb_typeof(normalized_volume.object_volume -> quote_currency) = 'number'
+              then (normalized_volume.object_volume -> base_currency) > '0'::jsonb
+                and (normalized_volume.object_volume -> quote_currency) > '0'::jsonb
               else false
             end
           limit 1
@@ -238,15 +251,28 @@ export function createRadarRepository({
       sql`
         select league, extract(epoch from max(completed_hour)) * 1000 as newest_completed_hour
         from hourly_market_candles
+        cross join lateral (
+          select case
+            when jsonb_typeof(volume) = 'object' then volume
+            when jsonb_typeof(volume) = 'string' then case
+              when pg_input_is_valid(volume #>> '{}', 'jsonb') then case
+                when jsonb_typeof((volume #>> '{}')::jsonb) = 'object' then (volume #>> '{}')::jsonb
+                else '{}'::jsonb
+              end
+              else '{}'::jsonb
+            end
+            else '{}'::jsonb
+          end as object_volume
+        ) normalized_volume
         where game = ${scope.game} and realm = ${scope.realm} and provider = ${scope.mode}
           and completed_hour >= now() - make_interval(days => ${windowDays})
           and low_ratio is not null and low_ratio > 0
           and high_ratio is not null and high_ratio > 0
           and case
-            when jsonb_typeof(volume -> base_currency) = 'number'
-              and jsonb_typeof(volume -> quote_currency) = 'number'
-            then (volume -> base_currency) > '0'::jsonb
-              and (volume -> quote_currency) > '0'::jsonb
+            when jsonb_typeof(normalized_volume.object_volume -> base_currency) = 'number'
+              and jsonb_typeof(normalized_volume.object_volume -> quote_currency) = 'number'
+            then (normalized_volume.object_volume -> base_currency) > '0'::jsonb
+              and (normalized_volume.object_volume -> quote_currency) > '0'::jsonb
             else false
           end
         group by league
@@ -731,7 +757,7 @@ export function createRadarRepository({
               high_ratio: c.high,
               reference_ratio: c.reference,
               reference_kind: c.reference == null ? UNAVAILABLE_REFERENCE_KIND : c.referenceKind ?? UNAVAILABLE_REFERENCE_KIND,
-              volume: JSON.stringify(c.volume),
+              volume: c.volume ?? {},
               // Stock ranges are not consumed by the radar, history chart, or
               // plan model. Keeping the JSON for every pair/hour added hundreds
               // of MB to the Free-plan database, so new rows store the schema's

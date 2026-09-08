@@ -105,6 +105,17 @@ test("recordCxDigest does not persist unused stock payloads", async () => {
   assert.deepEqual(rows[0].stock, {});
 });
 
+test("recordCxDigest passes the volume object to postgres JSONB serialization", async () => {
+  const { sql, templateCalls } = fakeTxSql();
+  const repo = createRadarRepository({ sql, scope });
+  const volume = { a: 3, b: 9 };
+  await repo.recordCxDigest({ digestId: 472222, nextChangeId: 475822, candles: [{ ...candle("Standard"), volume }] });
+  const rows = templateCalls
+    .find((c) => c.text.includes("hourly_market_candles"))
+    .values.find((v) => v.__fragmentRows).__fragmentRows;
+  assert.equal(rows[0].volume, volume);
+});
+
 test("recordCxDigest invalidates cached snapshots only for leagues in the digest", async () => {
   const { sql, templateCalls } = fakeTxSql();
   const repo = createRadarRepository({ sql, scope });

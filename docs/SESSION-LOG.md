@@ -14,7 +14,27 @@ Persist unavailable references with the private `unavailable` marker and hydrate
 null prices back to a null domain kind. Added write/read regressions; actual
 PostgreSQL 17.11 schema insertion of valid and unavailable candles passed within
 a rolled-back transaction. All 533 tests and independent focused review pass.
-Production deployment and cursor catch-up are the remaining acceptance gate.
+Compatibility fix `e46e5b6` passed CI 34204816635 and Vercel. Existing cron
+replays 921/922/923 returned HTTP 200 and ingested 4+4+3 hours per game, reaching
+2026-09-08 07:00 UTC. Production readback after the first eight hours included
+6,812 unavailable markers and 22,169 valid volume references.
+
+Replay output also exposed a second missed storage boundary: all 3,594 rows in
+the latest hour store `volume` as a JSONB string. The new SQL volume predicates
+expected an object, so availability/discovery incorrectly skipped snapshots as
+`no-data`. A fresh API rebuild yields the correct current reference, but the
+scheduled snapshot path needs compatibility repair before acceptance. Production
+PostgreSQL 17.6 has `pg_input_is_valid`; a read-only guarded decode recovered
+886 priced Forbidden Rites rows and 856 Allflame rows in the latest hour.
+Independent raw GGG check: 5,581,948 / 42,037 = 132.78654518638342 Exalted per
+Divine at 07:00 UTC, equal to the fresh API row with `stale:false`.
+
+The repair safely decodes legacy JSONB strings behind `pg_input_is_valid`, accepts
+object volumes, and rejects malformed/non-object roots. Both availability probes
+use the same guarded expression. Forward writes pass the object to postgres.js.
+Actual PostgreSQL 17 + postgres.js proved old double encoding, new object writes,
+and legacy/new/malformed availability. All 534 tests and focused review pass;
+scheduled snapshot read-back remains the final release check.
 
 ## 2026-09-08 — BMAD saved markets and usage experiment
 

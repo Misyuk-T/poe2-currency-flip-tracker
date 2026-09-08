@@ -4,8 +4,8 @@ Date: 2026-09-08. Baseline: main 108e614. Status: implementation accepted; produ
 
 ## Problem → choice
 
-Prices are now reliable, but visitors have no saved workspace or reason to check
-back. Deliver browser-only saved markets with honest previous-visit changes and
+The representative-price correction is delivered, but visitors have no saved
+workspace or reason to check back. Deliver browser-only saved markets with honest previous-visit changes and
 an observable usage experiment. Existing Vercel team is Hobby; custom events
 require Pro. Keep Vercel pageviews and add small first-party daily counters in
 existing Postgres, not a paid analytics subscription.
@@ -33,7 +33,7 @@ existing Postgres, not a paid analytics subscription.
 - [x] Storage/visit/anchor/stale/scope race regression tests.
 - [x] Collector validation and database privilege/aggregate tests.
 - [x] Full tests and production build.
-- [x] Desktop/mobile save, return, remove, scope switch and blocked storage QA.
+- [x] Desktop/mobile save, return, remove and scope switch; blocked-storage regressions.
 - [x] Independent focused review has no blockers or majors.
 - [ ] Commit main, CI/deploy pass, production UI and durable counter read-back.
 
@@ -96,3 +96,21 @@ Residual limitations: localStorage updates are not atomic across simultaneously
 writing tabs; a rare concurrent save can be lost. Clearing browser storage loses
 saved lists. Client clock affects freshness checks. No paid service or account
 feature was added. These limits are accepted for the small local experiment.
+
+
+## Production acceptance — 2026-09-08
+
+Saved UI and collector shipped as `1a6f611`; CI run 34204031880 and Vercel passed.
+Production save/open/manual/reset/new-tab-return flows persisted exactly one
+marker each for PoE2 (`market_saved`, `market_opened`, `manual_price_applied`,
+`saved_markets_returned`) in the initially empty daily table. These four markers
+are controlled QA, not user demand. Save POST was HTTP 204 with only
+`{"event":"market_saved","game":"poe2"}`; SQL readback confirms all four events.
+
+The stale saved card exposed the preceding price repair's missed DB NOT NULL
+constraint. Compatibility fix `e46e5b6` passed 533 tests, production build, CI run
+34204816635 and Vercel. Manual replay of the existing cron (pg_net request 921)
+returned HTTP 200. Replays 922/923 completed the remaining catch-up: both games
+reach 2026-09-08 07:00 UTC. Raw GGG volume-ratio verification passes. Replay
+snapshot results exposed legacy JSONB-string volume compatibility in the prior
+price change; scheduled snapshot repair remains an acceptance gate.

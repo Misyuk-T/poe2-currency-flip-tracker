@@ -6,6 +6,18 @@ Market timing for Path of Exile 2 currency trading, built on the official hourly
 
 It answers three questions: what is moving today, what price am I actually seeing right now, and what entry and exit would recent hourly ranges support for the horizon I care about.
 
+## Saved markets
+
+Save a market from the table or its trade plan. The saved workspace stays in
+this browser, separately for each game and league. It compares fresh completed
+hourly references with the previous tab visit; reloading preserves that visit's
+baseline. Missing, stale, changed-anchor or not-yet-newer prices show an explicit
+state instead of a fabricated percentage. Up to 30 markets can be saved per scope.
+
+Four approximate daily usage markers help assess the experiment without accounts
+or visitor IDs. See [the BMAD story](docs/SAVED-MARKETS-PLAN.md) for the privacy,
+measurement limitations and operator query.
+
 ## What it refuses to do
 
 These are historical estimates. Not predictions, not guaranteed arbitrage.

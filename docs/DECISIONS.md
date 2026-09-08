@@ -1,5 +1,23 @@
 # Decision log (ADR-style)
 
+## 2026-09-08 — Browser-only saved markets and aggregate usage
+
+Problem: corrected hourly prices need a small repeat-use experiment. Choice:
+save exact game/league/target/anchor pairs locally and freeze previous-observation
+baselines for one tab session. Current references must stay fresh, comparable
+and newer before a change is shown. No account or server-side watchlist.
+
+Vercel team is Hobby and custom events require Pro (verified against account
+and official documentation). Use the existing server-side Postgres connection
+for four allowlisted daily event totals, with local once/day/game markers. No
+visitor IDs or raw actions/properties stored; this is directional browser-day
+usage, not unique people or cohort retention. Respect DNT/GPC and blocked storage.
+Failures are best effort and never gate a market action. RLS and revoked client
+privileges preserve server-only reads/writes; aggregate rows expire after 60 days.
+
+Validation and release evidence: [SAVED-MARKETS-PLAN.md](SAVED-MARKETS-PLAN.md).
+
+
 Newest first. Each entry: **what** was decided, **why**, and the date.
 
 ## 2026-09-07 — Hourly reference from traded volumes; extrema remain context

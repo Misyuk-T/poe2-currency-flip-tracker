@@ -13,6 +13,7 @@ across sessions and reviewers.
 | [ADVICE.md](ADVICE.md) | Open recommendations & options (domain, SEO, future) | when advice is given or an option is chosen |
 | [LEAGUE-LAUNCH-RUNBOOK.md](LEAGUE-LAUNCH-RUNBOOK.md) | What's automatic vs manual for a new PoE2 league, plus the launch-day checklist | a league launches, or the ingest/discovery mechanics change |
 | [DYNAMIC-DATA-PLAN-2026-09.md](DYNAMIC-DATA-PLAN-2026-09.md) | Plan to make leagues and currency data DB-driven (league_meta, identity, layouts, gold) instead of env + git snapshots | touching league config, data snapshots, or the refresh workflows |
+| [SAVED-MARKETS-PLAN.md](SAVED-MARKETS-PLAN.md) | Browser saved markets, previous-visit semantics and usage experiment | changing saved markets or product measurement |
 | [PRICE-REFERENCE-RECOVERY-PLAN.md](PRICE-REFERENCE-RECOVERY-PLAN.md) | BMAD price-reference correction, acceptance and release evidence | changing hourly reference semantics |
 | [REVIVAL-AUDIT-2026-09-07.md](REVIVAL-AUDIT-2026-09-07.md) | Dated production/data audit and proposed retention experiment | historical evidence; implementation status lives in the recovery plan |
 

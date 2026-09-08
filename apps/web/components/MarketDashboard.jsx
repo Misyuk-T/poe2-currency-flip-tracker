@@ -17,6 +17,10 @@ import { compareMarketRows, DEFAULT_MARKET_SORT, nextMarketSort, rowSpread } fro
 import { CATEGORY_ICON_IDS } from "../lib/category-icons.js";
 import { useScrollLock } from "../lib/use-scroll-lock.js";
 import { preloadIcons } from "../lib/preload-icons.js";
+import { radarMatchesSavedScope, savedMarketComparison } from "../lib/saved-markets.js";
+import { useSavedMarkets } from "../lib/use-saved-markets.js";
+import { recordUsage } from "../lib/usage-client.js";
+import SavedMarkets from "./SavedMarkets.jsx";
 import {
   categoryIconMap,
   iconCandidatesForCategory,
@@ -401,12 +405,22 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   const [draftPriceError, setDraftPriceError] = useState(null);
   const [loadingMinHeight, setLoadingMinHeight] = useState(null);
   const [page, setPage] = useState(1);
+  const [savedComparisonClock, setSavedComparisonClock] = useState(() => Date.now());
   const radarMainRef = useRef(null);
   const appliedReloadKeyRef = useRef(0);
   const activeGameConfig = marketConfig?.games?.find((entry) => entry.id === game);
   const configuredAnchorCurrency = activeGameConfig?.anchorCurrency ?? "exalted";
   const anchorCurrency = radar?.anchor ?? configuredAnchorCurrency;
   const selectedSourceAnchor = radar?.rows?.find((row) => row.pairId === selectedPair)?.anchor ?? anchorCurrency;
+  const savedMarketScope = useMemo(() => (league ? { game, league } : null), [game, league]);
+  const savedMarkets = useSavedMarkets(savedMarketScope);
+
+  useEffect(() => {
+    if (!savedMarkets.saved.length) return undefined;
+    setSavedComparisonClock(Date.now());
+    const timer = window.setInterval(() => setSavedComparisonClock(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [savedMarkets.saved.length]);
 
   useEffect(() => {
     let cancelled = false;
@@ -455,6 +469,8 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     const cached = force ? null : peekCachedJson(url, { ttlMs: RADAR_CACHE_MS });
     function applyRadar(data) {
       if (cancelled) return;
+      const reconciliation = savedMarkets.reconcile(data);
+      if (reconciliation.returned) recordUsage("saved_markets_returned", { game, sourceMode: data?.source?.sourceMode });
       setRadar(data);
       const tradable = (data.rows ?? []).filter((row) => row.pairId && row.status !== "no-trades-this-hour");
       // Deep-link from the SEO currency pages: /poe2?currency=divine preselects
@@ -464,6 +480,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
       const wanted = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("currency") : null;
       const preferred = wanted ? tradable.find((row) => row.target === wanted) : null;
       setSelectedPair(preferred?.pairId ?? null);
+      if (preferred) recordUsage("market_opened", { game, sourceMode: data?.source?.sourceMode });
       setStatus("ready");
       setLoadingMinHeight(null);
     }
@@ -489,7 +506,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     return () => {
       cancelled = true;
     };
-  }, [game, league, reloadKey]);
+  }, [game, league, reloadKey, savedMarkets.reconcile]);
 
   useEffect(() => {
     if (!marketConfig || !league || status !== "ready") return undefined;
@@ -718,6 +735,15 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   const selected = selectedPair
     ? rows.find((row) => row.pairId === selectedPair) ?? tradable.find((row) => row.pairId === selectedPair) ?? null
     : null;
+  const savedMarketResponseReady = radarMatchesSavedScope(radar, savedMarketScope);
+  const savedMarketItems = useMemo(() => savedMarkets.saved.map((saved) => {
+    const row = tradable.find((candidate) => candidate.target === saved.target && candidate.anchor === saved.anchor) ?? null;
+    return {
+      saved,
+      row,
+      comparison: savedMarketComparison({ saved, baseline: savedMarkets.baseline, radar, scope: savedMarketScope, now: savedComparisonClock }),
+    };
+  }), [radar, savedComparisonClock, savedMarketScope, savedMarkets.baseline, savedMarkets.saved, tradable]);
   const [sortKey, sortDirection = "desc"] = sort.split(":");
 
   function openMarket(pairId) {
@@ -732,6 +758,17 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     setDraftPriceError(null);
     setSelectedPair(pairId);
     setView("chart");
+    recordUsage("market_opened", { game, sourceMode: radar?.source?.sourceMode });
+  }
+
+  function toggleSavedMarket(row) {
+    if (!savedMarketResponseReady) return;
+    if (savedMarkets.isSaved(row)) {
+      savedMarkets.remove({ game, league, target: row.target, anchor: row.anchor });
+      return;
+    }
+    const result = savedMarkets.save(row, radar);
+    if (result.ok && result.changed) recordUsage("market_saved", { game, sourceMode: radar?.source?.sourceMode });
   }
 
   function closeMarket() {
@@ -745,6 +782,8 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
   function selectLeague(nextLeague) {
     if (!nextLeague || nextLeague === league) return;
     setSelectedPair(null);
+    setRadar(null);
+    setStatus("loading");
     setLeague(nextLeague);
     setCategory(DEFAULT_CATEGORY);
     setView("list");
@@ -761,6 +800,8 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     const selectedGame = marketConfig?.games?.find((entry) => entry.id === nextGame && entry.enabled);
     const nextLeague = selectedGame?.activeLeague ?? selectedGame?.leagues?.find((entry) => entry.enabled)?.id;
     if (!selectedGame || !nextLeague) return;
+    setRadar(null);
+    setStatus("loading");
     setGame(nextGame);
     setLeague(nextLeague);
     setSelectedPair(null);
@@ -887,6 +928,7 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
     setDraftPriceError(null);
     setManualPrices(next);
     saveManualPrices(game, league, next);
+    recordUsage("manual_price_applied", { game, sourceMode });
   }
 
   function clearManualPrice() {
@@ -1131,6 +1173,13 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
             </div>
           </section>
 
+          <SavedMarkets
+            items={savedMarketItems}
+            error={savedMarkets.error}
+            onOpen={openMarket}
+            onRemove={(saved) => savedMarkets.remove(saved)}
+          />
+
           <div className="radar-controls">
             <label className="rc-search">
               <span>Search markets</span>
@@ -1277,6 +1326,19 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                         <td className="right">
                           <button
                             type="button"
+                            className={savedMarkets.isSaved(row) ? "row-action saved" : "row-action"}
+                            aria-pressed={savedMarkets.isSaved(row)}
+                            aria-label={savedMarkets.isSaved(row) ? `Remove ${row.targetName} from saved markets` : `Save ${row.targetName}`}
+                            disabled={!savedMarketResponseReady}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toggleSavedMarket(row);
+                            }}
+                          >
+                            {savedMarkets.isSaved(row) ? "Saved" : "Save"}
+                          </button>
+                          <button
+                            type="button"
                             className="row-action"
                             onClick={(event) => {
                               event.stopPropagation();
@@ -1360,6 +1422,16 @@ export default function MarketDashboard({ initialGame = "poe2" }) {
                   </div>
                 </div>
                 <div className="rt-head-controls">
+                  <button
+                    type="button"
+                    className={savedMarkets.isSaved(selected) ? "row-action saved" : "row-action"}
+                    aria-pressed={savedMarkets.isSaved(selected)}
+                    aria-label={savedMarkets.isSaved(selected) ? `Remove ${selected.targetName} from saved markets` : `Save ${selected.targetName}`}
+                    disabled={!savedMarketResponseReady}
+                    onClick={() => toggleSavedMarket(selected)}
+                  >
+                    {savedMarkets.isSaved(selected) ? "Saved" : "Save"}
+                  </button>
                   <button
                     type="button"
                     className="trade-close-button"

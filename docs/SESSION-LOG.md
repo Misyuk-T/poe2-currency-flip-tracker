@@ -2,6 +2,22 @@
 
 Newest first. One block per working session: what changed + commit refs.
 
+## 2026-09-08 — BMAD saved markets and usage experiment
+
+Problem → choice: provide a reason to return after the price repair. Save exact
+game/league/target/anchor pairs in this browser and compare fresh hourly references
+with a baseline frozen for each tab visit. Missing/stale/changed-anchor/older data
+show explicit states; manual prices remain separate. Added accessible table and
+plan toggles plus responsive saved cards, bounded storage and failure recovery.
+
+Vercel Hobby lacks custom events, so four anonymous browser-day usage counters
+use the existing server-side DB connection. No player IDs, prices or inventories
+leave the browser. Additive table applied with RLS and denied browser grants;
+production read-back and security advisors show no new issues. Collector tests,
+20 concurrent PostgreSQL increments, 532 full tests, build, desktop/mobile flows
+and independent review pass. Scope-race and storage-bound findings were fixed.
+See [SAVED-MARKETS-PLAN.md](SAVED-MARKETS-PLAN.md) for delivery and experiment limits.
+
 ## 2026-09-07 — BMAD price-reference recovery
 
 Replaced the geometric centre of hourly extrema with the validated ratio of

@@ -3383,3 +3383,33 @@ body:has(.radar-page) {
 /* The basis age is normally just provenance; once it is old enough to change
    the answer it stops being a footnote. */
 .basis-stale { color: var(--rl-gold-bright); font-weight: 600; }
+
+/* Saved markets are browser-only shortcuts. Keep their state separate from the
+   market table so the main scanner remains useful when browser storage is off. */
+.saved-markets { margin: 20px 0; padding: 18px; border: 1px solid var(--rl-border); border-radius: 14px; background: var(--rl-surface); }
+.saved-markets-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; }
+.saved-markets-heading .eyebrow { margin: 0 0 2px; }
+.saved-markets-heading h3 { margin: 0; color: var(--rl-ink); font-size: 1.02rem; }
+.saved-markets-heading > span { color: var(--rl-muted); font-size: .78rem; font-weight: 700; }
+.saved-markets-help, .saved-markets-empty { margin: 9px 0 0; color: var(--rl-muted); font-size: .8rem; line-height: 1.45; }
+.saved-markets-error { margin: 10px 0 0; padding: 8px 10px; border: 1px solid rgba(246, 70, 93, .38); border-radius: 8px; background: var(--rl-loss-soft); color: #ffb6bb; font-size: .8rem; line-height: 1.4; }
+.saved-markets-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin: 12px 0 0; padding: 0; list-style: none; }
+.saved-markets-list li { display: flex; gap: 8px; min-width: 0; padding: 10px; border: 1px solid var(--rl-border); border-radius: 10px; background: rgba(0, 0, 0, .12); }
+.saved-market-main { flex: 1; min-width: 0; border: 0; padding: 0; background: transparent; color: var(--rl-ink); font: inherit; text-align: left; cursor: pointer; }
+.saved-market-main:disabled { cursor: default; opacity: .72; }
+.saved-market-main strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .88rem; }
+.saved-market-main span { display: block; margin-top: 3px; color: var(--rl-gold-bright); font-size: .77rem; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
+.saved-market-main small { display: block; margin-top: 3px; color: var(--rl-muted); font-size: .7rem; line-height: 1.35; overflow-wrap: anywhere; }
+.saved-market-remove, .row-action.saved { border-color: rgba(57, 194, 201, .52); color: #b9edef; background: var(--rl-cyan-soft); }
+.saved-market-remove { align-self: start; border: 1px solid var(--rl-border-strong); border-radius: 7px; padding: 5px 8px; background: transparent; color: var(--rl-ink-soft); font: inherit; font-size: .72rem; cursor: pointer; }
+.saved-market-remove:hover, .row-action.saved:hover { background: rgba(57, 194, 201, .18); }
+.row-action + .row-action { margin-left: 6px; }
+.row-action:focus-visible, .saved-market-main:focus-visible, .saved-market-remove:focus-visible { outline: 2px solid var(--rl-cyan); outline-offset: 2px; }
+@media (max-width: 720px) {
+  .saved-markets { padding: 14px; }
+  .saved-markets-list { grid-template-columns: 1fr; }
+  .saved-markets-list li { align-items: start; }
+  .saved-market-remove { min-width: 58px; }
+  .radar-table th:nth-child(7) { width: 116px; }
+  .row-action { padding: 6px 8px; }
+}

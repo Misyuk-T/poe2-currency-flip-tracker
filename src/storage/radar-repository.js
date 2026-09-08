@@ -40,6 +40,10 @@ const MAX_HOURS_PER_PAIR = 25;
 // fires when the connection went silent entirely. It previously sat BELOW the
 // statement timeout, which made the database-side limit unreachable.
 const OP_TIMEOUT_MS = 18_000;
+// Migration 002 requires a non-null storage marker even when the normalized
+// domain candle deliberately has no trusted reference. This value is private to
+// persistence; candleFromRow repairs it back to null for every domain consumer.
+const UNAVAILABLE_REFERENCE_KIND = "unavailable";
 
 /** Wall-clock guard so a stalled connection can't hang a serverless invocation. */
 function withTimeout(promise, ms, label, onTimeout = null) {
@@ -72,6 +76,7 @@ function jsonValue(value) {
 
 /** DB row -> candle object (mirrors createSupabaseStorage's hydration mapping). */
 export function candleFromRow(r, { league } = {}) {
+  const reference = r.reference_ratio == null ? null : Number(r.reference_ratio);
   return {
     league,
     completedHour: Number(r.completed_hour),
@@ -81,8 +86,8 @@ export function candleFromRow(r, { league } = {}) {
     quote: r.quote_currency,
     low: r.low_ratio == null ? null : Number(r.low_ratio),
     high: r.high_ratio == null ? null : Number(r.high_ratio),
-    reference: r.reference_ratio == null ? null : Number(r.reference_ratio),
-    referenceKind: r.reference_kind,
+    reference,
+    referenceKind: reference == null ? null : r.reference_kind,
     volume: typeof r.volume === "string" ? JSON.parse(r.volume) : r.volume,
     stock: typeof r.stock === "string" ? JSON.parse(r.stock) : r.stock,
     source: r.source,
@@ -725,7 +730,7 @@ export function createRadarRepository({
               low_ratio: c.low,
               high_ratio: c.high,
               reference_ratio: c.reference,
-              reference_kind: c.referenceKind,
+              reference_kind: c.reference == null ? UNAVAILABLE_REFERENCE_KIND : c.referenceKind ?? UNAVAILABLE_REFERENCE_KIND,
               volume: JSON.stringify(c.volume),
               // Stock ranges are not consumed by the radar, history chart, or
               // plan model. Keeping the JSON for every pair/hour added hundreds

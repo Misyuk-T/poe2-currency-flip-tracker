@@ -37,9 +37,10 @@ test("candleFromRow maps DB columns, parses JSON, and preserves nulls", () => {
   assert.deepEqual(candle.volume, { divine: 5, exalted: 1000 });
   assert.deepEqual(candle.stock, {});
 
-  const sparse = candleFromRow({ ...candleRow, low_ratio: null, high_ratio: null, reference_ratio: null, volume: { a: 1 } });
+  const sparse = candleFromRow({ ...candleRow, low_ratio: null, high_ratio: null, reference_ratio: null, reference_kind: "unavailable", volume: { a: 1 } });
   assert.equal(sparse.low, null);
   assert.equal(sparse.reference, null);
+  assert.equal(sparse.referenceKind, null, "storage sentinel never becomes a domain price kind");
   assert.deepEqual(sparse.volume, { a: 1 }); // already-parsed jsonb passes through
 });
 

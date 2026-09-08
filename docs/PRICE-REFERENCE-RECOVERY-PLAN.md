@@ -1,6 +1,7 @@
 # BMAD story: representative hourly currency prices
 
-Status: complete; implementation delivered and production verified.
+Status: price semantics delivered; ingest compatibility incident found during
+2026-09-08 production acceptance. Fix validated locally; live catch-up pending.
 Date: 2026-09-07. Scope: the first revival slice, price reliability only.
 
 ## Problem and user outcome

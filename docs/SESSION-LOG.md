@@ -2,6 +2,20 @@
 
 Newest first. One block per working session: what changed + commit refs.
 
+## 2026-09-08 — Ingest compatibility incident during production acceptance
+
+Saved markets release `1a6f611` correctly rejected a stale production reference,
+exposing an ingest regression introduced by the preceding price repair. The
+normalizer now emits null reference kinds for unusable hours, but migration 002
+requires `hourly_market_candles.reference_kind NOT NULL`. Recent cron responses
+were HTTP 502; the last completed PoE2 hour remained 2026-09-07 20:00 UTC.
+
+Persist unavailable references with the private `unavailable` marker and hydrate
+null prices back to a null domain kind. Added write/read regressions; actual
+PostgreSQL 17.11 schema insertion of valid and unavailable candles passed within
+a rolled-back transaction. All 533 tests and independent focused review pass.
+Production deployment and cursor catch-up are the remaining acceptance gate.
+
 ## 2026-09-08 — BMAD saved markets and usage experiment
 
 Problem → choice: provide a reason to return after the price repair. Save exact
